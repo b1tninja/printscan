@@ -137,6 +137,10 @@ fn transfer_fault_sentence(message: &str) -> Option<&'static str> {
     None
 }
 
+const E_FAIL: u32 = 0x8000_4005;
+const E_INVALIDARG: u32 = 0x8007_0057;
+const INTERRUPTED: &str = "The scan was interrupted. Check for a paper jam, an open cover, or that the scanner stayed online.";
+
 /// Text for a Windows error from WIA. Known codes become sentences; unknown ones keep the hex.
 pub fn describe_windows_error(code: u32, message: &str) -> String {
     if code == 0x8021_0004
@@ -146,6 +150,15 @@ pub fn describe_windows_error(code: u32, message: &str) -> String {
     }
     if let Some(text) = wia_error_message(code) {
         return text.to_string();
+    }
+    // E_FAIL and E_INVALIDARG carry the system's own text, which is localized ("Unbekannter Fehler"), and the rules
+    // downstream recognise these vague failures by the fixed sentences below. Decide by the code: only a WS-Scan
+    // fault name (not localized) may replace them.
+    if matches!(code, E_FAIL | E_INVALIDARG) {
+        if let Some(sentence) = transfer_fault_sentence(message.trim()) {
+            return sentence.to_string();
+        }
+        return if code == E_FAIL { INTERRUPTED.into() } else { "The parameter is incorrect.".into() };
     }
     let trimmed = message.trim();
     if !trimmed.is_empty()
@@ -157,9 +170,6 @@ pub fn describe_windows_error(code: u32, message: &str) -> String {
             return sentence.to_string();
         }
         return trimmed.to_string();
-    }
-    if code == 0x8000_4005 {
-        return "The scan was interrupted. Check for a paper jam, an open cover, or that the scanner stayed online.".into();
     }
     if (0x8021_0000..=0x8021_FFFF).contains(&code) {
         return format!("The scanner reported an error ({code:#010x}).");

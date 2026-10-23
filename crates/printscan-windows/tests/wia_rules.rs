@@ -153,6 +153,24 @@ mod windows_rules {
     }
 
     #[test]
+    fn a_localized_system_message_for_a_vague_failure_does_not_defeat_the_rules() {
+        // FormatMessageW answers in the user's language; the rules must decide by the HRESULT, not by English text.
+        for (code, german) in [(0x8000_4005, "Unbekannter Fehler"), (0x8007_0057, "Falscher Parameter.")] {
+            let error = rules::from_hresult(code, german);
+            assert!(rules::generic_scan_failure(&error), "{code:#x}: {error}");
+            assert!(rules::retry_with_file_transfer(&error), "{code:#x}: {error}");
+            assert!(!error.to_string().contains(german), "{error}");
+            // With nothing delivered, the vague failure becomes "did not deliver a usable page" and still falls back.
+            let restated = rules::after_transfer_checked(0, false, 0, false, Some(error)).unwrap_err();
+            assert!(rules::no_usable_page(&restated), "{restated}");
+            assert!(rules::retry_with_file_transfer(&restated), "{restated}");
+        }
+        // A WS-Scan fault name is not localized and still sharpens E_FAIL / E_INVALIDARG.
+        let named = rules::from_hresult(0x8000_4005, "ClientErrorCoverOpen");
+        assert!(!rules::retry_with_file_transfer(&named), "{named}");
+    }
+
+    #[test]
     fn retry_with_file_transfer_only_for_unnamed_mode_rejection() {
         for text in [
             "The scanner reported an error.",
