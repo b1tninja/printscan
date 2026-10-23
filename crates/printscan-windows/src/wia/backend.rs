@@ -11,10 +11,10 @@ use craft_scan::{
     align_to_span, fit_region, listed_values, planned_frame, spanned_values,
 };
 use windows::Win32::Devices::ImageAcquisition::{
-    DUPLEX, FEED_READY, FEEDER, FLATBED, IWiaDataTransfer, IWiaDevMgr, IWiaDevMgr2, IWiaItem, IWiaItem2, IWiaPropertyStorage, IWiaTransfer,
-    TYMED_CALLBACK, WIA_AUTO_DESKEW_OFF, WIA_AUTO_DESKEW_ON, WIA_CATEGORY_FEEDER, WIA_CATEGORY_FEEDER_BACK, WIA_CATEGORY_FEEDER_FRONT,
-    WIA_CATEGORY_FLATBED, WIA_COMPRESSION_BI_RLE4, WIA_COMPRESSION_BI_RLE8, WIA_COMPRESSION_G3, WIA_COMPRESSION_G4, WIA_COMPRESSION_JBIG,
-    WIA_COMPRESSION_JPEG, WIA_COMPRESSION_JPEG2K, WIA_COMPRESSION_NONE, WIA_COMPRESSION_PNG, WIA_DIP_DEV_ID, WIA_DIP_DEV_NAME, WIA_DIP_PORT_NAME,
+    DUPLEX, FEEDER, FLATBED, IWiaDataTransfer, IWiaDevMgr, IWiaDevMgr2, IWiaItem, IWiaItem2, IWiaPropertyStorage, IWiaTransfer, TYMED_CALLBACK,
+    WIA_AUTO_DESKEW_OFF, WIA_AUTO_DESKEW_ON, WIA_CATEGORY_FEEDER, WIA_CATEGORY_FEEDER_BACK, WIA_CATEGORY_FEEDER_FRONT, WIA_CATEGORY_FLATBED,
+    WIA_COMPRESSION_BI_RLE4, WIA_COMPRESSION_BI_RLE8, WIA_COMPRESSION_G3, WIA_COMPRESSION_G4, WIA_COMPRESSION_JBIG, WIA_COMPRESSION_JPEG,
+    WIA_COMPRESSION_JPEG2K, WIA_COMPRESSION_NONE, WIA_COMPRESSION_PNG, WIA_DIP_DEV_ID, WIA_DIP_DEV_NAME, WIA_DIP_PORT_NAME,
     WIA_DPS_DOCUMENT_HANDLING_CAPABILITIES, WIA_DPS_DOCUMENT_HANDLING_CAPACITY, WIA_DPS_DOCUMENT_HANDLING_SELECT, WIA_DPS_DOCUMENT_HANDLING_STATUS,
     WIA_DPS_HORIZONTAL_BED_SIZE, WIA_DPS_HORIZONTAL_SHEET_FEED_SIZE, WIA_DPS_OPTICAL_XRES, WIA_DPS_OPTICAL_YRES, WIA_DPS_PAGES,
     WIA_DPS_VERTICAL_BED_SIZE, WIA_DPS_VERTICAL_SHEET_FEED_SIZE, WIA_IPA_COMPRESSION, WIA_IPA_DATATYPE, WIA_IPA_DEPTH, WIA_IPA_FILENAME_EXTENSION,
@@ -487,7 +487,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
     // The inbox WSD driver does not report a loaded tray (every bit reads clear), so a clear bit
     // there says nothing: leave it unknown and Auto tries the feeder first, falling back to the
     // glass when the feeder turns out to be empty. A USB driver's clear bit is a real answer.
-    let feeder_ready = feeder_ready_signal(flag(status_bits, FEED_READY), wsd_port);
+    let feeder_ready = feeder_ready_from_status(&handling_status, wsd_port);
     // Auto becomes feeder or glass from this status read before any transfer.
     let source = settings.source.resolve(feeder_ready, has_feeder, has_glass)?;
     route.set(Some((source, has_glass)));
@@ -1776,11 +1776,6 @@ fn receive_bands(
     Ok(pages.into_iter().take(limit).collect())
 }
 
-/// Whether bit `bit` is set in `value` (negative values count as no bits).
-fn flag(value: i32, bit: u32) -> bool {
-    u32::try_from(value).unwrap_or(0) & bit != 0
-}
-
 /// The value as `i32`, or an error when it does not fit.
 fn as_i32(value: u32) -> Result<i32, ScanError> {
     i32::try_from(value).map_err(|_| ScanError::Failed("a scanner value does not fit".into()))
@@ -1821,6 +1816,12 @@ impl Drop for TymedRestore<'_> {
 /// driver reports the tray at all (not the inbox WSD driver).
 fn feeder_ready_signal(bit: bool, bit_is_unreliable_when_clear: bool) -> Option<bool> {
     if bit || !bit_is_unreliable_when_clear { Some(bit) } else { None }
+}
+
+/// [`feeder_ready_signal`] from the decoded status word. The word is read as flags, so a driver that sets
+/// the top bit still gets its `FEED_READY` bit read.
+fn feeder_ready_from_status(status: &HandlingStatus, bit_is_unreliable_when_clear: bool) -> Option<bool> {
+    feeder_ready_signal(status.feeder_ready == Some(true), bit_is_unreliable_when_clear)
 }
 
 #[cfg(test)]
@@ -1942,5 +1943,13 @@ mod tests {
         assert_eq!(super::feeder_ready_signal(true, false), Some(true));
         assert_eq!(super::feeder_ready_signal(false, true), None);
         assert_eq!(super::feeder_ready_signal(false, false), Some(false));
+    }
+
+    #[test]
+    fn a_status_word_with_the_top_bit_set_still_reports_a_loaded_feeder() {
+        let loaded_with_bit_31 = i32::MIN | 0x1; // FEED_READY
+        assert_eq!(super::feeder_ready_from_status(&status_from_bits(loaded_with_bit_31), false), Some(true));
+        assert_eq!(super::feeder_ready_from_status(&status_from_bits(i32::MIN), false), Some(false));
+        assert_eq!(super::feeder_ready_from_status(&status_from_bits(i32::MIN), true), None);
     }
 }
