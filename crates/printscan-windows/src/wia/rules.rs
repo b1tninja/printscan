@@ -242,8 +242,11 @@ fn restated(error: &ScanError, sentence: &str) -> ScanError {
 
 /// The sentence [`after_transfer`] gives a feeder transfer that delivered nothing and named no fault.
 pub fn no_usable_page(error: &ScanError) -> bool {
-    error.to_string().starts_with("The scanner did not deliver a usable page.")
+    error.to_string().starts_with(NO_USABLE_PAGE)
 }
+
+/// The start of the sentence [`after_transfer`] gives a transfer that delivered nothing and named no fault.
+const NO_USABLE_PAGE: &str = "The scanner did not deliver a usable page.";
 
 /// A Windows failure that does not name the fault. A later status read can.
 pub fn generic_scan_failure(error: &ScanError) -> bool {
@@ -254,6 +257,9 @@ pub fn generic_scan_failure(error: &ScanError) -> bool {
         || text == "Unspecified error"
         || text == "The parameter is incorrect."
         || text.starts_with("The scan was interrupted.")
+        // What `after_transfer` makes of a generic failure that delivered nothing: still a failure that names no fault,
+        // so a later status read can explain it and a banded transfer can fall back to a file transfer.
+        || text.starts_with(NO_USABLE_PAGE)
 }
 
 /// Whether the error's sentence is the one for a busy device.

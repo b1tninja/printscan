@@ -135,6 +135,24 @@ mod windows_rules {
     }
 
     #[test]
+    fn a_banded_failure_that_delivered_nothing_still_falls_back_to_a_file_transfer() {
+        // `receive_bands` passes the transfer error through `after_transfer_checked`, which restates a generic failure
+        // with no pages as "did not deliver a usable page"; the backend then decides on the fallback from that error.
+        for text in ["The parameter is incorrect.", "Unspecified error", "The scan failed (0x80004005)."] {
+            let restated = rules::after_transfer_checked(0, false, 0, false, Some(ScanError::Failed(text.into()))).unwrap_err();
+            assert!(rules::no_usable_page(&restated), "{restated}");
+            let ready = HandlingStatus { feeder_ready: Some(true), ..HandlingStatus::default() };
+            let explained = rules::explain_transfer_failure(restated, ready, false, 0, 1);
+            assert!(rules::retry_with_file_transfer(&explained), "{text}: {explained}");
+        }
+        // A named fault after a restated generic failure still wins and does not retry.
+        let jammed = HandlingStatus { jam: true, ..HandlingStatus::default() };
+        let restated = rules::after_transfer_checked(0, false, 0, false, Some(ScanError::Failed("Unspecified error".into()))).unwrap_err();
+        let explained = rules::explain_transfer_failure(restated, jammed, false, 0, 1);
+        assert!(!rules::retry_with_file_transfer(&explained), "{explained}");
+    }
+
+    #[test]
     fn retry_with_file_transfer_only_for_unnamed_mode_rejection() {
         for text in [
             "The scanner reported an error.",
