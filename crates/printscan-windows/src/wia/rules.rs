@@ -209,6 +209,13 @@ pub fn status_from_bits(bits: i32) -> HandlingStatus {
     }
 }
 
+/// The status of a read that may have failed. A failed read is not "all clear": it leaves everything unknown
+/// (`feeder_ready: None`), so Auto still tries the feeder and falls back to the glass, as for a driver that does
+/// not report the tray.
+pub fn status_from_read(bits: Option<i32>) -> HandlingStatus {
+    bits.map(status_from_bits).unwrap_or_default()
+}
+
 /// WIA document-handling capability bits: feeder, flatbed, duplex.
 pub fn handling_caps(bits: i32) -> (bool, bool, bool) {
     (bits & 0x1 != 0, bits & 0x2 != 0, bits & 0x4 != 0)

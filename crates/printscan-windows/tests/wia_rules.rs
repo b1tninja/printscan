@@ -279,6 +279,20 @@ mod windows_rules {
     }
 
     #[test]
+    fn a_failed_status_read_is_unknown_not_an_empty_feeder() {
+        let unknown = rules::status_from_read(None);
+        assert_eq!(unknown.feeder_ready, None);
+        assert_eq!(unknown, HandlingStatus::default());
+        assert!(rules::acquire_block_reason(unknown).is_none());
+        // An answered read, even an all-clear word, is a reading: the tray is empty.
+        assert_eq!(rules::status_from_read(Some(0)).feeder_ready, Some(false));
+        assert_eq!(rules::status_from_read(Some(1)).feeder_ready, Some(true));
+        // Auto: an unknown tray tries the feeder, an empty one goes to the glass.
+        assert_eq!(Source::Auto.resolve(unknown.feeder_ready, true, true).ok(), Some(Source::Feeder));
+        assert_eq!(Source::Auto.resolve(Some(false), true, true).ok(), Some(Source::Glass));
+    }
+
+    #[test]
     fn wsd_feeder_skips_empty_tray_preflight() {
         assert!(!rules::feeder_empty_blocks_acquire(Source::Feeder, false, true));
         assert!(rules::feeder_empty_blocks_acquire(Source::Feeder, false, false));

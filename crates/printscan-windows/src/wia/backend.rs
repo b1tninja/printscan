@@ -474,10 +474,10 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
         let wsd = port_name.as_deref().map(Connection::from_port) == Some(Connection::Wsd)
             || settings.device.to_ascii_lowercase().contains("wsd")
             || dev_name.to_ascii_lowercase().contains("wsd");
-        (read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_CAPABILITIES).unwrap_or(0), read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_STATUS).unwrap_or(0), wsd)
+        (read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_CAPABILITIES).unwrap_or(0), read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_STATUS).ok(), wsd)
     };
     let (has_feeder, has_glass, duplex_cap) = handling_caps(root_caps);
-    let handling_status = status_from_bits(status_bits);
+    let handling_status = rules::status_from_read(status_bits);
     if trace.enabled() {
         trace.status("probe", handling_status);
     }
