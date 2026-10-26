@@ -835,7 +835,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
                     let error = rules::explain_transfer_failure(error, inferable(status_after, wsd_port), on_feeder, 0, pages_requested);
                     if rules::retry_with_file_transfer(&error) {
                         log::warn!("scan: banded transfer did not return a page ({error}); trying a file transfer");
-                        let _ = write_i4(&item, WIA_IPA_TYMED, previous_tymed);
+                        let _ = write_i4(&item, WIA_IPA_TYMED, file_tymed(previous_tymed, callback));
                     } else {
                         return Err(error);
                     }
@@ -1848,6 +1848,8 @@ mod tests {
         assert_eq!(file_tymed(2, 128), 2);
         assert_eq!(file_tymed(1, 128), 1);
         assert_eq!(file_tymed(128, 128), 2);
+        // The same rule serves all three fallbacks (no interface, callback not read back, banded transfer retried as a
+        // file): an item that started on the callback type is never left there.
     }
 
     #[test]
