@@ -293,6 +293,24 @@ mod windows_rules {
     }
 
     #[test]
+    fn a_failed_status_read_does_not_claim_an_empty_feeder() {
+        let unread = rules::status_for_inference(None);
+        assert_eq!(unread.feeder_ready, Some(true));
+        assert!(rules::acquire_block_reason(unread).is_none());
+        // No "the feeder is empty" refusal before a feeder transfer.
+        assert!(!rules::feeder_empty_blocks_acquire(Source::Feeder, unread.feeder_ready.unwrap_or(true), false));
+        // An answered all-clear word still is an empty tray.
+        assert!(rules::feeder_empty_blocks_acquire(Source::Feeder, rules::status_for_inference(Some(0)).feeder_ready.unwrap_or(true), false));
+        // A generic failure after no pages keeps its own sentence (and the file-transfer retry), not "no paper".
+        let generic = || ScanError::Failed("The scan failed (0x80004005).".into());
+        let unread_error = rules::explain_transfer_failure(generic(), unread, true, 0, 1);
+        assert!(!unread_error.to_string().contains("no paper"), "{unread_error}");
+        assert!(rules::retry_with_file_transfer(&unread_error), "{unread_error}");
+        let empty_error = rules::explain_transfer_failure(generic(), rules::status_for_inference(Some(0)), true, 0, 1);
+        assert!(empty_error.to_string().contains("no paper"), "{empty_error}");
+    }
+
+    #[test]
     fn wsd_feeder_skips_empty_tray_preflight() {
         assert!(!rules::feeder_empty_blocks_acquire(Source::Feeder, false, true));
         assert!(rules::feeder_empty_blocks_acquire(Source::Feeder, false, false));

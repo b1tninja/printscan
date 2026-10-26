@@ -216,6 +216,16 @@ pub fn status_from_read(bits: Option<i32>) -> HandlingStatus {
     bits.map(status_from_bits).unwrap_or_default()
 }
 
+/// The status a transfer failure or a preflight reasons from. A failed read names no fault and does not say the tray
+/// is empty, so it counts as paper present (`feeder_ready: Some(true)`): no "the feeder is empty" refusal, no
+/// "no paper" sentence in place of the driver's own, and the banded-to-file retry is not cut short.
+pub fn status_for_inference(bits: Option<i32>) -> HandlingStatus {
+    match bits {
+        Some(bits) => status_from_bits(bits),
+        None => HandlingStatus { feeder_ready: Some(true), ..HandlingStatus::default() },
+    }
+}
+
 /// WIA document-handling capability bits: feeder, flatbed, duplex.
 pub fn handling_caps(bits: i32) -> (bool, bool, bool) {
     (bits & 0x1 != 0, bits & 0x2 != 0, bits & 0x4 != 0)

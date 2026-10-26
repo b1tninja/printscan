@@ -154,15 +154,17 @@ fn read_scanner(mgr: &IWiaDevMgr2, id: &str, name: &str) -> Result<Scanner, Scan
     // Only an answered read lets `feeder`/`flatbed`/`duplex` = false mean "absent"; a failed read stays Unknown.
     let units_read = caps_read.is_ok();
     let caps = caps_read.unwrap_or(0);
-    let status = read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_STATUS).unwrap_or(0);
-    let mut handling_status = status_from_bits(status);
+    let status_read = read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_STATUS).ok();
+    let mut handling_status = rules::status_from_read(status_read);
     let (feeder, flatbed, duplex) = handling_caps(caps);
     let feeder_capacity = read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_CAPACITY).ok().and_then(|n| u32::try_from(n).ok()).filter(|n| *n > 0);
     let port = read_string(&root, WIA_DIP_PORT_NAME).ok().filter(|text| !text.is_empty());
     let connection = port.as_deref().map(Connection::from_port).unwrap_or(Connection::Unknown);
     // One reading of the tray everywhere: the inbox WSD driver's clear feeder bit is not a reading, so it is "not
     // reported" in `handling_status` too (the raw bit would make `device_view(details)` show an empty tray as Off).
-    let feeder_ready = feeder_ready_signal(handling_status.feeder_ready == Some(true), connection == Connection::Wsd);
+    // A status read that failed stays unknown: it is not an empty tray.
+    let feeder_ready =
+        if status_read.is_some() { feeder_ready_signal(handling_status.feeder_ready == Some(true), connection == Connection::Wsd) } else { None };
     handling_status.feeder_ready = feeder_ready;
     // WIA 2.0 keeps the optical resolution, the page range and the maximum scan area on the
     // transfer items (the root has only the handling bits); a WIA 1.0 style root is the fallback.
@@ -539,14 +541,14 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
     } else {
         let _ = write_handling_select(&root, source, settings.duplex);
     }
-    let status_now = status_from_bits(read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_STATUS).unwrap_or(0));
+    let status_now = rules::status_for_inference(read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_STATUS).ok());
     if trace.enabled() {
         trace.status("preflight", status_now);
     }
     if let Some(reason) = rules::acquire_block_reason(status_now) {
         return Err(ScanError::Failed(reason.into()));
     }
-    if rules::feeder_empty_blocks_acquire(source, status_now.feeder_ready.unwrap_or(false), wsd_port) {
+    if rules::feeder_empty_blocks_acquire(source, status_now.feeder_ready.unwrap_or(true), wsd_port) {
         return Err(ScanError::Failed("the feeder is empty".into()));
     }
     if source == Source::Feeder && status_now.feeder_ready != Some(true) && wsd_port {
@@ -831,7 +833,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
                     if trace.enabled() {
                         trace.phase("transfer_end", &[("mode", "banded"), ("outcome", "error")]);
                     }
-                    let status_after = status_from_bits(read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_STATUS).unwrap_or(0));
+                    let status_after = rules::status_for_inference(read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_STATUS).ok());
                     let error = rules::explain_transfer_failure(error, inferable(status_after, wsd_port), on_feeder, 0, pages_requested);
                     if rules::retry_with_file_transfer(&error) {
                         log::warn!("scan: banded transfer did not return a page ({error}); trying a file transfer");
@@ -911,7 +913,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
         std::mem::take(&mut guard.pages)
     };
     let cancelled = settings.cancel.as_ref().is_some_and(craft_scan::CancelToken::is_requested);
-    let status_after = status_from_bits(read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_STATUS).unwrap_or(0));
+    let status_after = rules::status_for_inference(read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_STATUS).ok());
     if trace.enabled() {
         trace.status("after_transfer", status_after);
         let outcome = if cancelled {
@@ -1771,7 +1773,7 @@ fn receive_bands(
     }
     let pages = std::mem::take(&mut guard.pages);
     drop(guard);
-    let status_after = status_from_bits(read_i4(root, WIA_DPS_DOCUMENT_HANDLING_STATUS).unwrap_or(0));
+    let status_after = rules::status_for_inference(read_i4(root, WIA_DPS_DOCUMENT_HANDLING_STATUS).ok());
     let page_count = pages.len();
     let cancelled = cancel.as_ref().is_some_and(craft_scan::CancelToken::is_requested);
     // After a cancel, whatever the driver returns is the stop, not a fault.
