@@ -454,6 +454,12 @@ fn log_acquire_ok(acquired: &Acquired) {
     log::info!("scan: {} page(s) from {} at {} dpi ({size}, {bytes} bytes)", acquired.pages.len(), acquired.source.name(), dpi,);
 }
 
+/// The media type a file transfer runs with after the callback type was tried: what the item had before, unless
+/// that was the callback type itself (then a plain file, 2).
+fn file_tymed(previous: i32, callback: i32) -> i32 {
+    if previous == callback { 2 } else { previous }
+}
+
 /// `route` receives the resolved source and whether the glass exists, as soon as they are known.
 fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) -> Result<Acquired, ScanError> {
     let settings = settings.checked()?;
@@ -788,7 +794,14 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
     let _restore = TymedRestore { item: &item, value: previous_tymed };
     let on_feeder = source == Source::Feeder;
     if banded_ready {
-        if let Ok(data) = child.cast::<IWiaDataTransfer>() {
+        let data = child.cast::<IWiaDataTransfer>();
+        if let Err(error) = &data {
+            // The callback write stuck but the interface is not there: the file transfer below must not run on a
+            // callback item.
+            log::warn!("scan: no IWiaDataTransfer on the item ({error}); using file transfer");
+            let _ = write_i4(&item, WIA_IPA_TYMED, file_tymed(previous_tymed, callback));
+        }
+        if let Ok(data) = data {
             let pages_requested = if settings.duplex { 0 } else { usize::try_from(settings.pages).unwrap_or(0) };
             if trace.enabled() {
                 trace.phase("transfer_start", &[("mode", "banded"), ("source", source.name())]);
@@ -834,6 +847,8 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
         let _ = write_i4(&item, WIA_IPA_TYMED, 2);
         log::warn!("scan: WSD port — skipping TYMED callback; using file transfer");
     } else {
+        // A write that was accepted but did not read back may have changed the item: put the media type back.
+        let _ = write_i4(&item, WIA_IPA_TYMED, file_tymed(previous_tymed, callback));
         log::warn!("scan: TYMED callback ({callback}) not accepted; using file transfer");
     }
     if let Some(progress) = &settings.progress {
@@ -1827,6 +1842,13 @@ fn feeder_ready_from_status(status: &HandlingStatus, bit_is_unreliable_when_clea
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_transfer_never_runs_on_a_callback_item() {
+        assert_eq!(file_tymed(2, 128), 2);
+        assert_eq!(file_tymed(1, 128), 1);
+        assert_eq!(file_tymed(128, 128), 2);
+    }
 
     #[test]
     fn a_band_is_at_least_sixty_four_kilobytes() {
