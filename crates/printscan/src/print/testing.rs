@@ -1,15 +1,15 @@
 //! Test doubles for apps that print through this crate. Cargo feature `testing`; it has no effect
 //! on default builds and adds no dependency. Never enable it in a shipped binary.
 //!
-//! [`FakeBackend`] is a configurable [`Backend`] for a [`Registry`](crate::Registry) of your own:
+//! [`FakeBackend`] is a configurable [`Backend`] for a [`Registry`](crate::print::Registry) of your own:
 //! it lists the printers you give it, answers details, takes documents, reports a scripted job
 //! status, and records every request so the test can assert on what the app sent (the
 //! [`Submission`]s, the cancels, how often the status was asked). Clones share their state, so one
 //! clone goes into the registry and the other stays with the test:
 //!
 //! ```
-//! use craft_print::testing::FakeBackend;
-//! use craft_print::{Document, Job, JobOptions, JobState, JobStatus, Registry, SubmitRequest, WatchSupport};
+//! use printscan::print::testing::FakeBackend;
+//! use printscan::print::{Document, Job, JobOptions, JobState, JobStatus, Registry, SubmitRequest, WatchSupport};
 //!
 //! let fake = FakeBackend::new("fake")
 //!     .with_printer("p1", true)
@@ -26,22 +26,22 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! For the WS-Print backend see `craft_print::wsd::testing` (an in-memory WS-Print printer; needs
+//! For the WS-Print backend see `printscan_wsd::print::testing` (an in-memory WS-Print printer; needs
 //! the `wsd` feature too). There is no in-memory IPP printer: the fake IPP printer is fakeprint.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime};
 
-use craft_job::{JobId, JobState, Progress, Tag, TagPlacement, TagSupport};
+use crate::job::{JobId, JobState, Progress, Tag, TagPlacement, TagSupport};
 
-use crate::backend::{
+use crate::print::backend::{
     Backend, BackendClass, DocumentFormat, ErrorKind, JobHint, PrintError, PrinterDetails, PrinterRef, PrinterStatus, SubmitRequest,
 };
-use crate::job::{JobStatus, Submitted, WatchSupport};
-use crate::options::JobOptions;
-use crate::remote::{JobFilter, JobQueryCaps, RemoteJob, filter_jobs};
-use crate::tag::TagExt as _;
-use crate::{Job, PrinterOption};
+use crate::print::job::{JobStatus, Submitted, WatchSupport};
+use crate::print::options::JobOptions;
+use crate::print::remote::{JobFilter, JobQueryCaps, RemoteJob, filter_jobs};
+use crate::print::tag::TagExt as _;
+use crate::print::{Job, PrinterOption};
 
 /// What a [`FakeBackend`] was asked to print.
 #[derive(Clone, Debug)]
@@ -54,7 +54,7 @@ pub struct Submission {
     /// `printer`).
     pub job: Job,
     pub options: JobOptions,
-    /// Whether the request carried a [`crate::UserConfirmed`].
+    /// Whether the request carried a [`crate::print::UserConfirmed`].
     pub consented: bool,
     /// The idempotency tag the request carried (the registry removes it when the fake's
     /// [`TagSupport`] is none).
@@ -73,7 +73,7 @@ pub enum SubmitStep {
     /// Fail without creating a job: the printer did not act.
     Fail(PrintError),
     /// The printer **created the job**, but the reply was lost: the call fails with this error
-    /// (give it [`crate::RetrySafety::OutcomeUnknown`]) and the job exists in the fake's queue.
+    /// (give it [`crate::print::RetrySafety::OutcomeUnknown`]) and the job exists in the fake's queue.
     LoseReply(PrintError),
 }
 
@@ -88,7 +88,7 @@ struct Recorded {
     script: Vec<Result<JobStatus, PrintError>>,
     submit_script: Vec<SubmitStep>,
     jobs: Vec<RemoteJob>,
-    wakers: Vec<crate::WakeSender>,
+    wakers: Vec<crate::print::WakeSender>,
     push_healthy: bool,
 }
 
@@ -173,7 +173,7 @@ impl FakeBackend {
             tag_support: TagSupport::None,
             query_caps: JobQueryCaps::NONE,
             user: "fake-user".into(),
-            created_at: Arc::new(crate::clock::wall_now),
+            created_at: Arc::new(crate::print::clock::wall_now),
             title_max: None,
             open_job_timeout: None,
             push: false,
@@ -189,7 +189,7 @@ impl FakeBackend {
     }
 
     /// A fake that behaves like a **network IPP printer**: network class (every request needs a
-    /// [`crate::UserConfirmed`]), pollable status, a job listing that carries the creation time,
+    /// [`crate::print::UserConfirmed`]), pollable status, a job listing that carries the creation time,
     /// the user and finished jobs, and an idempotency tag stored in a **native job attribute**
     /// (the title is left alone and the listing returns the tag).
     pub fn ipp_like(name: &'static str) -> Self {
@@ -215,7 +215,7 @@ impl FakeBackend {
         self.configured(|c| c.open_job_timeout = Some(timeout))
     }
 
-    /// [`BackendClass::Network`] fakes need a [`crate::UserConfirmed`] on every request.
+    /// [`BackendClass::Network`] fakes need a [`crate::print::UserConfirmed`] on every request.
     #[must_use]
     pub fn with_class(self, class: BackendClass) -> Self {
         self.configured(|c| c.class = class)
@@ -242,7 +242,7 @@ impl FakeBackend {
 
     /// Shorthand for the `resolutions` of the details.
     #[must_use]
-    pub fn with_resolutions(self, resolutions: Vec<crate::Resolution>) -> Self {
+    pub fn with_resolutions(self, resolutions: Vec<crate::print::Resolution>) -> Self {
         self.configured(|c| c.details.resolutions = resolutions)
     }
 
@@ -610,14 +610,14 @@ impl Backend for FakeBackend {
 
     /// With [`Self::with_push`], a fresh wake receiver whose sender the fake keeps (see
     /// [`Self::wake_watches`]); otherwise `None`.
-    fn wake_source(&self, _job: &JobId) -> Option<crate::WakeReceiver> {
+    fn wake_source(&self, _job: &JobId) -> Option<crate::print::WakeReceiver> {
         if !self.config.push {
             return None;
         }
-        let (tx, rx) = crate::wake_channel();
+        let (tx, rx) = crate::print::wake_channel();
         let mut recorded = lock(&self.recorded);
         tx.set_healthy(recorded.push_healthy);
-        recorded.wakers.retain(crate::WakeSender::is_connected);
+        recorded.wakers.retain(crate::print::WakeSender::is_connected);
         recorded.wakers.push(tx);
         Some(rx)
     }

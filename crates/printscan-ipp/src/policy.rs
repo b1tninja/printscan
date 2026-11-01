@@ -4,11 +4,11 @@
 //!   plain HTTP; the port is 631 when the URI names none). The address is a literal IPv4 or IPv6
 //!   address that is loopback, link-local, private (RFC 1918) or unique-local; host names, public
 //!   addresses, user information, queries and fragments are refused, and so are redirects and
-//!   proxies (the transport's rules, see `craft-wsd`).
+//!   proxies (the transport's rules, see `printscan-wsd`).
 //! * `ipps://` and `https://` are refused with [`IppError::Tls`]: there is no TLS yet, and a numeric
 //!   address has no certificate to check anyway.
-//! * Consent is the registry's business: a [`crate::BackendClass::Network`] backend only receives
-//!   requests that carry a [`crate::UserConfirmed`].
+//! * Consent is the registry's business: a [`printscan::print::BackendClass::Network`] backend only receives
+//!   requests that carry a [`printscan::print::UserConfirmed`].
 
 use std::net::IpAddr;
 

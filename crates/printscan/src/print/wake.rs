@@ -1,5 +1,5 @@
 //! A bounded, coalescing "something happened" signal between a backend that can be told about
-//! changes (a push channel) and the [`crate::JobWatch`] that follows a job.
+//! changes (a push channel) and the [`crate::print::JobWatch`] that follows a job.
 //!
 //! A wake carries **no data**: it only means "ask for the status now". A watch that is woken polls
 //! like it would have a little later, so a lost, duplicated or forged wake can cost a request or some

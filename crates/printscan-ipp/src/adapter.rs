@@ -1,20 +1,20 @@
-//! The one place this backend names `craft-wsd`.
+//! The one place this backend names `printscan-wsd`.
 //!
-//! Every other module of [`crate::ipp`] imports the shared HTTP layer through here: the numeric
+//! Every other module of [`crate`] imports the shared HTTP layer through here: the numeric
 //! local-address URL policy, the injectable POST transport and its typed failures. IPP is carried
 //! as `POST application/ipp`, which is what the transport sends; the SOAP-specific `SOAPAction` and
 //! `Accept` headers the shared HTTP client adds are ignored by IPP servers.
 
 use std::sync::Arc;
 
-use crate::RetrySafety;
+use printscan::print::RetrySafety;
 
-pub use craft_wsd::transport::{Request, Response, Transport};
-pub use craft_wsd::{DeviceUrl, NetworkLimits};
-pub use craft_wsd::{Stage, TransportKind};
+pub use printscan_wsd::transport::{Request, Response, Transport};
+pub use printscan_wsd::{DeviceUrl, NetworkLimits};
+pub use printscan_wsd::{Stage, TransportKind};
 
-/// The shared protocol error, as `craft-wsd` reports it.
-pub type WireError = craft_wsd::Error;
+/// The shared protocol error, as `printscan-wsd` reports it.
+pub type WireError = printscan_wsd::Error;
 
 /// A transport the backend can hold and share between threads.
 pub type SharedTransport = Arc<dyn Transport + Send + Sync>;
@@ -22,7 +22,7 @@ pub type SharedTransport = Arc<dyn Transport + Send + Sync>;
 /// The blocking plain-HTTP transport: numeric local addresses only, no proxy, no redirects, capped
 /// replies and a timeout. It connects only when a request is made.
 pub fn default_transport() -> SharedTransport {
-    Arc::new(craft_wsd::http::HttpTransport::new())
+    Arc::new(printscan_wsd::http::HttpTransport::new())
 }
 
 /// What the shared layer says about repeating a request that failed with a typed transport error.
@@ -37,8 +37,8 @@ pub fn http_safety(status: u16, idempotent: bool) -> RetrySafety {
 
 fn wire_safety(error: WireError, idempotent: bool) -> RetrySafety {
     match error.retry_safety(idempotent) {
-        craft_wsd::RetrySafety::Safe => RetrySafety::Safe,
-        craft_wsd::RetrySafety::Idempotent => RetrySafety::Idempotent,
+        printscan_wsd::RetrySafety::Safe => RetrySafety::Safe,
+        printscan_wsd::RetrySafety::Idempotent => RetrySafety::Idempotent,
         // The shared enum is non-exhaustive: anything new is read as "it may have arrived".
         _ if idempotent => RetrySafety::Idempotent,
         _ => RetrySafety::OutcomeUnknown,

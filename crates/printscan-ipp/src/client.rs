@@ -19,7 +19,7 @@ use super::protocol::{Operation, StatusCode};
 /// request, body included, so a large document (`Print-Job`, `Send-Document`) over a slow link
 /// must not use up the budget meant for the printer's reply: that would end as an outcome-unknown
 /// timeout with the job possibly half made. The same floor as the WS-Print client's
-/// (`craft_wsd::SoapClient`).
+/// (`printscan_wsd::SoapClient`).
 const UPLOAD_FLOOR_BYTES_PER_SEC: u64 = 64 * 1024;
 
 /// `timeout` for the exchange plus the time to send `body_len` bytes at the upload floor.
@@ -198,7 +198,7 @@ pub struct Client<T> {
 }
 
 impl<T: Transport> Client<T> {
-    /// A client for the printer at `uri`: IPP 1.1 without fallback, user `craft`, default limits.
+    /// A client for the printer at `uri`: IPP 1.1 without fallback, user `printscan`, default limits.
     /// Nothing is sent until an operation is called.
     pub fn new(transport: T, uri: PrinterUri) -> Self {
         Self {
@@ -206,7 +206,7 @@ impl<T: Transport> Client<T> {
             uri,
             limits: NetworkLimits::default(),
             codec: Limits::default(),
-            user: "craft".to_owned(),
+            user: "printscan".to_owned(),
             version: IppVersion::V1_1,
             fallback: false,
             memory: None,

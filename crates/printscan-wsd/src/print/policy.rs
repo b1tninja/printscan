@@ -5,8 +5,8 @@
 //!   host names, public addresses and the other odd forms are refused. The rules and the
 //!   [`NetworkLimits`] numbers are the WSD core's; [`PrinterUrl`] is the print-flavoured wrapper
 //!   around its `DeviceUrl`.
-//! * Consent is the registry's business: a [`crate::BackendClass::Network`] backend only receives
-//!   requests that carry a [`crate::UserConfirmed`].
+//! * Consent is the registry's business: a [`printscan::print::BackendClass::Network`] backend only receives
+//!   requests that carry a [`printscan::print::UserConfirmed`].
 
 use std::net::IpAddr;
 
@@ -50,7 +50,7 @@ impl PrinterUrl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wsd::error::WsdError;
+    use crate::print::error::WsdError;
 
     #[test]
     fn only_numeric_local_addresses_are_printer_urls() {

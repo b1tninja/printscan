@@ -79,7 +79,7 @@ PrinterNeedsAttention, Retrying, NeedsAttention, Sent, Done, DoneWithWarnings, F
   of how it was sent (`Submitted::effective`; for WS-Print the ticket shape). **Never the document
   bytes.** The bytes come from the `DocumentSource` the app supplies, read again for each attempt; a
   source that fails is an attempt that failed in `Phase::Prepare` with nothing sent.
-* **A reconcile fingerprint** (`craft_job::Fingerprint`): title, tag, the user the backend sends as,
+* **A reconcile fingerprint** (`printscan::job::Fingerprint`): title, tag, the user the backend sends as,
   the first attempt's send time (`submitted`) and a clock-skew `window` (`PrintJobConfig::reconcile_slack`);
   the earliest creation time to accept is `submitted - window` (`FingerprintExt::since`).
 * **A bounded status trail** (`TrailEntry`): lifecycle changes, printer readings and notes, each with a
@@ -110,7 +110,7 @@ document bytes and no protocol text.
 | `CheckDeviceFirst` | the outcome is unknown, the printer gave up (look at the paper path), or the backend cannot be asked (a resubmit might duplicate) |
 | `DoNotRetry` | printed; the job is in flight; cancelled on purpose; or the error is not transient |
 
-### `view()`: the print as a `craft_job::JobView`
+### `view()`: the print as a `printscan::job::JobView`
 
 `PrintJob::view()` (and `Snapshot::view()`) fills the record that a scan job fills too, so one UI
 component can list prints and scans. No I/O; it is the snapshot reshaped.
@@ -169,7 +169,7 @@ protocol allows:
 
 ```text
 SubmitRequest::with_tag(tag)        // the request carries it
-Backend::tag_support() -> TagSupport      // craft_job: None | Carried(TagPlacement) | Partial(TagPlacement)
+Backend::tag_support() -> TagSupport      // printscan::job: None | Carried(TagPlacement) | Partial(TagPlacement)
 TagPlacement::JobNameSuffix   // a suffix on the job name: "Quarterly report [ref abc123de]"
 TagPlacement::DocumentName    // the same suffix on the document name
 TagPlacement::NativeAttribute // a job attribute of the protocol (a dedicated, searchable field)
@@ -183,7 +183,7 @@ TagPlacement::None            // the backend cannot carry it
 * `TagSupport::Carried` says the tag is carried and `list_jobs` returns it back, so that reconcile can
   match on it (`TagSupportExt::matchable`). `Partial` carries the tag but a device may rewrite it; a
   reconcile then falls back to title, user and time. `None` carries nothing. The tag text is
-  `craft_job::Tag` (`Tag::parse_from_title` finds the last well-formed marker in a title, wherever it is).
+  `printscan::job::Tag` (`Tag::parse_from_title` finds the last well-formed marker in a title, wherever it is).
 * **Defaults.** On for `BackendClass::Network` backends, off for `BackendClass::Local`
   (`TagPolicy::Auto`; `Always` and `Never` override it per job).
   * Network: connection loss is exactly where the ambiguity arises, and the user's job name is a
@@ -218,7 +218,7 @@ capabilities one at a time and a caller can tell exactly which it has.
 RemoteJob   { id: JobId, title, user: Option<_>, created: Option<SystemTime>, state: JobState,
               reasons, tag: Option<Tag>, ours: bool, sheets_done, pages_done }
 JobFilter   { user, title, since, tag, states }      // user/title/since/states restrict; tag marks `ours`
-Fingerprint { title, user, submitted, window, tag }   // craft_job: what reconcile looks for
+Fingerprint { title, user, submitted, window, tag }   // printscan::job: what reconcile looks for
 Reconciled  { NotFound, Found(RemoteJob), Ambiguous(Vec<RemoteJob>) }
 JobQueryCaps{ list, created_time, user, tag, history }
 

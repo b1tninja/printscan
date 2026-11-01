@@ -22,14 +22,20 @@ tiff = { version = "0.11", default-features = false, optional = true }
 tempfile = { version = "3", optional = true }
 
 [features]
-default = ["scan"]
+default = ["scan", "print"]
 # Serialize and Deserialize on the plain data types (see docs/job.md, "Wire format").
 serde = ["dep:serde"]
 # The scan contract, backend registry, ScanJob and page handling (`printscan::scan`).
 scan = ["dep:thiserror", "dep:image", "dep:png", "dep:tiff"]
+# The print backend registry, tracked jobs, conversion and job watching (`printscan::print`).
+print = []
+# Test doubles for apps that print through `printscan::print`: `printscan::print::testing`. Never in a shipped binary.
+testing = ["print"]
 # The scan job journal for large piles and manual duplex (`printscan::devices`).
 devices = ["scan", "serde", "dep:serde_json", "dep:tempfile"]
 
 [dev-dependencies]
-printscan = { path = ".", features = ["serde", "scan", "devices"] }
+printscan = { path = ".", features = ["serde", "scan", "devices", "print", "testing"] }
 serde_json = { workspace = true }
+# The WS-Print backend for the conversion tests that print through it.
+printscan-wsd = { path = "../printscan-wsd", features = ["testing"] }

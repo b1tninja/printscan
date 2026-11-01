@@ -2,8 +2,8 @@
 //! a CUPS-like one (driver options, no status), an IPP-like one (state up front), a WSD-like one
 //! (several formats, consent required) and one that always fails.
 
-use craft_print::testing::FakeBackend;
-use craft_print::{
+use printscan::print::testing::FakeBackend;
+use printscan::print::{
     BackendClass, CancelToken, ColourMode, Document, DocumentFormat, ErrorKind, Job, JobHint, JobOptions, NativeCode, Orientation, PrintError,
     PrinterDetails, PrinterOption, PrinterRef, PrinterState, PrinterStatus, Progress, Quality, RegisterError, Registry, Resolution, SubmitRequest,
     UserConfirmed, namespaced_id, split_id,
@@ -304,13 +304,12 @@ fn names_are_validated_and_kinds_say_whether_to_retry() {
     }
 }
 
-#[cfg(any(windows, all(unix, not(target_arch = "wasm32"))))]
 #[test]
-fn the_process_wide_registry_holds_the_platform_backend() {
-    let names = craft_print::registry().backend_names();
-    assert_eq!(names, [if cfg!(windows) { "spooler" } else { "cups" }]);
-    // The built-in name cannot be registered a second time.
-    assert!(matches!(craft_print::register(Box::new(craft_print::SystemSpooler)), Err(RegisterError::DuplicateName { .. })));
+fn the_process_wide_registry_starts_empty_and_takes_a_name_once() {
+    assert!(printscan::print::registry().backend_names().is_empty());
+    printscan::print::register(Box::new(FakeBackend::new("echo"))).unwrap();
+    assert_eq!(printscan::print::registry().backend_names(), ["echo"]);
+    assert!(matches!(printscan::print::register(Box::new(FakeBackend::new("echo"))), Err(RegisterError::DuplicateName { .. })));
 }
 
 #[test]

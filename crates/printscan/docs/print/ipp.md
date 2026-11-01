@@ -1,6 +1,6 @@
 # The IPP backend
 
-`craft_print::ipp::IppBackend` (cargo feature `ipp`, on by default, not built for `wasm32`) is a
+`printscan_ipp::IppBackend` (cargo feature `ipp`, on by default, not built for `wasm32`) is a
 `BackendClass::Network` backend named `ipp`. This note is the reference for what it sends, what it reads,
 how errors are classified, and what it does not do. The overview is in the crate README.
 
@@ -15,20 +15,20 @@ The codec, the operations and the mappings are this crate's own code.
 | Printer | `ipp:<printer uri>`; the native id is the canonical URI `ipp://<ip>:<port><path>` (the port is always written) |
 | Job | `ipp:<printer uri>#<job id>`; `IppBackend::job_id(uri, n)`, `parse_native`, `parse_job_id` (typed, no string concatenation) |
 | Accepted URIs | `ipp://` and `http://`, a numeric loopback, link-local or private address, port 631 when none is named. `ipp://h/p` and `http://h:631/p` are the same printer |
-| Refused | host names, public addresses, user information, queries, fragments (`craft-wsd`'s `DeviceUrl` policy); `ipps://` and `https://` with a TLS-specific error (`IppError::Tls`, `ErrorKind::InvalidRequest`); no redirects, no proxies |
+| Refused | host names, public addresses, user information, queries, fragments (`printscan-wsd`'s `DeviceUrl` policy); `ipps://` and `https://` with a TLS-specific error (`IppError::Tls`, `ErrorKind::InvalidRequest`); no redirects, no proxies |
 
 The app adds printers (`add`, `add_named`, `with_printers`); nothing is discovered, no multicast is sent,
 and no connection is opened by building a backend, adding a printer or listing printers. A connection is
 made by `printer_details` (one `Get-Printer-Attributes`) and by a job. Every job needs a `UserConfirmed`.
 
-IPP is `POST application/ipp` over the transport of `craft-wsd`. That transport also sends a `SOAPAction`
+IPP is `POST application/ipp` over the transport of `printscan-wsd`. That transport also sends a `SOAPAction`
 header and a SOAP `Accept` header, which IPP servers ignore. The reply must be HTTP 200 with an IPP body
 whose request id matches.
 
 ## Requests
 
 Every request starts with `attributes-charset` (utf-8), `attributes-natural-language` (en), `printer-uri`,
-then `job-id` where the operation names one, then `requesting-user-name` (default `craft`, never the account
+then `job-id` where the operation names one, then `requesting-user-name` (default `printscan`, never the account
 name; `with_user_name`). The IPP version is negotiated, see below.
 
 ### IPP version
@@ -190,7 +190,7 @@ The wait is the HTTP `Retry-After` when the printer sent one, else the default s
 The error's `NativeCode` is `{ domain: "ipp", code, name }`. HTTP failures use `{ domain: "http", code }`:
 401 and 403 are Rejected (authentication), 413 InvalidRequest, 426 Failed (the printer wants TLS), 408 Timeout,
 425, 429 Busy and 503 Unavailable (all `Safe`, with their waits), other 5xx Unavailable and acted on, other 4xx
-Failed. Transport failures follow `craft-wsd`'s typed kinds and stages: a connect failure is `Safe`; a closed
+Failed. Transport failures follow `printscan-wsd`'s typed kinds and stages: a connect failure is `Safe`; a closed
 connection, timeout or unreadable reply after the request was written is `OutcomeUnknown` for a send and
 `Idempotent` for a read. A reply that does not decode, answers another request id or is not
 `application/ipp` is `Failed`. The table is pinned by `ipp::error` tests.
@@ -208,7 +208,7 @@ every prefix of a message and every single-byte corruption.
 
 ## Not implemented
 
-* **TLS.** `ipps://` and `https://` are refused (`craft-wsd` has no TLS). A numeric local address has no
+* **TLS.** `ipps://` and `https://` are refused (`printscan-wsd` has no TLS). A numeric local address has no
   certificate to check anyway.
 * **Authentication** (HTTP Basic or Digest, `client-error-not-authenticated`): reported, not answered.
 * **IPP subscriptions** (`Create-Job-Subscription`, `Get-Notifications`): status is polled.

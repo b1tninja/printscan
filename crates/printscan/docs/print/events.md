@@ -3,7 +3,7 @@
 `docs/job-lifecycle.md` and `docs/job-tracking.md` describe how a job is followed by asking: one
 `GetJobElements` per poll, a back-off while nothing changes, a ceiling and a few staleness rules. This
 note describes the optional alternative the protocol offers, WS-Eventing, what it costs, and the
-small, deliberately conservative way `craft-print` uses it. Everything here is behind the `wsd`
+small, deliberately conservative way `printscan::print` uses it. Everything here is behind the `wsd`
 feature, is **off unless the app configures it**, and changes no result a poll would produce.
 
 ## 1. What WS-Print eventing gives
@@ -41,7 +41,7 @@ back; the printer answers with a subscription manager reference that carries an 
   space them) and **cumulative** events (conditions, `JobEndState`: every one matters and none may be
   dropped). `SetEventRate` sets the minimum spacing of the CompleteState events (a printer's default
   is typically around 30 seconds). The consequence: a progress change can be tens of seconds late
-  when it arrives as an event, while an end state is prompt. `craft-print` does not call `SetEventRate`
+  when it arrives as an event, while an end state is prompt. `printscan::print` does not call `SetEventRate`
   (it changes a printer-wide setting other clients share); it uses the events as they come.
 * *Resync:* events say that something changed. The authoritative state is always asked for:
   `GetJobElements` for a job (what `Backend::job_status` is) and `GetPrinterElements` for the printer.
@@ -191,8 +191,8 @@ renewal, back-off and quiet-window behaviour are tested without sleeping.
 * `JobWatch` takes the receiver (`with_wake`): a pending wake makes the next poll due now (at most one
   wake poll per second), a healthy receiver stretches the idle cadence to `safety_interval`, and an
   unhealthy one leaves the watch exactly as it was without events.
-* `craft_print::wsd::events` (`NotifyConfig`, `Events`, `Wake`, `EventStats`): the listener, the
-  subscription manager and the mapping from verified events to wakes. The `craft-wsd` types it uses
+* `printscan_wsd::print::events` (`NotifyConfig`, `Events`, `Wake`, `EventStats`): the listener, the
+  subscription manager and the mapping from verified events to wakes. The `printscan-wsd` types it uses
   are reached through `wsd/adapter.rs` only.
 * `WsdBackend::with_events`, `maintain_events`, `shutdown_events`, `events()`, `events_status()`
   (plain data: where it listens, per-printer `subscribed` / `healthy` / watchers / seconds since the last
@@ -206,7 +206,7 @@ renewal, back-off and quiet-window behaviour are tested without sleeping.
 * In this repository, without any printer: the listener against static hostile byte vectors sent by a
   test client over a loopback socket (forged token, wrong identifier, malformed and oversized
   messages, wrong namespace, unsubscribed types, duplicates, floods, a stalled sender), the
-  subscription manager against canned `craft-wsd` WS-Eventing replies from a scripted transport,
+  subscription manager against canned `printscan-wsd` WS-Eventing replies from a scripted transport,
   lease, renewal, expiry, back-off and `SubscriptionEnd` flows on the injected clock, `JobWatch` and
   `PrintJob` on the trait-level fake backend, and listener shutdown.
 * The fake printer is `fakeprint`. Eventing against it (the six events delivered to this listener,

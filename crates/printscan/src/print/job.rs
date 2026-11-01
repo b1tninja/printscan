@@ -1,23 +1,23 @@
 //! What a backend hands back once a printer has accepted a document, and how a job's progress is
 //! described afterwards. See "Job lifecycle" in the crate README for the reasoning.
 //!
-//! Submitting and watching are separate calls. [`crate::backends::Backend::submit`] returns a
+//! Submitting and watching are separate calls. [`crate::print::backends::Backend::submit`] returns a
 //! [`Submitted`] as soon as the printer has accepted the document; everything after that (is it
 //! printing, did it finish, cancel it) is a [`JobId`] plus one bounded request at a time
-//! ([`crate::backends::Backend::job_status`], [`crate::backends::Backend::cancel_job`]), driven by
-//! the caller (see [`crate::JobWatch`]).
+//! ([`crate::print::backends::Backend::job_status`], [`crate::print::backends::Backend::cancel_job`]), driven by
+//! the caller (see [`crate::print::JobWatch`]).
 
 use std::time::{Duration, SystemTime};
 
-use craft_job::{ExpectedTotals, JobId, JobState, ParseIdError, Tag};
+use crate::job::{ExpectedTotals, JobId, JobState, ParseIdError, Tag};
 
-use crate::backend::{ErrorKind, PrintError, Receipt};
-use crate::convert::Conversion;
-use crate::options::JobOptions;
-use crate::{Duplex, Job};
+use crate::print::backend::{ErrorKind, PrintError, Receipt};
+use crate::print::convert::Conversion;
+use crate::print::options::JobOptions;
+use crate::print::{Duplex, Job};
 
-// `JobId`, `ParseIdError`, `JobState` and `ExpectedTotals` are `craft-job`'s (shared with scanning);
-// the crate root re-exports them, so `craft_print::JobId` and the others keep their paths.
+// `JobId`, `ParseIdError`, `JobState` and `ExpectedTotals` are `printscan::job`'s (shared with scanning);
+// the crate root re-exports them, so `printscan::print::JobId` and the others keep their paths.
 
 /// A malformed job id is a bad request for [`PrintError`] consumers.
 impl From<ParseIdError> for PrintError {
@@ -66,8 +66,8 @@ pub struct JobStatus {
     pub reasons: Vec<String>,
     /// What the printer says went slightly wrong in a job that otherwise completed (text for
     /// people). Empty when nothing. This is how "completed with warnings" is modelled: the state is
-    /// [`JobState::Completed`] and this list says more; a [`crate::PrintJob`] then ends as
-    /// [`crate::Outcome::CompletedWithWarnings`].
+    /// [`JobState::Completed`] and this list says more; a [`crate::print::PrintJob`] then ends as
+    /// [`crate::print::Outcome::CompletedWithWarnings`].
     pub warnings: Vec<String>,
     pub sheets_done: Option<u32>,
     pub sheets_total: Option<u32>,
@@ -88,7 +88,7 @@ impl JobStatus {
             sheets_total: None,
             pages_done: None,
             pages_total: None,
-            updated_at: crate::clock::wall_now(),
+            updated_at: crate::print::clock::wall_now(),
         }
     }
 
@@ -128,15 +128,15 @@ impl JobStatus {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum WatchSupport {
-    /// It cannot: [`crate::backends::Backend::job_status`] answers [`JobState::Unknown`] and a UI
+    /// It cannot: [`crate::print::backends::Backend::job_status`] answers [`JobState::Unknown`] and a UI
     /// should not poll. "Accepted, outcome unknown" is the final answer.
     #[default]
     None,
-    /// Ask again every [`crate::backends::Backend::recommended_poll_interval`].
+    /// Ask again every [`crate::print::backends::Backend::recommended_poll_interval`].
     Poll,
     /// The device can push changes and the backend currently trusts the channel. A push is only a
-    /// wake-up ([`crate::backends::Backend::wake_source`]): status always comes from polling, and
-    /// a [`crate::JobWatch`] polls at its (longer) safety interval in between. The WS-Print
+    /// wake-up ([`crate::print::backends::Backend::wake_source`]): status always comes from polling, and
+    /// a [`crate::print::JobWatch`] polls at its (longer) safety interval in between. The WS-Print
     /// backend reports it only when the app opted in (`WsdBackend::with_events`).
     Events,
 }
@@ -148,7 +148,7 @@ impl WatchSupport {
     }
 }
 
-/// What [`crate::backends::Backend::submit`] returns once the printer has **accepted** the
+/// What [`crate::print::backends::Backend::submit`] returns once the printer has **accepted** the
 /// document. It says nothing about the paper: follow the job with its [`JobId`] if the backend
 /// can ([`Submitted::watch`]).
 ///
@@ -173,7 +173,7 @@ pub struct Submitted {
     /// Filled in by the registry from the backend; `None` when there is nothing to poll.
     pub poll_interval: Option<Duration>,
     /// Filled in by the registry from the request's [`JobOptions::expected_pages`]; see
-    /// [`ExpectedTotals`]. [`crate::JobWatch::for_submitted`] uses it.
+    /// [`ExpectedTotals`]. [`crate::print::JobWatch::for_submitted`] uses it.
     pub expected: ExpectedTotals,
     /// Filled in by the registry: the idempotency tag the backend carried for this job, `None` when
     /// the request had none or the backend cannot carry one.
@@ -181,7 +181,7 @@ pub struct Submitted {
     /// How the backend sent the request, in its own words, for diagnostics (WS-Print: the ticket
     /// shape). Not for parsing.
     pub effective: Option<String>,
-    /// Filled in by the registry when the app's [`DocumentConverter`](crate::DocumentConverter)
+    /// Filled in by the registry when the app's [`DocumentConverter`](crate::print::DocumentConverter)
     /// had to make the document the printer accepts; `None` when it was sent as it was.
     pub conversion: Option<Conversion>,
 }
@@ -192,7 +192,7 @@ impl Submitted {
         Self {
             backend,
             job: None,
-            accepted_at: crate::clock::wall_now(),
+            accepted_at: crate::print::clock::wall_now(),
             status: None,
             warnings: Vec::new(),
             message: message.into(),
@@ -237,7 +237,7 @@ impl Submitted {
 }
 
 /// A receipt becomes an accepted job whose handle is the receipt's job id (so it is only
-/// watchable if the backend overrides [`crate::backends::Backend::job_status`]).
+/// watchable if the backend overrides [`crate::print::backends::Backend::job_status`]).
 impl From<Receipt> for Submitted {
     fn from(receipt: Receipt) -> Self {
         let mut submitted = Submitted::new(receipt.backend, receipt.message);
@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn malformed_job_ids_are_typed_errors() {
-        use craft_job::ParseIdErrorKind as K;
+        use crate::job::ParseIdErrorKind as K;
         let kind = |text: &str| text.parse::<JobId>().map_err(|e| e.kind());
         assert_eq!(kind("no-prefix"), Err(K::MissingSeparator));
         assert_eq!(kind(""), Err(K::MissingSeparator));
@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn expected_sheets_follow_duplex_and_copies() {
-        use crate::{Duplex, Job};
+        use crate::print::{Duplex, Job};
         let options = JobOptions::new().with_expected_pages(5);
         let simplex = ExpectedTotals::for_job(&Job::default(), &options);
         assert_eq!((simplex.pages, simplex.sheets), (Some(5), Some(5)));

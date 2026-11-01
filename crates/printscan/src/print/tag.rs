@@ -1,8 +1,8 @@
-//! The idempotency tag: a short random reference that one [`PrintJob`](crate::PrintJob) puts on
+//! The idempotency tag: a short random reference that one [`PrintJob`](crate::print::PrintJob) puts on
 //! every attempt of one print, so that a later reconcile can find a job that an attempt created even
 //! when its reply was lost.
 //!
-//! The data types ([`Tag`], [`TagSupport`], [`TagPlacement`]) are `craft-job`'s, shared with
+//! The data types ([`Tag`], [`TagSupport`], [`TagPlacement`]) are `printscan::job`'s, shared with
 //! scanning; this module adds what printing needs on top: a random tag ([`TagExt::random`]), putting
 //! it on a name within a length limit ([`TagExt::apply_to`]) and reading it back
 //! ([`TagExt::find_in`]), plus [`TagPolicy`].
@@ -16,7 +16,7 @@ use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use craft_job::{Tag, TagPlacement, TagSupport};
+use crate::job::{Tag, TagPlacement, TagSupport};
 
 /// Printing's additions to [`Tag`]. Import the trait (it is re-exported from the crate root) to
 /// call these as `Tag::random()`, `tag.apply_to(..)` and so on.
@@ -104,11 +104,11 @@ impl TagSupportExt for TagSupport {
     }
 }
 
-/// Whether a [`PrintJob`](crate::PrintJob) puts its tag on the requests it sends.
+/// Whether a [`PrintJob`](crate::print::PrintJob) puts its tag on the requests it sends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum TagPolicy {
-    /// On for [`BackendClass::Network`](crate::BackendClass::Network) backends, off for local ones.
+    /// On for [`BackendClass::Network`](crate::print::BackendClass::Network) backends, off for local ones.
     #[default]
     Auto,
     /// On wherever the backend can carry a tag.
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn a_marker_a_device_left_in_the_middle_of_the_name_is_still_found_but_not_stripped() {
-        // craft-job's rule: the last well-formed marker anywhere counts, so a name that a device
+        // printscan::job's rule: the last well-formed marker anywhere counts, so a name that a device
         // extended is still recognised. Only a trailing suffix is removed from the display title.
         let tag = Tag::parse("abc123de").unwrap_or_else(|_| Tag::random());
         assert_eq!(Tag::find_in("Report [ref abc123de] more"), Some(tag));

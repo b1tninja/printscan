@@ -6,8 +6,8 @@
 //! is a logical clock: every read moves it on by one millisecond and a sleep moves it on by the
 //! time slept without waiting, so a deadline loop always ends and nothing panics. That time is not
 //! the real time, so a `wasm32` host that wants real readings passes its own: a
-//! [`crate::Clock`] (`with_clock`) and a wall clock (`with_wall_clock`), and sets the times of a
-//! [`crate::JobStatus`] or [`crate::Submitted`] it builds itself.
+//! [`crate::print::Clock`] (`with_clock`) and a wall clock (`with_wall_clock`), and sets the times of a
+//! [`crate::print::JobStatus`] or [`crate::print::Submitted`] it builds itself.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};

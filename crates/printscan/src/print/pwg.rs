@@ -1,7 +1,7 @@
 //! PWG raster (`image/pwg-raster`) writer for grey, sRGB and Adobe RGB pages, 8 or 16 bits a colour ([`RasterType`]). Always available (no cargo
-//! feature, no dependency, builds for `wasm32`): an app's [`DocumentConverter`](crate::DocumentConverter)
+//! feature, no dependency, builds for `wasm32`): an app's [`DocumentConverter`](crate::print::DocumentConverter)
 //! that has already rendered pages to pixels calls [`encode`] to get a document a printer accepts.
-//! (`craft_print::wsd::pwg` re-exports this module.)
+//! (`printscan_wsd::print::pwg` re-exports this module.)
 //!
 //! The stream is the sync word `RaS2`, then per page a 1796-byte big-endian header followed by the
 //! pixel rows. Each row is preceded by a byte saying how many extra times the same row repeats
@@ -326,7 +326,7 @@ fn pack_row(row: &[u8], bpp: usize, out: &mut Vec<u8>) {
 }
 
 /// A reader for tests: the pages of a stream as (width, height, gray, pixels).
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub(crate) fn decode_typed_for_tests(data: &[u8]) -> Result<Vec<TypedPage>> {
     let be = |d: &[u8], at: usize| -> Result<u32> {
         d.get(at..at + 4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]])).ok_or_else(|| PwgError::Invalid("short header".into()))
@@ -388,9 +388,10 @@ pub(crate) fn decode_typed_for_tests(data: &[u8]) -> Result<Vec<TypedPage>> {
     Ok(pages)
 }
 
-/// The 8-bit pages of a stream, for the older tests.
-#[cfg(test)]
-pub(crate) fn decode_for_tests(data: &[u8]) -> Result<Vec<RasterPage>> {
+/// The 8-bit pages of a stream, for tests (here and in the WS-Print backend).
+#[cfg(any(test, feature = "testing"))]
+#[doc(hidden)]
+pub fn decode_for_tests(data: &[u8]) -> Result<Vec<RasterPage>> {
     decode_typed_for_tests(data)?
         .into_iter()
         .map(|p| match p.kind {

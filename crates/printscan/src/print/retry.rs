@@ -1,8 +1,8 @@
 //! Retry semantics for printing: where a failure happened ([`Phase`]), the clock that makes waiting
-//! testable, and the glue from a [`PrintError`] to [`craft_job`]'s retry decision.
+//! testable, and the glue from a [`PrintError`] to [`printscan::job`]'s retry decision.
 //!
-//! [`crate::RetrySafety`], [`crate::RetryPolicy`], [`RetryFacts`], [`RetryAdvice`], [`advise`] and [`Jitter`] are
-//! `craft-job`'s (shared with scanning) and re-exported from the crate root; [`retry_facts`] and
+//! [`crate::print::RetrySafety`], [`crate::print::RetryPolicy`], [`RetryFacts`], [`RetryAdvice`], [`advise`] and [`Jitter`] are
+//! `printscan::job`'s (shared with scanning) and re-exported from the crate root; [`retry_facts`] and
 //! [`advise_error`] build the facts from the error.
 //!
 //! Two questions, kept apart on purpose:
@@ -12,7 +12,7 @@
 //! * *Is repeating the request safe?* Only if nothing was accepted, or the request is idempotent.
 //!   A connection that closed after the request was written, or a timeout while waiting for the
 //!   reply to a create/send, may have been delivered: retrying could print twice. Such an error is
-//!   transient **and** [`crate::RetrySafety::OutcomeUnknown`]; [`advise`] answers
+//!   transient **and** [`crate::print::RetrySafety::OutcomeUnknown`]; [`advise`] answers
 //!   [`RetryAdvice::CheckDeviceFirst`] for it (also when the attempts are used up) and nothing here
 //!   retries it on its own; a backend that can offers a reconcile step (look for the job before
 //!   resubmitting).
@@ -21,9 +21,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use craft_job::{Jitter, RetryAdvice, RetryFacts, RetryPolicy, advise};
+use crate::job::{Jitter, RetryAdvice, RetryFacts, RetryPolicy, advise};
 
-use crate::backend::{CancelToken, PrintError};
+use crate::print::backend::{CancelToken, PrintError};
 
 /// Where in an exchange a failure happened.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -72,12 +72,12 @@ pub struct SystemClock;
 impl Clock for SystemClock {
     /// Time since this clock was first read in the process (monotonic).
     fn now(&self) -> Duration {
-        crate::clock::monotonic()
+        crate::print::clock::monotonic()
     }
 
     /// Block the thread for `duration`.
     fn sleep(&self, duration: Duration) {
-        crate::clock::sleep(duration);
+        crate::print::clock::sleep(duration);
     }
 }
 
@@ -132,7 +132,7 @@ pub(crate) fn sleep_cancellable(clock: &dyn Clock, cancel: &CancelToken, mut dur
 /// The longest a waiting helper sleeps without looking at its cancel token.
 pub const CANCEL_SLICE: Duration = Duration::from_millis(100);
 
-/// Jitter seeded from a clock, the one thing [`craft_job::Jitter`] leaves to the domain crate (it
+/// Jitter seeded from a clock, the one thing [`crate::job::Jitter`] leaves to the domain crate (it
 /// has no clock of its own).
 pub trait JitterExt: Sized {
     /// A source seeded from a clock reading and a process-wide counter, so two watchers started
@@ -154,7 +154,7 @@ impl JitterExt for Jitter {
     }
 }
 
-/// The facts [`craft_job::advise`] needs about a failed try, read from the error: is it transient,
+/// The facts [`crate::job::advise`] needs about a failed try, read from the error: is it transient,
 /// is repeating it safe, the device's own wait, and which try this was (1 for the first).
 pub fn retry_facts(error: &PrintError, attempts_so_far: u32) -> RetryFacts {
     let facts = RetryFacts::new(error.is_retryable(), error.retry_safety()).with_attempts(attempts_so_far);
@@ -164,7 +164,7 @@ pub fn retry_facts(error: &PrintError, attempts_so_far: u32) -> RetryFacts {
     }
 }
 
-/// What to do after `error` on try number `attempts_so_far` ([`craft_job::advise`] over
+/// What to do after `error` on try number `attempts_so_far` ([`crate::job::advise`] over
 /// [`retry_facts`]). [`RetryAdvice::RetryNow`] and [`RetryAdvice::RetryAfter`] mean try again;
 /// [`RetryAdvice::CheckDeviceFirst`] means the request may have been delivered (never repeated on
 /// its own, even when the attempts are used up); [`RetryAdvice::DoNotRetry`] means give up.
@@ -175,8 +175,8 @@ pub fn advise_error(error: &PrintError, attempts_so_far: u32, policy: &RetryPoli
 /// Run `op` (given the try number, from 1) until it succeeds or [`advise_error`] says to stop.
 /// The waits go through `clock` and a set `cancel` ends the loop with the last error.
 ///
-/// Use it for queries, cancels and anything else whose errors are [`crate::RetrySafety::Safe`] or
-/// [`crate::RetrySafety::Idempotent`]. A submit whose error is [`crate::RetrySafety::OutcomeUnknown`] comes back
+/// Use it for queries, cancels and anything else whose errors are [`crate::print::RetrySafety::Safe`] or
+/// [`crate::print::RetrySafety::Idempotent`]. A submit whose error is [`crate::print::RetrySafety::OutcomeUnknown`] comes back
 /// after the first try: reconcile, do not repeat.
 pub fn retry<T>(
     policy: &RetryPolicy,
@@ -209,8 +209,8 @@ pub fn retry<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::RetrySafety;
-    use crate::backend::ErrorKind;
+    use crate::print::RetrySafety;
+    use crate::print::backend::ErrorKind;
 
     /// Five attempts, 100 ms doubling up to 1 s, without jitter.
     fn policy() -> RetryPolicy {
@@ -246,7 +246,7 @@ mod tests {
         assert_eq!(
             advice(&p, &error(ErrorKind::Timeout, RetrySafety::OutcomeUnknown), 5),
             RetryAdvice::CheckDeviceFirst,
-            "an unknown outcome stays one when the attempts are used up (craft-job's rule)"
+            "an unknown outcome stays one when the attempts are used up (printscan::job's rule)"
         );
         assert_eq!(advice(&p, &error(ErrorKind::Rejected, RetrySafety::Safe), 1), RetryAdvice::DoNotRetry, "not transient");
         assert_eq!(advice(&p, &error(ErrorKind::Busy, RetrySafety::Safe), 5), RetryAdvice::DoNotRetry, "attempts used up");

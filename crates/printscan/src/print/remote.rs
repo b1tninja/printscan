@@ -4,22 +4,22 @@
 //!
 //! This is the common base for every job source: a spooler queue, an IPP printer, the Windows
 //! spooler and WS-Print each have a way to list jobs, and each maps onto these types. A backend
-//! opts in through [`Backend::list_jobs`](crate::backends::Backend::list_jobs) and says what it can
-//! fill in with [`Backend::job_query_caps`](crate::backends::Backend::job_query_caps); a caller reads
+//! opts in through [`Backend::list_jobs`](crate::print::backends::Backend::list_jobs) and says what it can
+//! fill in with [`Backend::job_query_caps`](crate::print::backends::Backend::job_query_caps); a caller reads
 //! those capabilities before relying on a field. See `docs/job-tracking.md` for the mapping of each
 //! source.
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use craft_job::{Fingerprint, JobId, JobState, Tag, TagSupport, Timestamp};
+use crate::job::{Fingerprint, JobId, JobState, Tag, TagSupport, Timestamp};
 
-use crate::tag::{TagExt as _, TagSupportExt as _};
+use crate::print::tag::{TagExt as _, TagSupportExt as _};
 
 /// One job in a printer's or queue's listing, in neutral terms.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct RemoteJob {
-    /// The job's id; namespaced when it comes from a [`Registry`](crate::Registry).
+    /// The job's id; namespaced when it comes from a [`Registry`](crate::print::Registry).
     pub id: JobId,
     /// The job name as the printer lists it, tag suffix included when the tag travels in the name.
     pub title: String,
@@ -162,8 +162,8 @@ impl JobFilter {
 const MIN_CUT_CHARS: usize = 8;
 
 /// Whether a listed title is the title that was sent: equal without tag suffixes, or a printer's
-/// cut-short version of it (at least [`MIN_CUT_CHARS`] characters of it).
-pub(crate) fn title_matches(listed: &str, wanted: &str) -> bool {
+/// cut-short version of it (at least 8 characters of it).
+pub fn title_matches(listed: &str, wanted: &str) -> bool {
     let (listed, wanted) = (Tag::strip(listed), Tag::strip(wanted));
     listed == wanted || (listed.chars().count() >= MIN_CUT_CHARS && wanted.starts_with(listed))
 }
@@ -193,9 +193,9 @@ fn system_time(at: Timestamp) -> SystemTime {
     }
 }
 
-/// Printing's reading of a [`Fingerprint`] (`craft-job`'s record of what was submitted): the
+/// Printing's reading of a [`Fingerprint`] (`printscan::job`'s record of what was submitted): the
 /// listing to ask for. The fingerprint's `title`, `user`, `tag`, `submitted` and `window` are
-/// `craft-job`'s fields; `title` is the one the app gave, without a tag suffix.
+/// `printscan::job`'s fields; `title` is the one the app gave, without a tag suffix.
 pub trait FingerprintExt {
     /// The earliest creation time to accept: the submission time less the `window` (an allowance for
     /// clock skew between this machine and the printer).
@@ -290,7 +290,7 @@ pub fn reconcile_jobs(jobs: Vec<RemoteJob>, fingerprint: &Fingerprint, support: 
 /// [`RemoteJob`]; the default is "nothing".
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub struct JobQueryCaps {
-    /// [`Backend::list_jobs`](crate::backends::Backend::list_jobs) works.
+    /// [`Backend::list_jobs`](crate::print::backends::Backend::list_jobs) works.
     pub list: bool,
     /// Listed jobs carry [`RemoteJob::created`].
     pub created_time: bool,
@@ -315,7 +315,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use craft_job::TagPlacement;
+    use crate::job::TagPlacement;
 
     #[test]
     fn a_timestamp_beyond_the_platforms_clock_saturates_instead_of_panicking() {

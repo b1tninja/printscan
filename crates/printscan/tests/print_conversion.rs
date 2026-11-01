@@ -4,8 +4,8 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
-use craft_print::backends::Backend;
-use craft_print::{
+use printscan::print::backends::Backend;
+use printscan::print::{
     BackendClass, CancelToken, ColourMode, ConversionPolicy, ConvertContext, Document, DocumentConverter, DocumentFormat, ErrorKind, Job, JobOptions,
     OwnedDocument, Phase, PrintError, PrinterDetails, PrinterRef, Registry, Resolution, RetrySafety, SubmitRequest, Submitted, UserConfirmed,
     choose_resolution,
@@ -383,15 +383,17 @@ impl DocumentConverter for BlankPages {
     /// packed with the public PWG encoder.
     fn convert(&self, _document: Document<'_>, target: DocumentFormat, context: &ConvertContext) -> Result<OwnedDocument, PrintError> {
         let (w, h) = (context.resolution.x_dpi / 10, context.resolution.y_dpi / 10);
-        let page = craft_print::pwg::RasterPage {
+        let page = printscan::print::pwg::RasterPage {
             width: w,
             height: h,
             gray: !context.colour,
             pixels: vec![255; (w * h) as usize * if context.colour { 3 } else { 1 }],
         };
-        let options =
-            craft_print::pwg::PwgOptions { dpi: (context.resolution.x_dpi, context.resolution.y_dpi), duplex: craft_print::pwg::Duplex::Off };
-        let bytes = craft_print::pwg::encode(&[page], &options).map_err(|e| PrintError::new(ErrorKind::Failed, e.to_string()))?;
+        let options = printscan::print::pwg::PwgOptions {
+            dpi: (context.resolution.x_dpi, context.resolution.y_dpi),
+            duplex: printscan::print::pwg::Duplex::Off,
+        };
+        let bytes = printscan::print::pwg::encode(&[page], &options).map_err(|e| PrintError::new(ErrorKind::Failed, e.to_string()))?;
         Ok(OwnedDocument::new(target, bytes))
     }
 }

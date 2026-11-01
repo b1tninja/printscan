@@ -1,14 +1,14 @@
-//! Per-job options a request can carry beside the legacy [`crate::Job`]: media, orientation,
+//! Per-job options a request can carry beside the legacy [`crate::print::Job`]: media, orientation,
 //! quality, resolution and an explicit colour choice, plus the page count the app knows.
 //!
 //! Everything here is a **hint**. A backend applies what it can and ignores the rest; which
-//! settings it applies is published as [`PrinterDetails::honoured`](crate::PrinterDetails) (the
-//! `Media`, `Orientation`, `Quality`, `Resolution` and `Colour` entries of [`JobHint`](crate::JobHint)), and
+//! settings it applies is published as [`PrinterDetails::honoured`](crate::print::PrinterDetails) (the
+//! `Media`, `Orientation`, `Quality`, `Resolution` and `Colour` entries of [`JobHint`](crate::print::JobHint)), and
 //! a UI hides the controls a backend does not honour. A setting that was dropped on the way shows
-//! up in [`Submitted::warnings`](crate::Submitted) when the backend can tell.
+//! up in [`Submitted::warnings`](crate::print::Submitted) when the backend can tell.
 //!
-//! The options travel in [`SubmitRequest::options`](crate::SubmitRequest), not in
-//! [`Job`](crate::Job): `Job` is the spooler's own settings (copies, duplex, driver keywords) and
+//! The options travel in [`SubmitRequest::options`](crate::print::SubmitRequest), not in
+//! [`Job`](crate::print::Job): `Job` is the spooler's own settings (copies, duplex, driver keywords) and
 //! is also the argument of the older single-backend functions, which stay as they are.
 //! [`ColourMode`] overlaps `Job::grayscale`: when it is not [`ColourMode::Auto`] it decides.
 
@@ -36,7 +36,7 @@ impl Orientation {
 
 /// Print quality, from the fastest draft to the finest output. A hint: a backend maps it to the
 /// printer's own quality setting when the printer offers a matching value and drops it (with a
-/// warning in [`Submitted::warnings`](crate::Submitted)) otherwise.
+/// warning in [`Submitted::warnings`](crate::print::Submitted)) otherwise.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Quality {
@@ -70,7 +70,7 @@ impl Quality {
 }
 
 /// Colour or monochrome output; [`Self::Auto`] leaves the choice to the printer and
-/// [`Job::grayscale`](crate::Job).
+/// [`Job::grayscale`](crate::print::Job).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum ColourMode {
@@ -137,7 +137,7 @@ pub struct JobOptions {
     pub colour: ColourMode,
     /// How many pages the document has, when the app knows. Not a hint to the printer: it is the
     /// total that progress and status use when the backend reports none (see
-    /// [`ExpectedTotals`](crate::ExpectedTotals)). A total the backend reports wins.
+    /// [`ExpectedTotals`](crate::print::ExpectedTotals)). A total the backend reports wins.
     pub expected_pages: Option<u32>,
 }
 

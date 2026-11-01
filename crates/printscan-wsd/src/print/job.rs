@@ -14,7 +14,7 @@ use super::fault::FaultCode;
 use super::model::{Capabilities, JobReason, JobState, JobStatus, PrinterDescription, PrinterElements, Section};
 use super::mtom::Transfer;
 use super::ticket::{Compression, DocumentDescription, Orientation, PrintTicket, Quality, Sides, TicketShape};
-use crate::{CancelToken, RetrySafety, UserConfirmed};
+use printscan::print::{CancelToken, RetrySafety, UserConfirmed};
 
 use super::adapter::Transport;
 
@@ -36,7 +36,7 @@ impl Default for PollPolicy {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrintOptions {
     pub job_name: String,
-    /// `JobOriginatingUserName`. Defaults to a fixed `craft` rather than the account name.
+    /// `JobOriginatingUserName`. Defaults to a fixed `printscan` rather than the account name.
     pub user_name: String,
     pub document_name: Option<String>,
     pub copies: Option<u32>,
@@ -66,8 +66,8 @@ pub struct PrintOptions {
 impl Default for PrintOptions {
     fn default() -> Self {
         Self {
-            job_name: "Craft".into(),
-            user_name: "craft".into(),
+            job_name: "printscan".into(),
+            user_name: "printscan".into(),
             document_name: None,
             copies: None,
             sides: None,
@@ -163,7 +163,7 @@ pub fn plan(options: &PrintOptions, caps: &Capabilities, description: &PrinterDe
     let mut warnings = Vec::new();
     let mut ticket = PrintTicket {
         job_name: options.job_name.clone(),
-        user_name: if options.user_name.is_empty() { "craft".into() } else { options.user_name.clone() },
+        user_name: if options.user_name.is_empty() { "printscan".into() } else { options.user_name.clone() },
         must_honor: options.strict,
         shape: options.ticket_shape,
         ..Default::default()

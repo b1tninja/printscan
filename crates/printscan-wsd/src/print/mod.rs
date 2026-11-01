@@ -1,10 +1,10 @@
-//! WS-Print (Web Services for Devices) as a [`crate::backends::Backend`]. Cargo feature `wsd`, on by
+//! WS-Print (Web Services for Devices) as a [`printscan::print::backends::Backend`]. Cargo feature `wsd`, on by
 //! default; not compiled for `wasm32`.
 //!
-//! [`WsdBackend`] prints to network printers that speak the WS-Print service, over `craft-wsd`
+//! [`WsdBackend`] prints to network printers that speak the WS-Print service, over `printscan-wsd`
 //! (SOAP 1.2 / WS-Addressing, MTOM, the numeric-local-address URL policy and the plain-HTTP
-//! transport). It registers as `wsd`, has [`crate::BackendClass::Network`] (so the registry only
-//! hands it requests that carry a [`crate::UserConfirmed`]) and names its printers `wsd:<url>`.
+//! transport). It registers as `wsd`, has [`printscan::print::BackendClass::Network`] (so the registry only
+//! hands it requests that carry a [`printscan::print::UserConfirmed`]) and names its printers `wsd:<url>`.
 //!
 //! # Nothing happens until the app asks
 //!
@@ -12,7 +12,7 @@
 //!   [`WsdBackend::with_printers`]). It does no discovery and sends no multicast; finding printers
 //!   on the network is a separate decision for the app.
 //! * Building a backend, adding a printer and listing printers open no connection. A connection is
-//!   made by [`Backend::printer_details`](crate::backends::Backend::printer_details) (one
+//!   made by [`Backend::printer_details`](printscan::print::backends::Backend::printer_details) (one
 //!   `GetPrinterElements`) and by a job.
 //! * Printer URLs must be `http://` with a numeric loopback, link-local or private address; host
 //!   names, public addresses, redirects and proxies are refused.
@@ -25,10 +25,10 @@
 //!   document (MTOM or inline base64): [`job::submit_document`] returns when the printer has accepted
 //!   it, [`print_document`] adds a blocking watch for callers that want one. [`encoder`] and [`pwg`] make
 //!   the document bytes (pass-through, a chain of alternatives, or PWG raster from a renderer);
-//!   [`pwg`] re-exports the neutral [`crate::pwg`] encoder. Apps that go through the registry do not
-//!   need these layers: they register a [`crate::DocumentConverter`] and the registry converts to a
+//!   [`pwg`] re-exports the neutral [`printscan::print::pwg`] encoder. Apps that go through the registry do not
+//!   need these layers: they register a [`printscan::print::DocumentConverter`] and the registry converts to a
 //!   format this printer lists.
-//! * `adapter.rs`: the only file that names `craft-wsd`.
+//! * `adapter.rs`: the only file that names `printscan-wsd`.
 //!
 //! # Printer firmware and the ticket
 //!
@@ -40,7 +40,7 @@
 //!
 //! # Submit, watch, retry
 //!
-//! [`WsdBackend`]'s `submit` returns a [`crate::Submitted`] as soon as the printer has accepted the
+//! [`WsdBackend`]'s `submit` returns a [`printscan::print::Submitted`] as soon as the printer has accepted the
 //! document. Following the job is a separate, polled step (`job_status` is one `GetJobElements`,
 //! preceded by the bounded WS-Eventing housekeeping that is due when push status is on),
 //! and failures are classified by [`WsdError::classify`]: transient or not, safe to repeat or not
@@ -55,11 +55,11 @@
 //!
 //! # Tracked jobs
 //!
-//! The backend carries a [`crate::PrintJob`]'s idempotency tag as a suffix of the ticket's job name
+//! The backend carries a [`printscan::print::PrintJob`]'s idempotency tag as a suffix of the ticket's job name
 //! (cut so that it fits the 255 characters), lists jobs (`GetActiveJobs`, `GetJobHistory`) for
-//! [`crate::Registry::list_jobs`] and finds an earlier attempt's job through
-//! [`crate::Registry::find_job`], by tag. [`WsdBackend::reconcile`] is the older, WS-Print-only form
-//! (by title and user) and its [`Reconciled`] is not [`crate::Reconciled`].
+//! [`printscan::print::Registry::list_jobs`] and finds an earlier attempt's job through
+//! [`printscan::print::Registry::find_job`], by tag. [`WsdBackend::reconcile`] is the older, WS-Print-only form
+//! (by title and user) and its [`Reconciled`] is not [`printscan::print::Reconciled`].
 
 pub mod adapter;
 pub mod client;

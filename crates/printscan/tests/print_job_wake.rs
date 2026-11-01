@@ -6,8 +6,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use craft_print::testing::FakeBackend;
-use craft_print::{
+use printscan::print::testing::FakeBackend;
+use printscan::print::{
     BytesSource, DocumentFormat, Job, JobId, JobState, JobStatus, LifecycleState, ManualClock, Outcome, PrintJob, Registry, UserConfirmed,
     WaitPolicy, WatchSupport,
 };
@@ -24,14 +24,14 @@ struct Rig {
     clock: ManualClock,
 }
 
-fn rig(script: Vec<Result<JobStatus, craft_print::backends::PrintError>>) -> Rig {
+fn rig(script: Vec<Result<JobStatus, printscan::print::backends::PrintError>>) -> Rig {
     let fake = FakeBackend::ipp_like("net").with_push().with_printer("p1", true).with_status_script(script);
     let registry = Registry::new();
     registry.register(Box::new(fake.clone())).unwrap();
     Rig { fake, registry, clock: ManualClock::new() }
 }
 
-fn status(state: JobState) -> Result<JobStatus, craft_print::backends::PrintError> {
+fn status(state: JobState) -> Result<JobStatus, printscan::print::backends::PrintError> {
     Ok(JobStatus::new(state))
 }
 

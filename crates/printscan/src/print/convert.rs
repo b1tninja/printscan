@@ -1,9 +1,9 @@
 //! Turning a document into a format a printer takes: the app's [`DocumentConverter`] and the
-//! rules the [`Registry`](crate::Registry) applies around it.
+//! rules the [`Registry`](crate::print::Registry) applies around it.
 //!
 //! This crate has no renderer. A PDF becomes PWG raster (or XPS, or anything else) only because the
 //! app that owns the PDF renderer says how, by registering a converter
-//! ([`Registry::set_converter`](crate::Registry::set_converter)). The registry owns the **decision**:
+//! ([`Registry::set_converter`](crate::print::Registry::set_converter)). The registry owns the **decision**:
 //!
 //! 1. The document's format is accepted by the printer: it is sent as it is and the converter is
 //!    never called.
@@ -11,27 +11,27 @@
 //!    ([`DocumentConverter::targets`], best first). The registry picks the first format of the
 //!    [`ConversionPolicy::preference`] order that both the converter makes and the printer accepts,
 //!    falling back to the converter's own order for formats the preference does not name.
-//! 3. The resolution for the converter is the caller's [`JobOptions::resolution`](crate::JobOptions)
+//! 3. The resolution for the converter is the caller's [`JobOptions::resolution`](crate::print::JobOptions)
 //!    when set, else the printer's listed resolution nearest [`ConversionPolicy::target_dpi`]
 //!    ([`choose_resolution`]), else that target dpi square.
 //! 4. The converter runs ([`DocumentConverter::convert`]) and its result is sent. For a PWG raster
 //!    target the chosen resolution also goes into the job's options, so the ticket and the raster
 //!    agree.
 //! 5. When there is no way (no converter, nothing in common, or the converter failed), the error is
-//!    typed: [`ErrorKind::UnsupportedFormat`](crate::ErrorKind) for "no format in common" (the
+//!    typed: [`ErrorKind::UnsupportedFormat`](crate::print::ErrorKind) for "no format in common" (the
 //!    message lists what the document is, what the converter offers and what the printer accepts)
 //!    and the converter's own error, marked as raised before anything was sent, otherwise.
 //!
-//! Which printers' formats count is the backend's answer: [`crate::PrinterDetails::formats`] for a backend
-//! whose [`formats_per_printer`](crate::backends::Backend::formats_per_printer) is `true` (one
+//! Which printers' formats count is the backend's answer: [`crate::print::PrinterDetails::formats`] for a backend
+//! whose [`formats_per_printer`](crate::print::backends::Backend::formats_per_printer) is `true` (one
 //! read-only details request per print, skipped when the caller passes details it already has to
-//! [`Registry::submit_job_with_details`](crate::Registry::submit_job_with_details)), else its
-//! [`accepted_formats`](crate::backends::Backend::accepted_formats).
+//! [`Registry::submit_job_with_details`](crate::print::Registry::submit_job_with_details)), else its
+//! [`accepted_formats`](crate::print::backends::Backend::accepted_formats).
 
-use crate::backend::{Document, DocumentFormat, PrintError};
-use crate::options::{ColourMode, Orientation, Resolution};
-use crate::pwg::RasterType;
-use crate::{CancelToken, Duplex};
+use crate::print::backend::{Document, DocumentFormat, PrintError};
+use crate::print::options::{ColourMode, Orientation, Resolution};
+use crate::print::pwg::RasterType;
+use crate::print::{CancelToken, Duplex};
 
 /// A document that owns its bytes: what a [`DocumentConverter`] returns.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,11 +99,11 @@ impl ConvertContext {
 }
 
 /// The app's way of making a document the printer accepts. Register one with
-/// [`Registry::set_converter`](crate::Registry::set_converter); see the [module
+/// [`Registry::set_converter`](crate::print::Registry::set_converter); see the [module
 /// documentation](self) for when the registry calls it.
 ///
 /// Implementations are blocking and `Send + Sync`, like backends, and never panic on bad input
-/// (return an error). [`crate::pwg::encode`] packs already-rendered pixel pages into PWG raster.
+/// (return an error). [`crate::print::pwg::encode`] packs already-rendered pixel pages into PWG raster.
 pub trait DocumentConverter: Send + Sync {
     /// The formats this converter can make from a document in `from`, best first. Empty when it
     /// cannot convert that format at all.
@@ -122,7 +122,7 @@ pub trait DocumentConverter: Send + Sync {
     fn convert(&self, document: Document<'_>, target: DocumentFormat, context: &ConvertContext) -> Result<OwnedDocument, PrintError>;
 }
 
-/// The registry's choices around conversion; see [`Registry::set_conversion_policy`](crate::Registry::set_conversion_policy).
+/// The registry's choices around conversion; see [`Registry::set_conversion_policy`](crate::print::Registry::set_conversion_policy).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConversionPolicy {
     /// Target formats, best first. A format the converter makes and the printer accepts earlier in
@@ -139,7 +139,7 @@ impl Default for ConversionPolicy {
     }
 }
 
-/// What the registry did to a document: [`Submitted::conversion`](crate::Submitted) is `Some` when
+/// What the registry did to a document: [`Submitted::conversion`](crate::print::Submitted) is `Some` when
 /// the converter ran.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -268,7 +268,7 @@ mod tests {
                 Vec::new()
             }
             fn convert(&self, _: Document<'_>, _: DocumentFormat, _: &ConvertContext) -> Result<OwnedDocument, PrintError> {
-                Err(PrintError::new(crate::ErrorKind::Failed, "unused"))
+                Err(PrintError::new(crate::print::ErrorKind::Failed, "unused"))
             }
         }
         assert_eq!(Plain.raster_types(), RasterType::BASELINE.to_vec());

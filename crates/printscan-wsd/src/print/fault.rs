@@ -81,7 +81,7 @@ impl FaultCode {
         }
     }
 
-    /// The code as a [`crate::NativeCode`] number and name: 1 to 16 in the order of [`WPRT_CODES`],
+    /// The code as a [`printscan::print::NativeCode`] number and name: 1 to 16 in the order of [`WPRT_CODES`],
     /// 100 for `wsa:ActionNotSupported`, and 0 (no name) for a vendor code.
     pub fn native(&self) -> (i64, Option<&'static str>) {
         match self {
@@ -149,7 +149,7 @@ pub fn parse_fault(fault: Node<'_, '_>) -> Fault {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wsd::adapter::xml;
+    use crate::print::adapter::xml;
 
     fn fault_xml(sub: &str, extra_ns: &str) -> String {
         format!(
@@ -206,9 +206,9 @@ mod tests {
 
     #[test]
     fn a_generic_fault_is_classified_against_the_print_codes() {
-        let generic = crate::wsd::adapter::WireFault::new(
+        let generic = crate::print::adapter::WireFault::new(
             Role::Receiver,
-            crate::wsd::adapter::SubCode::new(Some(ns::WPRT), "ServerErrorNotAcceptingJobs"),
+            crate::print::adapter::SubCode::new(Some(ns::WPRT), "ServerErrorNotAcceptingJobs"),
             "busy",
             "",
         )
@@ -218,9 +218,9 @@ mod tests {
         assert_eq!(f.code, FaultCode::ServerErrorNotAcceptingJobs);
         assert!(f.code.is_retryable());
         assert_eq!(f.to_string(), "the printer refused: ServerErrorNotAcceptingJobs (busy)");
-        let e: crate::wsd::error::WsdError = crate::wsd::adapter::WireError::from_fault(crate::wsd::adapter::WireFault::new(
+        let e: crate::print::error::WsdError = crate::print::adapter::WireError::from_fault(crate::print::adapter::WireFault::new(
             Role::Sender,
-            crate::wsd::adapter::SubCode::new(Some(ns::WPRT), "InvalidArgs"),
+            crate::print::adapter::SubCode::new(Some(ns::WPRT), "InvalidArgs"),
             "",
             "",
         ))

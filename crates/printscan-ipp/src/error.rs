@@ -1,4 +1,4 @@
-//! The IPP layer's error type, and its mapping onto [`crate::PrintError`].
+//! The IPP layer's error type, and its mapping onto [`printscan::print::PrintError`].
 //!
 //! The principle is the WS-Print layer's: **a failure that proves the printer did not act is
 //! [`RetrySafety::Safe`]** (nothing sent, a refused address, a connect failure, a policy refusal, an
@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use super::adapter::{Stage, TransportKind, WireError, http_safety, transport_safety};
 use super::protocol::{Operation, StatusCode};
-use crate::{ErrorKind, NativeCode, Phase, PrintError, RetrySafety};
+use printscan::print::{ErrorKind, NativeCode, Phase, PrintError, RetrySafety};
 
 /// Everything that can go wrong, as values an interface can show and an agent can act on.
 #[derive(Debug, Clone, PartialEq)]

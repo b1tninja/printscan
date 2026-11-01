@@ -54,14 +54,14 @@ fact and the system print queue UI follows the job. For our purposes it is the C
 
 **Precedents in this repository.**
 
-* `craft-scan`'s `acquire` is one blocking call. Progress is a `ProgressToken` of atomics the UI reads
+* `printscan::scan`'s `acquire` is one blocking call. Progress is a `ProgressToken` of atomics the UI reads
   every frame (pages done, percent of the page in flight); cancel is a `CancelToken` that travels in the
   settings and is polled at checkpoints. Nothing blocks the UI thread because the app calls it from a
   worker, and the *UI* polls the shared state. Scanning is one device transaction; a print job is two
   (hand over, then wait for the machine), which is why submit and watch can be split here.
 * `craft-ui::printing` shows what the apps already do for the spooler: a worker thread, an `mpsc`
   receiver polled with `try_recv` once per frame, `request_repaint_after` while work is pending, and a
-  `Feedback` enum that the app words. `craft-print`'s own `submit_with_progress` bridges native worker
+  `Feedback` enum that the app words. `printscan::print`'s own `submit_with_progress` bridges native worker
   events to a callback through a bounded `sync_channel(1)` so a slow callback cannot pile events up.
 * `craft-ui::printing::network` already uses `mpsc` receivers for its query and job workers, plus a
   cancel closure.
@@ -122,11 +122,11 @@ Two separate questions.
     503 before the printer processed anything).
   * `OutcomeUnknown`: the request may have been delivered (the connection closed or reset after the
     request was written, a timeout while waiting for the reply to a create or send). Retrying a submit
-    could print twice. The error is transient *and* unsafe; `craft_job::advise` answers `CheckDeviceFirst` for it (also when the attempts are used up), so nothing repeats it by itself,
+    could print twice. The error is transient *and* unsafe; `printscan::job::advise` answers `CheckDeviceFirst` for it (also when the attempts are used up), so nothing repeats it by itself,
     and a backend that can offers a *reconcile* step (look for the job before resubmitting).
   * `Idempotent`: a query or a cancel; repeating is harmless.
 * `PrintError::phase()`: `Prepare` (before any traffic), `Connect`, `Request`, `Reply`, `Poll`.
-* `PrintError::retry_after()`: the wait the device or backend suggests; `craft_job::advise`
+* `PrintError::retry_after()`: the wait the device or backend suggests; `printscan::job::advise`
   honours it (up to `max_retry_after`) on top of an exponential, jittered, capped backoff.
 
 Neutral defaults when a backend does not say (`ErrorKind::default_retry_safety`):
@@ -199,20 +199,20 @@ answer (the printer said no), which is why it is `Safe` even for an internal err
 document was already sent" says an earlier send did arrive.
 
 When the printer sends an HTTP `Retry-After` (on a status error or on the reply that carried a
-fault), `craft-wsd` parses and caps it and the backend uses it as `retry_after`, for the transient
+fault), `printscan-wsd` parses and caps it and the backend uses it as `retry_after`, for the transient
 kinds only. Without one the values above are defaults, not measurements: a printer that is not taking
 jobs is in a mode that lasts (15 s), a temporary error clears sooner (5 s), a document still being
 processed sooner still (2 s). `RetryPolicy` takes the larger of this and its own backoff.
 
-Nothing is read from text. `craft-wsd` reports a transport failure as a typed kind (`refused`,
+Nothing is read from text. `printscan-wsd` reports a transport failure as a typed kind (`refused`,
 `unreachable`, `connect_timeout`, `timeout`, `redirect`, `connection_closed`, `invalid_response`, `io`) and the stage
 the exchange reached (prepare, connect, request, reply). The stage gives the phase and, through
-`craft-wsd`'s own `retry_safety(idempotent)`, the safety: nothing sent (prepare, connect) is `Safe`,
+`printscan-wsd`'s own `retry_safety(idempotent)`, the safety: nothing sent (prepare, connect) is `Safe`,
 anything that may have arrived is `OutcomeUnknown` for a create or send and `Idempotent` for the
 rest. HTTP 429 and 503 are a decline and `Safe` there too. What this crate adds is the print
 service's own reading: 408 and 425 are declines, 501, 505 and the other 4xx are definite refusals, a
 SOAP fault is a definite answer. A request the HTTP client could not build is not a transport failure
-at all: `craft-wsd` reports it as `Invalid`, which is a preparation failure and `Safe`. A closed connection is a transport kind, not an error kind of
+at all: `printscan-wsd` reports it as `Invalid`, which is a preparation failure and `Safe`. A closed connection is a transport kind, not an error kind of
 its own. `every_transport_kind_for_every_operation` pins every kind against every operation.
 
 **Reconcile.** `WsdBackend::reconcile(printer, title)` is the answer to `OutcomeUnknown`: read

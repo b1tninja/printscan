@@ -10,7 +10,7 @@ use super::codec::{Attribute, Value};
 use super::error::{IppError, Result};
 use super::model::PrinterAttrs;
 use super::protocol::{orientation, quality};
-use crate::{ColourMode, Duplex, Job, JobOptions, Orientation, Quality, Scaling};
+use printscan::print::{ColourMode, Duplex, Job, JobOptions, Orientation, Quality, Scaling};
 
 /// The most copies a job may ask for.
 pub const MAX_COPIES: u32 = 9999;
@@ -210,6 +210,8 @@ pub fn plan(job_name: String, document_mime: &str, job: &Job, per_job: &JobOptio
         (ColourMode::Colour, _) => Some(false),
         (ColourMode::Mono, _) | (ColourMode::Auto, true) => Some(true),
         (ColourMode::Auto, false) => None,
+        // A colour mode added later: leave it to the printer.
+        _ => None,
     };
     match mono {
         Some(false) => {
@@ -244,7 +246,7 @@ pub fn plan(job_name: String, document_mime: &str, job: &Job, per_job: &JobOptio
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Resolution;
+    use printscan::print::Resolution;
 
     fn printer() -> PrinterAttrs {
         PrinterAttrs {

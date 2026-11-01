@@ -7,8 +7,8 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use craft_print::testing::{FakeBackend, SubmitStep};
-use craft_print::{
+use printscan::print::testing::{FakeBackend, SubmitStep};
+use printscan::print::{
     BackendClass, BytesSource, Clock, DocumentFormat, ErrorKind, Job, JobQueryCaps, JobState, JobStatus, LifecycleState, ManualClock, Outcome, Phase,
     PrintError, PrintJob, PrintJobConfig, Reconciled, Registry, RetryAdvice, RetrySafety, SimpleState, StaleReason, Staleness, TagPlacement,
     TagSupport, UserConfirmed, WaitPolicy, WatchSupport,

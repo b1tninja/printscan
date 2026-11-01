@@ -18,11 +18,19 @@ thiserror = { workspace = true }
 # always a numeric local address. Not built for wasm32, where there is no native HTTP client.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ureq = { workspace = true }
+# The WS-Print backend for the `printscan::print` registry (feature `print`).
+printscan = { path = "../printscan", version = "0.1.0", default-features = false, features = ["print"], optional = true }
 
 [dev-dependencies]
 # Lets this crate's own integration tests use the `testing` feature under a plain `cargo test`.
-printscan-wsd = { path = ".", features = ["testing"] }
+printscan-wsd = { path = ".", features = ["testing", "print"] }
+printscan = { path = "../printscan", features = ["testing"] }
 
 [features]
-# A loopback HTTP server and an in-memory device for tests of clients built on this crate.
-testing = []
+default = ["print"]
+# A WS-Print backend (`printscan_wsd::print::WsdBackend`) for the `printscan::print` registry. It lists
+# only printers the app adds, discovers nothing and needs consent for every job. Not on wasm32.
+print = ["dep:printscan"]
+# A loopback HTTP server and an in-memory device for tests of clients built on this crate, and with
+# `print` an in-memory WS-Print printer (`printscan_wsd::print::testing`). Never in a shipped binary.
+testing = ["printscan?/testing"]

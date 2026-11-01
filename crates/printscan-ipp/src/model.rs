@@ -312,8 +312,8 @@ impl JobAttrs {
 
 /// The neutral job state of a `job-state` value and its reasons (RFC 8011 section 5.3.7 and the
 /// registered `job-state-reasons`).
-pub fn neutral_state(job: &JobAttrs) -> crate::JobState {
-    use crate::JobState as S;
+pub fn neutral_state(job: &JobAttrs) -> printscan::print::JobState {
+    use printscan::print::JobState as S;
     let Some(state) = job.state else { return S::Unknown };
     match state {
         job_state::PENDING if job.has_reason("job-hold-until-specified") => S::Held,
@@ -330,8 +330,8 @@ pub fn neutral_state(job: &JobAttrs) -> crate::JobState {
 }
 
 /// The printer's state as the neutral one; `offline-report` turns a stopped printer offline.
-pub fn neutral_printer_state(attrs: &PrinterAttrs) -> Option<crate::PrinterState> {
-    use crate::PrinterState as P;
+pub fn neutral_printer_state(attrs: &PrinterAttrs) -> Option<printscan::print::PrinterState> {
+    use printscan::print::PrinterState as P;
     Some(match attrs.state? {
         printer_state::IDLE => P::Idle,
         printer_state::PROCESSING => P::Processing,
@@ -344,7 +344,7 @@ pub fn neutral_printer_state(attrs: &PrinterAttrs) -> Option<crate::PrinterState
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ipp::codec::{Attribute, GroupTag};
+    use crate::codec::{Attribute, GroupTag};
 
     #[test]
     fn media_names_spell_their_sizes() {
@@ -422,7 +422,7 @@ mod tests {
     fn a_printer_group_is_read_and_checked() {
         let a = PrinterAttrs::from_group(&printer());
         assert_eq!(a.name.as_deref(), Some("Office"));
-        assert_eq!(neutral_printer_state(&a), Some(crate::PrinterState::Offline));
+        assert_eq!(neutral_printer_state(&a), Some(printscan::print::PrinterState::Offline));
         assert_eq!(a.supports_operation(2), Some(true));
         assert_eq!(a.supports_operation(5), Some(false));
         assert_eq!((a.supports_copies(20), a.supports_copies(21)), (Some(true), Some(false)));
@@ -448,7 +448,7 @@ mod tests {
 
     #[test]
     fn job_states_map_to_the_neutral_ones() {
-        use crate::JobState as S;
+        use printscan::print::JobState as S;
         let job = |state: i32, reasons: &[&str]| JobAttrs {
             state: Some(state),
             reasons: reasons.iter().map(|r| (*r).to_owned()).collect(),

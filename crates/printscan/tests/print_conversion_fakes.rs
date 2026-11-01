@@ -1,11 +1,11 @@
 //! Format negotiation and conversion through the registry, driven with the exported
-//! `craft_print::testing` fakes (the way an app's own tests would).
+//! `printscan::print::testing` fakes (the way an app's own tests would).
 
 use std::sync::{Arc, Mutex};
 
 use DocumentFormat::{Jpeg, Pdf, PwgRaster};
-use craft_print::testing::FakeBackend;
-use craft_print::{
+use printscan::print::testing::FakeBackend;
+use printscan::print::{
     ConvertContext, Document, DocumentConverter, DocumentFormat, ErrorKind, Job, JobOptions, OwnedDocument, Phase, PrintError, PrinterDetails,
     Registry, Resolution, RetrySafety, SubmitRequest,
 };

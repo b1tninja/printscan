@@ -1,7 +1,7 @@
 //! The [`Backend`] trait and the neutral types a backend speaks.
 //!
 //! A backend is one way of getting a document onto paper: the system spooler (CUPS, the Windows
-//! spooler) or, later, a network protocol (WS-Print, IPP). The [`Registry`](crate::Registry) holds
+//! spooler) or, later, a network protocol (WS-Print, IPP). The [`Registry`](crate::print::Registry) holds
 //! several at once, namespaces their printer ids (`"<backend>:<native id>"`), aggregates their
 //! printer lists and routes details and jobs by that prefix.
 //!
@@ -16,7 +16,7 @@
 //!   with [`Backend::watch_support`] and answer [`Backend::job_status`] (one request, no waiting)
 //!   and [`Backend::cancel_job`]. A backend that cannot say keeps the defaults: the status is
 //!   [`JobState::Unknown`], "accepted, outcome unknown". Callers follow a job with a
-//!   [`crate::JobWatch`]; [`crate::wait_for_job`] is the blocking convenience for a CLI.
+//!   [`crate::print::JobWatch`]; [`crate::print::wait_for_job`] is the blocking convenience for a CLI.
 //! * **Cancellation and progress travel in the request**: [`SubmitRequest::cancel`] is polled at
 //!   the backend's own checkpoints (between sheets, between network round trips); progress is a
 //!   callback of [`Progress`] events whose total is optional. Neither is required:
@@ -34,7 +34,7 @@
 //! * **Documents are bytes plus a declared format.** A backend declares what it accepts with
 //!   [`Backend::accepted_formats`] (and, when printers differ, [`PrinterDetails::formats`] and
 //!   [`Backend::formats_per_printer`]). When the document's format is not accepted the registry
-//!   asks the app's [`DocumentConverter`](crate::DocumentConverter), if one is registered, for a
+//!   asks the app's [`DocumentConverter`](crate::print::DocumentConverter), if one is registered, for a
 //!   format the printer takes, and refuses with [`ErrorKind::UnsupportedFormat`] when there is no
 //!   way. A backend itself never converts: it sends what the registry hands it.
 //! * **Consent.** A backend whose [`Backend::class`] is [`BackendClass::Network`] only receives
@@ -44,21 +44,21 @@
 //!   retry could print twice ([`PrintError::with_safety`]; [`RetrySafety::OutcomeUnknown`] after a
 //!   request that may have arrived). Offer a way to reconcile if you can.
 //! * **Registration**: `registry.register(Box::new(MyBackend::new()))`, once at start-up. The
-//!   process-wide registry ([`crate::registry`]) already holds the platform's built-in backend.
+//!   process-wide registry ([`crate::print::registry`]) already holds the platform's built-in backend.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use craft_job::{Fingerprint, JobId, JobState, NativeCode, Progress, RetrySafety, Tag, TagSupport};
+use crate::job::{Fingerprint, JobId, JobState, NativeCode, Progress, RetrySafety, Tag, TagSupport};
 
-use crate::job::{JobStatus, Submitted, WatchSupport};
-use crate::options::{JobOptions, Resolution};
-use crate::remote::{FingerprintExt as _, JobFilter, JobQueryCaps, Reconciled, RemoteJob, reconcile_jobs};
-use crate::retry::Phase;
-use crate::tag::TagSupportExt as _;
-use crate::wake::WakeReceiver;
-use crate::{Error, Job, PrinterOption};
+use crate::print::job::{JobStatus, Submitted, WatchSupport};
+use crate::print::options::{JobOptions, Resolution};
+use crate::print::remote::{FingerprintExt as _, JobFilter, JobQueryCaps, Reconciled, RemoteJob, reconcile_jobs};
+use crate::print::retry::Phase;
+use crate::print::tag::TagSupportExt as _;
+use crate::print::wake::WakeReceiver;
+use crate::print::{Job, PrinterOption};
 
 /// What went wrong, independent of the backend. The kind and [`ErrorKind::is_retryable`] are the
 /// contract callers branch on; the message is for people.
@@ -94,7 +94,7 @@ pub enum ErrorKind {
 }
 
 impl ErrorKind {
-    /// A stable lowercase name for logs, tool results and [`craft_job::ErrorSummary::kind_label`].
+    /// A stable lowercase name for logs, tool results and [`crate::job::ErrorSummary::kind_label`].
     pub const fn name(self) -> &'static str {
         match self {
             Self::Unsupported => "unsupported",
@@ -139,7 +139,7 @@ impl ErrorKind {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum NotFoundSubject {
-    /// The backend could not tell, or did not say. A [`crate::JobWatch`] keeps its long-standing
+    /// The backend could not tell, or did not say. A [`crate::print::JobWatch`] keeps its long-standing
     /// reading of this (the job was forgotten); a backend that can tell should say which.
     #[default]
     Unknown,
@@ -273,20 +273,11 @@ impl std::fmt::Display for PrintError {
 
 impl std::error::Error for PrintError {}
 
-/// The legacy spooler error keeps its message; it carries no more detail than that, so the kind
-/// is [`ErrorKind::Failed`].
-impl From<Error> for PrintError {
-    /// The spooler error's text, as [`ErrorKind::Failed`].
-    fn from(error: Error) -> Self {
-        Self::new(ErrorKind::Failed, error.to_string())
-    }
-}
-
 /// The format of the bytes in a [`Document`].
 ///
 /// The names are the formats a printer commonly lists; whether one printer takes one is decided
 /// against that printer's own list ([`PrinterDetails::formats`], [`Self::negotiate`]). The crate
-/// does not convert between them: that is a [`DocumentConverter`](crate::DocumentConverter) the app
+/// does not convert between them: that is a [`DocumentConverter`](crate::print::DocumentConverter) the app
 /// registers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -314,7 +305,7 @@ pub enum DocumentFormat {
 }
 
 impl DocumentFormat {
-    /// A short lowercase name (`"pdf"`), as a [`craft_job::DocumentRef`] carries it.
+    /// A short lowercase name (`"pdf"`), as a [`crate::job::DocumentRef`] carries it.
     pub const fn name(self) -> &'static str {
         match self {
             Self::Pdf => "pdf",
@@ -490,7 +481,7 @@ fn is_plain_text(bytes: &[u8]) -> bool {
 
 /// Document bytes and their declared format. Constructing one does not look at the bytes (see
 /// [`DocumentFormat::sniff`] and [`Document::detect`]) and nothing here converts them (see
-/// [`DocumentConverter`](crate::DocumentConverter)).
+/// [`DocumentConverter`](crate::print::DocumentConverter)).
 #[derive(Clone, Copy, Debug)]
 pub struct Document<'a> {
     pub format: DocumentFormat,
@@ -574,7 +565,7 @@ impl CancelToken {
     }
 }
 
-/// A printer in a list. In a [`Registry`](crate::Registry) result `id` is namespaced
+/// A printer in a list. In a [`Registry`](crate::print::Registry) result `id` is namespaced
 /// (`"<backend>:<native id>"`); a backend returns its native id.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrinterRef {
@@ -636,8 +627,8 @@ pub struct PrinterDetails {
     /// The formats this printer takes; empty when the backend publishes only its own list.
     pub formats: Vec<DocumentFormat>,
     /// The pixel formats the printer lists for PWG raster (colour space and depth), as far as this crate can write
-    /// them; empty when it did not publish a list (it is then taken to accept [`crate::pwg::RasterType::BASELINE`]).
-    pub raster_types: Vec<crate::pwg::RasterType>,
+    /// them; empty when it did not publish a list (it is then taken to accept [`crate::print::pwg::RasterType::BASELINE`]).
+    pub raster_types: Vec<crate::print::pwg::RasterType>,
     /// Driver job options (CUPS: the PPD's). Empty when none or unknown.
     pub options: Vec<PrinterOption>,
     pub two_sided: Option<bool>,
@@ -647,8 +638,8 @@ pub struct PrinterDetails {
     pub paper: Vec<String>,
     pub max_copies: Option<u32>,
     /// The resolutions the printer lists, as it lists them; empty when not published. A
-    /// [`DocumentConverter`](crate::DocumentConverter) renders at one of these (see
-    /// [`choose_resolution`](crate::choose_resolution)).
+    /// [`DocumentConverter`](crate::print::DocumentConverter) renders at one of these (see
+    /// [`choose_resolution`](crate::print::choose_resolution)).
     pub resolutions: Vec<Resolution>,
     /// Which [`Job`] settings this backend applies. `None`: not published, treat as unknown.
     pub honoured: Option<Vec<JobHint>>,
@@ -670,7 +661,7 @@ pub struct Receipt {
 pub type ProgressCallback<'a> = &'a mut dyn FnMut(Progress);
 
 /// One print request. [`Job::printer`] is the printer: a namespaced id when it goes to a
-/// [`Registry`](crate::Registry), the native id when a backend receives it; `None` is the default.
+/// [`Registry`](crate::print::Registry), the native id when a backend receives it; `None` is the default.
 /// [`SubmitRequest::options`] carries the per-job hints beside the spooler's own [`Job`] settings;
 /// see [`JobOptions`].
 pub struct SubmitRequest<'a> {
@@ -732,7 +723,7 @@ impl<'a> SubmitRequest<'a> {
 }
 
 /// One way of printing. Ids passed in and returned are the backend's **native** ids; the
-/// [`Registry`](crate::Registry) adds and strips the `"<name>:"` prefix. See the module docs.
+/// [`Registry`](crate::print::Registry) adds and strips the `"<name>:"` prefix. See the module docs.
 pub trait Backend: Send + Sync {
     /// The registry name and id prefix: short, lowercase ASCII letters, digits, `-` and `_`
     /// (`"cups"`, `"spooler"`, `"wsd"`, `"ipp"`).
@@ -754,7 +745,7 @@ pub trait Backend: Send + Sync {
     /// Whether which formats are accepted depends on the printer: when `true`,
     /// [`Self::accepted_formats`] is only what the backend can name and the registry asks
     /// [`Self::printer_details`] (its [`PrinterDetails::formats`]) before it decides whether a
-    /// [`DocumentConverter`](crate::DocumentConverter) is needed. Defaults to `false`: the list is
+    /// [`DocumentConverter`](crate::print::DocumentConverter) is needed. Defaults to `false`: the list is
     /// exact and no extra request is made.
     fn formats_per_printer(&self) -> bool {
         false
@@ -805,7 +796,7 @@ pub trait Backend: Send + Sync {
     /// the device says the job (or its printer) changed. A wake carries no data and means only "ask
     /// [`Backend::job_status`] now"; the status itself always comes from `job_status`, so a lost,
     /// duplicated or forged wake cannot produce a wrong result. The receiver reports whether the
-    /// backend currently trusts the channel ([`WakeReceiver::is_healthy`]); a [`crate::JobWatch`]
+    /// backend currently trusts the channel ([`WakeReceiver::is_healthy`]); a [`crate::print::JobWatch`]
     /// only relaxes its polling while it does. Defaults to `None`: poll. Getting the receiver is
     /// cheap and sends nothing; dropping it tells the backend the watch ended.
     fn wake_source(&self, job: &JobId) -> Option<WakeReceiver> {
@@ -817,9 +808,9 @@ pub trait Backend: Send + Sync {
     /// reply was lost, plus a small margin: after this the device has given up on the half-made
     /// job on its own (WS-Print aborts it with `DocumentTimeoutError`, IPP printers wait their
     /// `multiple-operation-time-out`, 60 to 240 seconds, and then end it as
-    /// `submission-interrupted`). [`crate::PrintJob`] waits this long after a send whose outcome
+    /// `submission-interrupted`). [`crate::print::PrintJob`] waits this long after a send whose outcome
     /// is unknown before it advises resending. `None` (the default): the job uses
-    /// [`crate::Staleness::reconcile_after`].
+    /// [`crate::print::Staleness::reconcile_after`].
     fn open_job_timeout(&self) -> Option<Duration> {
         None
     }
@@ -833,7 +824,7 @@ pub trait Backend: Send + Sync {
 
     /// Whether and where this backend carries a [`SubmitRequest::tag`], and whether
     /// [`Backend::list_jobs`] gives it back. Defaults to [`TagSupport::None`]. A backend that
-    /// supports a placement applies the tag itself (a name suffix with [`crate::TagExt::apply_to`], within
+    /// supports a placement applies the tag itself (a name suffix with [`crate::print::TagExt::apply_to`], within
     /// its own length limit) and exactly once.
     fn tag_support(&self) -> TagSupport {
         TagSupport::None
@@ -847,7 +838,7 @@ pub trait Backend: Send + Sync {
     /// The jobs of one printer (a native id): its active jobs and, when the source keeps them,
     /// finished ones ([`JobQueryCaps::history`]). **One bounded, idempotent read.** Foreign jobs
     /// are listed too; [`RemoteJob::ours`] is set from [`JobFilter::tag`] (use
-    /// [`crate::filter_jobs`]). The default is [`ErrorKind::Unsupported`]: a spooler that cannot
+    /// [`crate::print::filter_jobs`]). The default is [`ErrorKind::Unsupported`]: a spooler that cannot
     /// list keeps it, and says so in [`Backend::job_query_caps`].
     fn list_jobs(&self, printer_native: &str, filter: &JobFilter) -> Result<Vec<RemoteJob>, PrintError> {
         let _ = (printer_native, filter);

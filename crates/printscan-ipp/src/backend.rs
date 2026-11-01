@@ -12,8 +12,8 @@ use super::model::{self, JobAttrs, PrinterAttrs};
 use super::plan::{self, Plan};
 use super::policy::{NetworkLimits, PrinterUri};
 use super::protocol::{Operation, StatusCode};
-use crate::backends::{Backend, BackendClass, DocumentFormat, JobHint, PrinterDetails, PrinterRef, PrinterStatus, SubmitRequest};
-use crate::{
+use printscan::print::backends::{Backend, BackendClass, DocumentFormat, JobHint, PrinterDetails, PrinterRef, PrinterStatus, SubmitRequest};
+use printscan::print::{
     ErrorKind, Fingerprint, FingerprintExt as _, JobFilter, JobId, JobQueryCaps, JobStatus, NativeCode, PrintError, Progress, Reconciled, RemoteJob,
     Resolution, RetrySafety, Submitted, TagExt as _, TagPlacement, TagSupport, TagSupportExt as _, WatchSupport, filter_jobs, reconcile_jobs,
 };
@@ -81,7 +81,7 @@ impl Default for Config {
             strict: false,
             flow: JobFlow::Auto,
             poll_interval: Duration::from_secs(2),
-            user_name: "craft".into(),
+            user_name: "printscan".into(),
             limits: NetworkLimits::default(),
             version: None,
             version_fallback: false,
@@ -216,7 +216,7 @@ impl IppBackend {
     }
 
     /// Use another transport (a recorder, a wrapper that adds logging). The default is the
-    /// plain-HTTP transport of `craft-wsd`. The transport is only ever given validated URIs.
+    /// plain-HTTP transport of `printscan-wsd`. The transport is only ever given validated URIs.
     #[must_use]
     pub fn with_transport(mut self, transport: impl Transport + Send + Sync + 'static) -> Self {
         self.transport = Arc::new(transport);
@@ -256,7 +256,7 @@ impl IppBackend {
         self.configured(|c| c.poll_interval = interval)
     }
 
-    /// The `requesting-user-name` sent with requests. Defaults to a fixed `craft`, never the account name.
+    /// The `requesting-user-name` sent with requests. Defaults to a fixed `printscan`, never the account name.
     #[must_use]
     pub fn with_user_name(self, name: &str) -> Self {
         self.configured(|c| c.user_name = name.to_owned())
@@ -345,7 +345,7 @@ impl IppBackend {
     pub fn job_id(printer_uri: &str, job_number: u32) -> Result<JobId, PrintError> {
         if job_number == 0 || i32::try_from(job_number).is_err() {
             return Err(PrintError::new(ErrorKind::InvalidRequest, format!("{job_number} is not a valid IPP job id (1 to 2147483647)"))
-                .with_phase(crate::Phase::Prepare));
+                .with_phase(printscan::print::Phase::Prepare));
         }
         let uri = PrinterUri::parse(printer_uri).map_err(PrintError::from)?;
         Ok(JobId::new(NAME, job_native(&uri.canonical(), i64::from(job_number))))
@@ -355,7 +355,8 @@ impl IppBackend {
     /// URI (canonical) and job number. A malformed handle is [`ErrorKind::InvalidRequest`].
     pub fn parse_native(native: &str) -> Result<IppJob, PrintError> {
         let bad = |why: &str| {
-            PrintError::new(ErrorKind::InvalidRequest, format!("{native:?} is not an ipp job handle: {why}")).with_phase(crate::Phase::Prepare)
+            PrintError::new(ErrorKind::InvalidRequest, format!("{native:?} is not an ipp job handle: {why}"))
+                .with_phase(printscan::print::Phase::Prepare)
         };
         let (uri, number) = native.rsplit_once('#').ok_or_else(|| bad("no job number"))?;
         let number: u32 = number.parse().map_err(|_| bad("the job number is not a number"))?;
@@ -369,9 +370,8 @@ impl IppBackend {
     /// [`Self::parse_native`] for a whole [`JobId`]; one of another backend is [`ErrorKind::InvalidRequest`].
     pub fn parse_job_id(job: &JobId) -> Result<IppJob, PrintError> {
         if job.backend() != NAME {
-            return Err(
-                PrintError::new(ErrorKind::InvalidRequest, format!("{job} is not a job of the ipp backend")).with_phase(crate::Phase::Prepare)
-            );
+            return Err(PrintError::new(ErrorKind::InvalidRequest, format!("{job} is not a job of the ipp backend"))
+                .with_phase(printscan::print::Phase::Prepare));
         }
         Self::parse_native(job.native())
     }
@@ -379,7 +379,8 @@ impl IppBackend {
     /// The printer and job number of a job handle made by this backend. The printer must still be added.
     fn job_target(&self, job: &JobId) -> Result<(Entry, i32), PrintError> {
         let bad = |why: &str| {
-            PrintError::new(ErrorKind::InvalidRequest, format!("{job} is not a job of the ipp backend: {why}")).with_phase(crate::Phase::Prepare)
+            PrintError::new(ErrorKind::InvalidRequest, format!("{job} is not a job of the ipp backend: {why}"))
+                .with_phase(printscan::print::Phase::Prepare)
         };
         if job.backend() != NAME {
             return Err(bad("it belongs to another backend"));
@@ -394,7 +395,7 @@ impl IppBackend {
 
     /// The job name sent: the title without control characters, then the tag as a suffix, within
     /// 255 bytes. A title that is empty once cleaned is the default title.
-    pub(super) fn job_name(&self, title: &str, tag: Option<&crate::Tag>) -> String {
+    pub(super) fn job_name(&self, title: &str, tag: Option<&printscan::print::Tag>) -> String {
         let clean = sanitize_name(title);
         let mut chars = MAX_NAME_BYTES;
         loop {
@@ -414,7 +415,7 @@ impl IppBackend {
 /// C1) are removed, not refused; nothing left means the default title.
 fn sanitize_name(title: &str) -> String {
     let clean: String = title.chars().filter(|c| !c.is_control()).collect();
-    if clean.is_empty() { crate::Job::default().title } else { clean }
+    if clean.is_empty() { printscan::print::Job::default().title } else { clean }
 }
 
 /// `<printer uri>#<job id>`. A printer URI never contains `#` (the policy refuses fragments).
@@ -451,7 +452,7 @@ fn details_of(entry: &Entry, attrs: &PrinterAttrs) -> PrinterDetails {
             details.formats.push(format);
         }
     }
-    for kind in attrs.raster_types.iter().flatten().filter_map(|k| crate::pwg::RasterType::from_keyword(k)) {
+    for kind in attrs.raster_types.iter().flatten().filter_map(|k| printscan::print::pwg::RasterType::from_keyword(k)) {
         if !details.raster_types.contains(&kind) {
             details.raster_types.push(kind);
         }
@@ -508,16 +509,16 @@ fn neutral_status(job: &JobAttrs) -> JobStatus {
     out.pages_done = count(job.impressions_completed);
     out.sheets_total = count(job.sheets).filter(|n| *n > 0);
     out.pages_total = count(job.impressions).filter(|n| *n > 0);
-    if state == crate::JobState::Completed && job.has_reason("job-completed-with-warnings") {
+    if state == printscan::print::JobState::Completed && job.has_reason("job-completed-with-warnings") {
         out.warnings.push("the printer completed the job with warnings".to_owned());
     }
     out
 }
 
 /// A job a printer no longer lists: most likely finished, so the neutral kind is
-/// [`ErrorKind::NotFound`] and a [`crate::JobWatch`] reports it as forgotten.
+/// [`ErrorKind::NotFound`] and a [`printscan::print::JobWatch`] reports it as forgotten.
 fn forgotten(entry: &Entry, job_id: i32, cause: &IppError) -> PrintError {
-    let phase = cause.print_error(Op::Status).phase().unwrap_or(crate::Phase::Poll);
+    let phase = cause.print_error(Op::Status).phase().unwrap_or(printscan::print::Phase::Poll);
     PrintError::job_not_found(format!(
         "the printer at {} does not list job {job_id}: printers forget finished jobs, so it most likely finished (or was cancelled)",
         entry.uri.canonical()
@@ -550,7 +551,7 @@ fn not_found_native() -> NativeCode {
 
 /// The printer is not at that address: a "not found" for the printer, not for a job.
 fn printer_missing(entry: &Entry, what: &str, op: Op) -> PrintError {
-    let phase = if op == Op::Status { crate::Phase::Poll } else { crate::Phase::Reply };
+    let phase = if op == Op::Status { printscan::print::Phase::Poll } else { printscan::print::Phase::Reply };
     PrintError::printer_not_found(
         format!(
             "the printer was not found at {}: it answers not-found to a printer query too, so the address or path is wrong (this is not a forgotten {what})",
@@ -565,7 +566,7 @@ fn printer_missing(entry: &Entry, what: &str, op: Op) -> PrintError {
 /// The printer said not-found, and the follow-up read failed, so the cause is unknown. Reading
 /// again is harmless, so this is retryable as a read.
 fn could_not_tell(entry: &Entry, what: &str, original: &IppError, probe: &IppError, op: Op) -> PrintError {
-    let phase = original.print_error(op).phase().unwrap_or(crate::Phase::Reply);
+    let phase = original.print_error(op).phase().unwrap_or(printscan::print::Phase::Reply);
     PrintError::new(
         ErrorKind::Failed,
         format!(
@@ -595,7 +596,7 @@ impl Backend for IppBackend {
         NAME
     }
 
-    /// Every job goes over the network, so the registry asks for a [`crate::UserConfirmed`].
+    /// Every job goes over the network, so the registry asks for a [`printscan::print::UserConfirmed`].
     fn class(&self) -> BackendClass {
         BackendClass::Network
     }
@@ -778,7 +779,7 @@ impl Backend for IppBackend {
                 let mut error = e.print_error(Op::Status);
                 if error.kind() == ErrorKind::NotFound {
                     error = PrintError::new(ErrorKind::Failed, error.message().to_owned())
-                        .with_phase(crate::Phase::Poll)
+                        .with_phase(printscan::print::Phase::Poll)
                         .with_safety(RetrySafety::Idempotent);
                 }
                 Err(error)

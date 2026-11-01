@@ -15,8 +15,8 @@ use super::model::PrinterAttrs;
 use super::policy::PrinterUri;
 use super::protocol::Operation;
 use super::{IppBackend, IppVersion, JobFlow};
-use crate::backends::Backend;
-use crate::{
+use printscan::print::backends::Backend;
+use printscan::print::{
     BackendClass, BytesSource, CancelToken, ConvertContext, Document, DocumentConverter, DocumentFormat, Duplex, ErrorKind, Fingerprint, Job,
     JobFilter, JobOptions, JobState, LifecycleState, ManualClock, NotFoundSubject, Outcome, OwnedDocument, Phase, PrintError, PrintJob, Quality,
     Reconciled, Registry, RetryAdvice, RetrySafety, SubmitRequest, Tag, TagExt as _, TagPlacement, TagPolicy, Timestamp, UserConfirmed, WatchSupport,
@@ -197,7 +197,7 @@ fn job_group(id: i32, state: i32, reasons: &[&str], name: &str) -> Group {
         .with(Attribute::enumeration("job-state", state))
         .with(Attribute::keywords("job-state-reasons", if reasons.is_empty() { &["none"] } else { reasons }))
         .with(Attribute::name_value("job-name", name))
-        .with(Attribute::name_value("job-originating-user-name", "craft"))
+        .with(Attribute::name_value("job-originating-user-name", "printscan"))
 }
 
 /// An unsupported-attributes group listing `names`.
@@ -319,7 +319,7 @@ fn get_printer_attributes_is_exactly_the_rfc_8011_request() {
     push(0x47, "attributes-charset", b"utf-8");
     push(0x48, "attributes-natural-language", b"en");
     push(0x45, "printer-uri", URI.as_bytes());
-    push(0x42, "requesting-user-name", b"craft");
+    push(0x42, "requesting-user-name", b"printscan");
     push(0x44, "requested-attributes", b"printer-name");
     want.push(0x03);
     assert_eq!(message.encode().unwrap(), want);
@@ -397,17 +397,17 @@ fn printer_details_are_read_from_get_printer_attributes() {
     assert_eq!(d.formats, [DocumentFormat::OctetStream, DocumentFormat::Pdf, DocumentFormat::PwgRaster, DocumentFormat::Jpeg]);
     assert_eq!((d.two_sided, d.colour, d.max_copies), (Some(true), Some(true), Some(99)));
     assert_eq!(d.paper, ["iso_a4_210x297mm", "na_letter_8.5x11in", "custom_100x150mm"]);
-    assert_eq!(d.resolutions, [crate::Resolution::new(600, 600)]);
+    assert_eq!(d.resolutions, [printscan::print::Resolution::new(600, 600)]);
     let status = d.status.unwrap();
-    assert_eq!((status.state, status.reasons.len()), (crate::PrinterState::Idle, 0));
+    assert_eq!((status.state, status.reasons.len()), (printscan::print::PrinterState::Idle, 0));
     let hints = d.honoured.unwrap();
     for hint in [
-        crate::JobHint::Copies,
-        crate::JobHint::Duplex,
-        crate::JobHint::Media,
-        crate::JobHint::Quality,
-        crate::JobHint::Resolution,
-        crate::JobHint::Orientation,
+        printscan::print::JobHint::Copies,
+        printscan::print::JobHint::Duplex,
+        printscan::print::JobHint::Media,
+        printscan::print::JobHint::Quality,
+        printscan::print::JobHint::Resolution,
+        printscan::print::JobHint::Orientation,
     ] {
         assert!(hints.contains(&hint), "{hint:?}");
     }
@@ -425,7 +425,7 @@ fn a_stopped_printer_that_is_not_accepting_jobs_says_so() {
             .with(Attribute::boolean("printer-is-accepting-jobs", false)),
     ]);
     let status = registry(&b).printer_details(&id()).unwrap().status.unwrap();
-    assert_eq!(status.state, crate::PrinterState::Stopped);
+    assert_eq!(status.state, printscan::print::PrinterState::Stopped);
     assert_eq!(status.reasons, ["media-empty-error", "paused", "not-accepting-jobs"]);
 }
 
@@ -438,7 +438,7 @@ fn a_document_is_submitted_with_print_job_and_the_job_is_named() {
     script.ok(vec![printer_group()]).ok(accepted(7));
     let tag = Tag::random();
     let events = Mutex::new(Vec::new());
-    let mut record = |p: crate::Progress| events.lock().unwrap().push(p);
+    let mut record = |p: printscan::print::Progress| events.lock().unwrap().push(p);
     let job = Job { copies: 2, duplex: Some(Duplex::LongEdge), ..job() };
     let req = SubmitRequest::new(Document::pdf(PDF), job)
         .with_consent(UserConfirmed::interactive())
@@ -466,7 +466,7 @@ fn a_document_is_submitted_with_print_job_and_the_job_is_named() {
     assert_eq!(template.first_str("sides"), Some("two-sided-long-edge"));
     assert_eq!(template.first_i32("print-quality"), Some(5));
     assert_eq!(template.first_str("media"), Some("iso_a4_210x297mm"));
-    assert_eq!(events.into_inner().unwrap(), [crate::Progress::of(1, 3), crate::Progress::of(3, 3)]);
+    assert_eq!(events.into_inner().unwrap(), [printscan::print::Progress::of(1, 3), printscan::print::Progress::of(3, 3)]);
 }
 
 #[test]
@@ -511,7 +511,7 @@ fn scaling_printer() -> Group {
 fn shrink_to_fit_travels_as_print_scaling_to_a_printer_that_lists_it() {
     let script = Script::new();
     let b = backend(&script);
-    let shrink = Job { scaling: crate::Scaling::ShrinkToFit, ..job() };
+    let shrink = Job { scaling: printscan::print::Scaling::ShrinkToFit, ..job() };
     script.ok(vec![scaling_printer()]).ok(accepted(21));
     let submitted = registry(&b).submit_job(request(shrink.clone())).unwrap();
     assert!(submitted.warnings.is_empty(), "{:?}", submitted.warnings);
@@ -533,13 +533,13 @@ fn scaling_is_honoured_only_by_a_printer_that_lists_auto_fit() {
     let b = backend(&script);
     script.ok(vec![scaling_printer()]);
     let with = registry(&b).printer_details(&id()).unwrap().honoured.unwrap();
-    assert!(with.contains(&crate::JobHint::Scaling));
+    assert!(with.contains(&printscan::print::JobHint::Scaling));
     script.ok(vec![printer_group()]);
     let without = registry(&b).printer_details(&id()).unwrap().honoured.unwrap();
-    assert!(!without.contains(&crate::JobHint::Scaling));
+    assert!(!without.contains(&printscan::print::JobHint::Scaling));
     script.ok(vec![printer_group().with(Attribute::keywords("print-scaling-supported", &["none", "fit"]))]);
     let listed = registry(&b).printer_details(&id()).unwrap().honoured.unwrap();
-    assert!(!listed.contains(&crate::JobHint::Scaling), "fit enlarges, so it is not shrink-to-fit");
+    assert!(!listed.contains(&printscan::print::JobHint::Scaling), "fit enlarges, so it is not shrink-to-fit");
 }
 
 #[test]
@@ -548,7 +548,7 @@ fn a_big_document_goes_through_create_job_and_send_document() {
     let b = backend(&script).with_large_document(10);
     script.ok(vec![printer_group()]).ok(accepted(11)).ok(vec![job_group(11, 3, &[], "Report")]);
     let events = Mutex::new(Vec::new());
-    let mut record = |p: crate::Progress| events.lock().unwrap().push(p);
+    let mut record = |p: printscan::print::Progress| events.lock().unwrap().push(p);
     let submitted = registry(&b).submit_job(request(job()).with_progress(&mut record)).unwrap();
     assert_eq!(script.ops(), [0x000B, 0x0005, 0x0006]);
     let requests = script.requests();
@@ -563,7 +563,10 @@ fn a_big_document_goes_through_create_job_and_send_document() {
     assert_eq!(send.data, PDF);
     assert_eq!(submitted.job.unwrap().to_string(), format!("ipp:{URI}#11"));
     assert!(submitted.effective.unwrap().contains("create-job"));
-    assert_eq!(events.into_inner().unwrap(), [crate::Progress::of(1, 3), crate::Progress::of(2, 3), crate::Progress::of(3, 3)]);
+    assert_eq!(
+        events.into_inner().unwrap(),
+        [printscan::print::Progress::of(1, 3), printscan::print::Progress::of(2, 3), printscan::print::Progress::of(3, 3)]
+    );
 }
 
 #[test]
@@ -690,7 +693,7 @@ fn pwg_raster_printer(types: Option<&[&str]>) -> Group {
 }
 
 /// A converter that makes PWG raster, prefers 16-bit Adobe RGB, and says what it was asked for.
-struct Raster(std::sync::Mutex<Vec<crate::RasterType>>);
+struct Raster(std::sync::Mutex<Vec<printscan::print::RasterType>>);
 
 impl DocumentConverter for Raster {
     /// PWG raster from PDF only.
@@ -699,8 +702,8 @@ impl DocumentConverter for Raster {
     }
 
     /// 16-bit before 8-bit, Adobe RGB before sRGB before grey.
-    fn raster_types(&self) -> Vec<crate::RasterType> {
-        use crate::RasterType::*;
+    fn raster_types(&self) -> Vec<printscan::print::RasterType> {
+        use printscan::print::RasterType::*;
         vec![AdobeRgb16, Srgb16, AdobeRgb8, Srgb8, Sgray16, Sgray8]
     }
 
@@ -713,7 +716,7 @@ impl DocumentConverter for Raster {
 
 #[test]
 fn the_printers_listed_raster_types_decide_the_pixel_format_the_converter_is_asked_for() {
-    use crate::RasterType::*;
+    use printscan::print::RasterType::*;
     let ask = |types: Option<&[&str]>| {
         let script = Script::new();
         let b = backend(&script);
@@ -745,7 +748,7 @@ fn a_printer_that_lists_raster_types_has_them_in_its_details() {
     let r = registry(&b);
     script.ok(vec![pwg_raster_printer(Some(&["sgray_8", "srgb_8", "srgb_16", "adobe-rgb_8", "adobe-rgb_16", "cmyk_8", "SRGB_8"]))]);
     let details = r.printer_details(&id()).unwrap();
-    use crate::RasterType::*;
+    use printscan::print::RasterType::*;
     assert_eq!(details.raster_types, vec![Sgray8, Srgb8, Srgb16, AdobeRgb8, AdobeRgb16], "ours only, no duplicates, any case");
     script.ok(vec![pwg_raster_printer(None)]);
     assert!(r.printer_details(&id()).unwrap().raster_types.is_empty(), "not published is empty");
@@ -754,7 +757,7 @@ fn a_printer_that_lists_raster_types_has_them_in_its_details() {
 // ---- job status and cancel -----------------------------------------------------------------------------
 
 /// The job status the backend reads from a Get-Job-Attributes reply carrying `group`.
-fn status_of(group: Group) -> Result<crate::JobStatus, PrintError> {
+fn status_of(group: Group) -> Result<printscan::print::JobStatus, PrintError> {
     let script = Script::new();
     let b = backend(&script);
     script.ok(vec![group]);
@@ -819,7 +822,7 @@ fn a_job_the_printer_forgot_is_not_found_and_other_failures_are_not() {
     // A handle for a printer that was not added is a bad request, not a forgotten job.
     let foreign = IppBackend::job_id("ipp://127.0.0.1:7777/x", 1).unwrap();
     assert_eq!(r.job_status(&foreign).unwrap_err().kind(), ErrorKind::InvalidRequest);
-    assert_eq!(r.job_status(&crate::JobId::new("ipp", "garbage")).unwrap_err().kind(), ErrorKind::InvalidRequest);
+    assert_eq!(r.job_status(&printscan::print::JobId::new("ipp", "garbage")).unwrap_err().kind(), ErrorKind::InvalidRequest);
 }
 
 #[test]
@@ -1254,7 +1257,7 @@ fn job_ids_are_typed_and_round_trip() {
     ] {
         assert_eq!(IppBackend::parse_native(bad).unwrap_err().kind(), ErrorKind::InvalidRequest, "{bad}");
     }
-    assert!(IppBackend::parse_job_id(&crate::JobId::new("wsd", "http://127.0.0.1/x#1")).is_err());
+    assert!(IppBackend::parse_job_id(&printscan::print::JobId::new("wsd", "http://127.0.0.1/x#1")).is_err());
 }
 
 // ---- listing and reconcile ------------------------------------------------------------------------------------
@@ -1292,7 +1295,7 @@ fn list_jobs_reads_active_and_finished_jobs_with_title_user_state_and_creation_t
     assert!(listed[0].ours && !listed[1].ours);
     assert_eq!((listed[0].display_title(), listed[1].title.as_str()), ("Third", "Second"));
     assert_eq!((listed[0].state, listed[1].state), (JobState::Processing, JobState::Completed));
-    assert_eq!(listed[0].user.as_deref(), Some("craft"));
+    assert_eq!(listed[0].user.as_deref(), Some("printscan"));
     assert_eq!((listed[0].created, listed[1].created), (Some(t2), Some(t1)));
     assert_eq!(listed[0].tag, Some(tag));
 }
@@ -1528,9 +1531,9 @@ fn control_characters_in_the_title_never_reach_the_job_name_and_the_tag_is_added
     assert!(name.len() <= 255 && Tag::find_in(&name) == Some(tag) && !name.chars().any(char::is_control), "{name:?}");
     // Nothing left: the default title (with the tag when there is one).
     let only = "\u{0}\u{1}\u{7f}\u{85}\n";
-    assert_eq!(sent_name(only, None), "Craft");
-    assert_eq!(sent_name(only, Some(tag)), format!("Craft [ref {tag}]"));
-    assert_eq!(sent_name("", None), "Craft");
+    assert_eq!(sent_name(only, None), "printscan");
+    assert_eq!(sent_name(only, Some(tag)), format!("printscan [ref {tag}]"));
+    assert_eq!(sent_name("", None), "printscan");
 }
 
 // ---- a static reply vector ---------------------------------------------------------------------------------------------

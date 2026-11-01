@@ -1,20 +1,20 @@
 //! The WS-Print backend through the public registry API, against the in-process fake printer
 //! (no sockets: the backend is given an in-memory transport) and, for the hostile cases, loopback
 //! servers that play a misbehaving device.
-#![cfg(all(feature = "wsd", not(target_arch = "wasm32")))]
+#![cfg(all(feature = "print", not(target_arch = "wasm32")))]
 
-use craft_print::wsd::testing as wsd_support;
+use printscan_wsd::print::testing as wsd_support;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use craft_print::backends::Backend;
-use craft_print::wsd::{Reconciled, TicketShape, Transfer, WsdBackend};
-use craft_print::{
+use printscan::print::backends::Backend;
+use printscan::print::{
     BackendClass, CancelToken, Clock, Document, DocumentFormat, Duplex, ErrorKind, Job, JobHint, JobId, JobOptions, JobState, JobWatch, ManualClock,
     Phase, PrinterState, Progress, Quality, Registry, Resolution, RetryPolicy, RetrySafety, Scaling, SubmitRequest, UserConfirmed, WaitPolicy,
     WatchOutcome, WatchStep, WatchSupport, namespaced_id, wait_for_job,
 };
+use printscan_wsd::print::{Reconciled, TicketShape, Transfer, WsdBackend};
 use wsd_support::{Ending, FakeConfig, FakePrinter, MemTransport, printer_server, raw_response};
 
 const URL: &str = "http://127.0.0.1:5357/print";
@@ -389,7 +389,7 @@ fn the_default_ticket_is_the_full_one_and_the_shapes_differ() {
     };
     let default = ticket_for(None);
     assert_eq!(default, ticket_for(Some(TicketShape::Full)));
-    assert!(default.contains("JobOriginatingUserName") && default.contains(">craft<"), "{default}");
+    assert!(default.contains("JobOriginatingUserName") && default.contains(">printscan<"), "{default}");
     assert!(ticket_for(Some(TicketShape::Description)).contains("JobOriginatingUserName"));
     let name_only = ticket_for(Some(TicketShape::JobNameOnly));
     assert!(name_only.contains("Report") && !name_only.contains("JobOriginatingUserName"));
@@ -490,7 +490,7 @@ fn the_status_of_a_forgotten_job_is_not_found_and_says_what_that_means() {
     r.job_status(&job_ref).unwrap();
     let e = r.job_status(&job_ref).unwrap_err();
     assert_eq!(e.kind(), ErrorKind::NotFound);
-    assert_eq!(e.subject(), craft_print::NotFoundSubject::Job, "the printer answered; it is the job it does not know");
+    assert_eq!(e.subject(), printscan::print::NotFoundSubject::Job, "the printer answered; it is the job it does not know");
     assert!(e.message().contains("forget") && e.message().contains("most likely finished"), "{}", e.message());
     assert!(!e.is_retryable());
     assert_eq!(e.phase(), Some(Phase::Poll));
@@ -584,7 +584,7 @@ fn hostile(respond: impl Fn(&wsd_support::HttpRequest) -> Vec<u8> + Send + 'stat
     (server, r)
 }
 
-fn details_error(respond: impl Fn(&wsd_support::HttpRequest) -> Vec<u8> + Send + 'static) -> craft_print::PrintError {
+fn details_error(respond: impl Fn(&wsd_support::HttpRequest) -> Vec<u8> + Send + 'static) -> printscan::print::PrintError {
     let (server, r) = hostile(respond);
     r.printer_details(&id(&server.url("/print"))).unwrap_err()
 }
@@ -659,7 +659,7 @@ fn a_connection_closed_with_no_reply_is_retryable() {
 #[test]
 fn a_huge_reply_is_cut_off() {
     let server = wsd_support::Server::start(|_| raw_response(200, "application/soap+xml", &vec![b'<'; 3 << 20]));
-    let b = WsdBackend::new().with_limits(craft_print::wsd::NetworkLimits { max_response: 64 << 10, ..Default::default() });
+    let b = WsdBackend::new().with_limits(printscan_wsd::print::NetworkLimits { max_response: 64 << 10, ..Default::default() });
     b.add(&server.url("/print")).unwrap();
     let e = registry(&b).printer_details(&id(&server.url("/print"))).unwrap_err();
     assert_eq!(e.kind(), ErrorKind::Failed);
@@ -688,7 +688,7 @@ fn a_silent_printer_times_out_and_a_query_may_be_repeated() {
         std::thread::sleep(Duration::from_millis(1500));
         Vec::new()
     });
-    let b = WsdBackend::new().with_limits(craft_print::wsd::NetworkLimits { timeout: Duration::from_millis(300), ..Default::default() });
+    let b = WsdBackend::new().with_limits(printscan_wsd::print::NetworkLimits { timeout: Duration::from_millis(300), ..Default::default() });
     b.add(&server.url("/print")).unwrap();
     let started = std::time::Instant::now();
     let e = registry(&b).printer_details(&id(&server.url("/print"))).unwrap_err();
@@ -703,7 +703,7 @@ fn a_connection_that_cannot_be_made_is_safe_to_retry() {
     // A port that was open a moment ago and is not any more.
     let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     let url = format!("http://127.0.0.1:{port}/print");
-    let b = WsdBackend::new().with_limits(craft_print::wsd::NetworkLimits { timeout: Duration::from_secs(5), ..Default::default() });
+    let b = WsdBackend::new().with_limits(printscan_wsd::print::NetworkLimits { timeout: Duration::from_secs(5), ..Default::default() });
     b.add(&url).unwrap();
     let r = registry(&b);
     let e = r.submit(request(job(&url))).unwrap_err();
@@ -755,8 +755,8 @@ fn a_full_print_over_a_loopback_socket() {
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use craft_print::wsd::adapter::{DeviceUrl, Request, Response, Transport, TransportKind, WireError};
-use craft_print::{Jitter, retry};
+use printscan::print::{Jitter, retry};
+use printscan_wsd::print::adapter::{DeviceUrl, Request, Response, Transport, TransportKind, WireError};
 
 /// Delivers every request to the fake printer and, for the named operation, loses the reply a number
 /// of times: the printer did the work and the client saw the connection close with no answer.
@@ -902,8 +902,8 @@ fn reconcile_matches_what_each_ticket_shape_sends() {
     let r = registry(&b);
     r.submit_job(request(job(URL))).unwrap();
     assert!(matches!(b.reconcile(URL, "Report").unwrap(), Reconciled::Found(_)), "a name-only ticket's job is found");
-    let fingerprint = craft_print::Fingerprint::new("Report", craft_print::Timestamp::default());
-    assert!(matches!(r.find_job(&id(URL), &fingerprint).unwrap(), craft_print::Reconciled::Found(_)), "through the registry too");
+    let fingerprint = printscan::print::Fingerprint::new("Report", printscan::print::Timestamp::default());
+    assert!(matches!(r.find_job(&id(URL), &fingerprint).unwrap(), printscan::print::Reconciled::Found(_)), "through the registry too");
 
     // A title XML cannot carry as it is comes back without the control characters.
     let (_p, b, r) = setup(FakeConfig { ending: Ending::Hangs, ..FakeConfig::default() });
@@ -919,7 +919,7 @@ fn reconcile_matches_what_each_ticket_shape_sends() {
     r.submit_job(request(job(URL))).unwrap();
     assert_eq!(b.reconcile(URL, "Report").unwrap_err().kind(), ErrorKind::Unsupported);
     assert_eq!(r.find_job(&id(URL), &fingerprint).unwrap_err().kind(), ErrorKind::Unsupported);
-    assert_eq!(b.tag_support(), craft_print::TagSupport::None, "nothing carries a tag");
+    assert_eq!(b.tag_support(), printscan::print::TagSupport::None, "nothing carries a tag");
 }
 
 #[test]
@@ -951,9 +951,9 @@ fn a_history_longer_than_the_cap_still_finds_the_job_just_sent() {
     let job_id = submitted.job.unwrap();
     r.cancel_job(&job_id).unwrap();
     assert!(matches!(b.reconcile(URL, "Report").unwrap(), Reconciled::Found(_)), "found among the newest 256");
-    let fingerprint = craft_print::Fingerprint::new("Report", craft_print::Timestamp::default());
-    assert!(matches!(r.find_job(&id(URL), &fingerprint).unwrap(), craft_print::Reconciled::Found(_)));
-    assert!(r.list_jobs(&id(URL), &craft_print::JobFilter::new()).unwrap().iter().any(|j| j.id == job_id));
+    let fingerprint = printscan::print::Fingerprint::new("Report", printscan::print::Timestamp::default());
+    assert!(matches!(r.find_job(&id(URL), &fingerprint).unwrap(), printscan::print::Reconciled::Found(_)));
+    assert!(r.list_jobs(&id(URL), &printscan::print::JobFilter::new()).unwrap().iter().any(|j| j.id == job_id));
 }
 
 #[test]
@@ -1005,7 +1005,7 @@ fn the_backend_declares_polling_with_a_configurable_interval() {
 
 #[test]
 fn per_job_options_reach_the_ticket_and_unlisted_ones_are_dropped_with_a_warning() {
-    use craft_print::{ColourMode, JobOptions, Orientation, Quality, Resolution};
+    use printscan::print::{ColourMode, JobOptions, Orientation, Quality, Resolution};
     let (p, _b, r) = setup(FakeConfig::default());
     let options = JobOptions::new()
         .with_media("iso_a4_210x297mm")
@@ -1033,7 +1033,7 @@ fn per_job_options_reach_the_ticket_and_unlisted_ones_are_dropped_with_a_warning
 
 #[test]
 fn an_explicit_colour_choice_overrides_the_grey_flag_and_strict_mode_refuses_what_cannot_be_done() {
-    use craft_print::{ColourMode, JobOptions};
+    use printscan::print::{ColourMode, JobOptions};
     // The fake is a colour printer; colour is chosen when the picture is made, so the bytes are the
     // pass-through PDF either way. What reaches the backend is observable through the plan.
     let (_p, b, r) = setup(FakeConfig { color: false, ..FakeConfig::default() });
@@ -1046,7 +1046,7 @@ fn an_explicit_colour_choice_overrides_the_grey_flag_and_strict_mode_refuses_wha
 
 #[test]
 fn a_reduced_ticket_refuses_or_drops_per_job_settings_as_before() {
-    use craft_print::{JobOptions, Orientation};
+    use printscan::print::{JobOptions, Orientation};
     let p = FakePrinter::new(FakeConfig::default());
     let reduced = backend(&p).with_ticket_shape(TicketShape::Description);
     reduced.add(URL).unwrap();
@@ -1110,7 +1110,7 @@ fn a_typed_wsd_job_id_is_accepted_by_status_cancel_and_watch() {
 
 #[test]
 fn expected_pages_give_the_sheet_counter_a_total_that_the_printer_does_not() {
-    use craft_print::JobOptions;
+    use printscan::print::JobOptions;
     let (_p, _b, r) = setup(FakeConfig::default());
     let submitted = r.submit_job(request(job(URL)).with_options(JobOptions::new().with_expected_pages(1))).unwrap();
     let mut watch = JobWatch::for_submitted(&submitted, fast()).unwrap();
@@ -1211,7 +1211,7 @@ fn a_document_in_a_listed_format_goes_to_the_printer_unchanged() {
 /// Renders a blank page per request and packs it with the public PWG encoder.
 struct Blank;
 
-impl craft_print::DocumentConverter for Blank {
+impl printscan::print::DocumentConverter for Blank {
     fn targets(&self, from: DocumentFormat) -> Vec<DocumentFormat> {
         if from == DocumentFormat::Pdf { vec![DocumentFormat::Jpeg, DocumentFormat::PwgRaster] } else { Vec::new() }
     }
@@ -1219,15 +1219,18 @@ impl craft_print::DocumentConverter for Blank {
         &self,
         _document: Document<'_>,
         target: DocumentFormat,
-        context: &craft_print::ConvertContext,
-    ) -> Result<craft_print::OwnedDocument, craft_print::PrintError> {
+        context: &printscan::print::ConvertContext,
+    ) -> Result<printscan::print::OwnedDocument, printscan::print::PrintError> {
         let (w, h) = (context.resolution.x_dpi / 10, context.resolution.y_dpi / 10);
         let channels = if context.colour { 3 } else { 1 };
-        let page = craft_print::pwg::RasterPage { width: w, height: h, gray: !context.colour, pixels: vec![255; (w * h * channels) as usize] };
-        let options =
-            craft_print::pwg::PwgOptions { dpi: (context.resolution.x_dpi, context.resolution.y_dpi), duplex: craft_print::pwg::Duplex::Off };
-        let bytes = craft_print::pwg::encode(&[page], &options).map_err(|e| craft_print::PrintError::new(ErrorKind::Failed, e.to_string()))?;
-        Ok(craft_print::OwnedDocument::new(target, bytes))
+        let page = printscan::print::pwg::RasterPage { width: w, height: h, gray: !context.colour, pixels: vec![255; (w * h * channels) as usize] };
+        let options = printscan::print::pwg::PwgOptions {
+            dpi: (context.resolution.x_dpi, context.resolution.y_dpi),
+            duplex: printscan::print::pwg::Duplex::Off,
+        };
+        let bytes =
+            printscan::print::pwg::encode(&[page], &options).map_err(|e| printscan::print::PrintError::new(ErrorKind::Failed, e.to_string()))?;
+        Ok(printscan::print::OwnedDocument::new(target, bytes))
     }
 }
 
@@ -1291,8 +1294,8 @@ fn a_network_printer_is_not_asked_for_a_conversion_without_consent() {
 
 #[test]
 fn the_old_wsd_encoder_paths_still_work_and_share_the_neutral_encoder() {
-    use craft_print::wsd::pwg;
-    let page = craft_print::pwg::RasterPage { width: 3, height: 2, gray: true, pixels: vec![9; 6] };
-    let options = craft_print::pwg::PwgOptions { dpi: (300, 300), duplex: craft_print::pwg::Duplex::Off };
-    assert_eq!(pwg::encode(std::slice::from_ref(&page), &options).unwrap(), craft_print::pwg::encode(&[page], &options).unwrap());
+    use printscan_wsd::print::pwg;
+    let page = printscan::print::pwg::RasterPage { width: 3, height: 2, gray: true, pixels: vec![9; 6] };
+    let options = printscan::print::pwg::PwgOptions { dpi: (300, 300), duplex: printscan::print::pwg::Duplex::Off };
+    assert_eq!(pwg::encode(std::slice::from_ref(&page), &options).unwrap(), printscan::print::pwg::encode(&[page], &options).unwrap());
 }

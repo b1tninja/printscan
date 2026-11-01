@@ -7,7 +7,7 @@
 //! injectable [`Clock`], so a test drives it without sleeping.
 //!
 //! ```
-//! use craft_print::{JobId, JobWatch, ManualClock, Registry, WaitPolicy, WatchStep};
+//! use printscan::print::{JobId, JobWatch, ManualClock, Registry, WaitPolicy, WatchStep};
 //! # use std::sync::Arc;
 //! let clock = Arc::new(ManualClock::new());
 //! let registry = Registry::new();
@@ -19,13 +19,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use craft_job::{ExpectedTotals, Jitter, JobId, JobState, RetryAdvice, RetryPolicy};
+use crate::job::{ExpectedTotals, Jitter, JobId, JobState, RetryAdvice, RetryPolicy};
 
-use crate::backend::{CancelToken, ErrorKind, NotFoundSubject, PrintError};
-use crate::job::{ExpectedTotalsExt as _, JobStatus, Submitted, WatchSupport};
-use crate::registry::Registry;
-use crate::retry::{CANCEL_SLICE, Clock, JitterExt as _, SystemClock, advise_error};
-use crate::wake::WakeReceiver;
+use crate::print::backend::{CancelToken, ErrorKind, NotFoundSubject, PrintError};
+use crate::print::job::{ExpectedTotalsExt as _, JobStatus, Submitted, WatchSupport};
+use crate::print::registry::Registry;
+use crate::print::retry::{CANCEL_SLICE, Clock, JitterExt as _, SystemClock, advise_error};
+use crate::print::wake::WakeReceiver;
 
 /// Where a watch gets status from and sends cancels to. The [`Registry`] is one (by job id); a
 /// test can supply its own.
@@ -261,7 +261,7 @@ impl JobWatch {
         }
     }
 
-    /// Use another clock (a [`crate::ManualClock`] in tests). Restarts the deadline and schedule
+    /// Use another clock (a [`crate::print::ManualClock`] in tests). Restarts the deadline and schedule
     /// from that clock's now.
     #[must_use]
     pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
@@ -305,7 +305,7 @@ impl JobWatch {
         self
     }
 
-    /// Follow the backend's push channel ([`crate::backends::Backend::wake_source`]; the registry
+    /// Follow the backend's push channel ([`crate::print::backends::Backend::wake_source`]; the registry
     /// attaches it in [`Registry::job_watch`]). A wake makes the next poll due at once (at most one
     /// wake-driven poll a second), and while the receiver is healthy the idle gap between polls is
     /// [`WaitPolicy::safety_interval`] instead of the ordinary one. The status always comes from a
@@ -579,7 +579,7 @@ pub fn wait_for_job(registry: &Registry, job: &JobId, policy: WaitPolicy) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::retry::ManualClock;
+    use crate::print::retry::ManualClock;
     use std::sync::Mutex;
 
     /// A source that plays back a script of poll results.
@@ -637,7 +637,7 @@ mod tests {
 
     /// A transient, idempotent-safe "unavailable" error.
     fn busy() -> PrintError {
-        PrintError::new(ErrorKind::Unavailable, "down").with_safety(crate::RetrySafety::Idempotent)
+        PrintError::new(ErrorKind::Unavailable, "down").with_safety(crate::print::RetrySafety::Idempotent)
     }
 
     #[test]
@@ -749,7 +749,7 @@ mod tests {
         assert_eq!(script.polls(), 1, "not transient: no retry");
 
         // A poll error that says the outcome is unknown is never retried automatically.
-        let script = Script::new(vec![Err(PrintError::new(ErrorKind::Timeout, "t").with_safety(crate::RetrySafety::OutcomeUnknown))]);
+        let script = Script::new(vec![Err(PrintError::new(ErrorKind::Timeout, "t").with_safety(crate::print::RetrySafety::OutcomeUnknown))]);
         let (mut watch, _) = self::watch(WaitPolicy::default());
         assert!(matches!(watch.run(&script, &mut |_| {}), WatchOutcome::Failed(_)));
         assert_eq!(script.polls(), 1);
@@ -929,8 +929,8 @@ mod tests {
 #[cfg(test)]
 mod wake_tests {
     use super::*;
-    use crate::retry::ManualClock;
-    use crate::wake::{WakeSender, wake_channel};
+    use crate::print::retry::ManualClock;
+    use crate::print::wake::{WakeSender, wake_channel};
     use std::sync::Mutex;
 
     /// Counts polls and answers `Processing` until told to finish.
@@ -1108,7 +1108,7 @@ mod wake_tests {
         impl JobSource for Flaky {
             /// Always a transient, idempotent-safe failure.
             fn job_status(&self, _: &JobId) -> Result<JobStatus, PrintError> {
-                Err(PrintError::new(ErrorKind::Unavailable, "down").with_safety(crate::RetrySafety::Idempotent))
+                Err(PrintError::new(ErrorKind::Unavailable, "down").with_safety(crate::print::RetrySafety::Idempotent))
             }
             /// Accept every cancel.
             fn cancel_job(&self, _: &JobId) -> Result<(), PrintError> {

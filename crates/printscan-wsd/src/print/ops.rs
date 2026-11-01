@@ -1,7 +1,7 @@
 //! Request bodies and reply readers for the operations, one function each.
 //!
 //! Builders return the fragment that goes inside `<s:Body>`; readers take the response element
-//! that `craft_wsd::envelope::read_reply` hands over. Readers are lenient about vendor additions
+//! that `crate::envelope::read_reply` hands over. Readers are lenient about vendor additions
 //! (unknown elements are skipped) and strict about what they need (a missing `JobId` is an error).
 //! Every list they build is capped.
 
@@ -369,7 +369,7 @@ fn keep_newest(rows: &mut Vec<JobSummary>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wsd::ticket::Compression;
+    use crate::print::ticket::Compression;
 
     /// Parse `body` inside a root element that declares `wprt` and a `q` prefix, and hand the root to `f`.
     fn with<T>(body: &str, f: impl FnOnce(Node<'_, '_>) -> Result<T>) -> Result<T> {
@@ -437,8 +437,8 @@ mod tests {
         assert_eq!(c.sides, ["OneSided", "TwoSidedLongEdge"]);
         assert_eq!(c.copies, Some((1, 99)));
         assert_eq!(c.resolutions, [(300, 300), (600, 600)]);
-        assert_eq!(c.supports_sides(crate::wsd::ticket::Sides::TwoSidedShortEdge), Some(false));
-        assert_eq!(c.supports_quality(crate::wsd::ticket::Quality::High), None);
+        assert_eq!(c.supports_sides(crate::print::ticket::Sides::TwoSidedShortEdge), Some(false));
+        assert_eq!(c.supports_quality(crate::print::ticket::Quality::High), None);
         assert_eq!(c.supports_copies(100), Some(false));
         assert_eq!(c.supports_resolution((600, 600)), Some(true));
         assert_eq!(c.accepts_format("APPLICATION/PDF"), Some("application/pdf"));

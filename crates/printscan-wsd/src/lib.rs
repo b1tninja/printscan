@@ -31,6 +31,8 @@ pub mod metadata;
 pub mod mtom;
 pub mod ns;
 pub mod policy;
+#[cfg(all(feature = "print", not(target_arch = "wasm32")))]
+pub mod print;
 pub mod retry;
 pub mod service;
 pub mod soap;

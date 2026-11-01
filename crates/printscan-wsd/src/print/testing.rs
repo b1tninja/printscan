@@ -3,7 +3,7 @@
 //!
 //! The protocol logic is [`FakePrinter::handle`], [`MemTransport`] is a socket-free
 //! [`Transport`] over it, and [`printer_server`] puts it behind the
-//! loopback HTTP server of `craft-wsd`'s `testing` feature (127.0.0.1, ephemeral port). It
+//! loopback HTTP server of `printscan-wsd`'s `testing` feature (127.0.0.1, ephemeral port). It
 //! implements just enough of the service to exercise a client: printer elements (description,
 //! status, capabilities), create / send / status / cancel / history of jobs, with scripted endings
 //! ([`Ending`]) and failures ([`FakeConfig`]). It stores every job's ticket and document
@@ -11,15 +11,15 @@
 //!
 //! ```
 //! use std::sync::Arc;
-//! use craft_print::wsd::WsdBackend;
-//! use craft_print::wsd::testing::{FakeConfig, FakePrinter, MemTransport};
+//! use printscan_wsd::print::WsdBackend;
+//! use printscan_wsd::print::testing::{FakeConfig, FakePrinter, MemTransport};
 //!
 //! let printer = FakePrinter::new(FakeConfig::default());
 //! let backend = WsdBackend::new().with_transport(MemTransport(Arc::clone(&printer)));
 //! let id = backend.add("http://127.0.0.1:5357/print")?;
 //! assert_eq!(printer.jobs(), 0);
 //! # let _ = id;
-//! # Ok::<(), craft_print::PrintError>(())
+//! # Ok::<(), printscan::print::PrintError>(())
 //! ```
 
 use std::collections::BTreeMap;

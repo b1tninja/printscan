@@ -1,4 +1,4 @@
-//! The registry of print backends. See [`crate::backend`] for how to write one.
+//! The registry of print backends. See [`crate::print::backend`] for how to write one.
 //!
 //! Printer ids are namespaced `"<backend>:<native id>"`. Listing asks every backend and keeps what
 //! answers: a backend that fails does not hide the others' printers, it appears in
@@ -13,18 +13,18 @@
 use std::sync::{Arc, OnceLock, PoisonError, RwLock};
 use std::time::Duration;
 
-use craft_job::{BackendName, ExpectedTotals, Fingerprint, JobId, Progress, RetrySafety, TagSupport, namespaced_id, split_id};
+use crate::job::{BackendName, ExpectedTotals, Fingerprint, JobId, Progress, RetrySafety, TagSupport, namespaced_id, split_id};
 
-use crate::backend::{Backend, BackendClass, DocumentFormat, ErrorKind, PrintError, PrinterDetails, PrinterRef, Receipt, SubmitRequest};
-use crate::convert::{
+use crate::print::backend::{Backend, BackendClass, DocumentFormat, ErrorKind, PrintError, PrinterDetails, PrinterRef, Receipt, SubmitRequest};
+use crate::print::convert::{
     Conversion, ConversionPolicy, ConvertContext, DocumentConverter, OwnedDocument, choose_raster_type, choose_resolution, pick_target, wants_colour,
 };
-use crate::job::{ExpectedTotalsExt as _, JobStatus, Submitted, WatchSupport};
-use crate::remote::{JobFilter, JobQueryCaps, Reconciled, RemoteJob};
-use crate::retry::Phase;
-use crate::tag::TagSupportExt as _;
-use crate::wake::WakeReceiver;
-use crate::watch::{JobWatch, WaitPolicy};
+use crate::print::job::{ExpectedTotalsExt as _, JobStatus, Submitted, WatchSupport};
+use crate::print::remote::{JobFilter, JobQueryCaps, Reconciled, RemoteJob};
+use crate::print::retry::Phase;
+use crate::print::tag::TagSupportExt as _;
+use crate::print::wake::WakeReceiver;
+use crate::print::watch::{JobWatch, WaitPolicy};
 
 /// Why [`Registry::register`] refused a backend.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -90,7 +90,7 @@ pub struct Registry {
     conversion: RwLock<ConversionSetup>,
 }
 
-/// The app's converter and the policy around it; see [`crate::convert`].
+/// The app's converter and the policy around it; see [`crate::print::convert`].
 #[derive(Default)]
 struct ConversionSetup {
     converter: Option<Arc<dyn DocumentConverter>>,
@@ -105,7 +105,7 @@ impl Registry {
 
     /// Register the app's [`DocumentConverter`], replacing any earlier one. Without one, a document
     /// the printer does not accept is refused ([`ErrorKind::UnsupportedFormat`]); with one, the
-    /// registry converts it when a format in common exists. See [`crate::convert`] for the rules.
+    /// registry converts it when a format in common exists. See [`crate::print::convert`] for the rules.
     pub fn set_converter(&self, converter: Arc<dyn DocumentConverter>) {
         self.conversion.write().unwrap_or_else(PoisonError::into_inner).converter = Some(converter);
     }
@@ -219,7 +219,7 @@ impl Registry {
 
     /// Hand a document to a printer; returns once the printer has **accepted** it, which is a
     /// bounded call (the backend's per-request timeouts, never the length of the print). Follow the
-    /// job with [`Self::job_status`], [`Self::job_watch`] or [`crate::wait_for_job`] when
+    /// job with [`Self::job_status`], [`Self::job_watch`] or [`crate::print::wait_for_job`] when
     /// [`Submitted::watch`] says the backend can report. `request.job.printer` picks the backend:
     ///
     /// * `"<backend>:<native id>"` with a registered prefix goes to that backend, prefix removed;
@@ -230,7 +230,7 @@ impl Registry {
     /// Before the backend is called the registry checks, in this order, that the token is not
     /// cancelled ([`ErrorKind::Cancelled`]), that the printer accepts the document's format or can
     /// be given a converted one ([`ErrorKind::UnsupportedFormat`], see below) and that a
-    /// [`BackendClass::Network`] backend has a [`crate::UserConfirmed`]
+    /// [`BackendClass::Network`] backend has a [`crate::print::UserConfirmed`]
     /// ([`ErrorKind::ConsentRequired`]).
     ///
     /// # Formats and conversion
@@ -238,10 +238,10 @@ impl Registry {
     /// A document in a format the printer accepts is sent as it is. Otherwise, when the app has
     /// registered a [`DocumentConverter`] ([`Self::set_converter`]), the registry picks the best
     /// format the converter makes and the printer takes, chooses the resolution (the caller's
-    /// [`crate::JobOptions::resolution`], else the printer's listed one nearest the policy's target
+    /// [`crate::print::JobOptions::resolution`], else the printer's listed one nearest the policy's target
     /// dpi), runs the converter and sends its result; [`Submitted::conversion`] says so. With no
     /// converter or no format in common the call fails with [`ErrorKind::UnsupportedFormat`],
-    /// whose message lists the document's format and the accepted formats. See [`crate::convert`].
+    /// whose message lists the document's format and the accepted formats. See [`crate::print::convert`].
     ///
     /// For a backend whose accepted formats depend on the printer
     /// ([`Backend::formats_per_printer`]) and with a converter registered, deciding costs one
@@ -470,7 +470,7 @@ impl Registry {
 
     /// The jobs of a printer (a namespaced id), listed by its backend with one bounded read;
     /// [`ErrorKind::Unsupported`] when the backend cannot list. See
-    /// [`crate::backends::Backend::list_jobs`]. The returned ids are namespaced.
+    /// [`crate::print::backends::Backend::list_jobs`]. The returned ids are namespaced.
     pub fn list_jobs(&self, printer: &str, filter: &JobFilter) -> Result<Vec<RemoteJob>, PrintError> {
         let backends = self.snapshot();
         let (backend, native) = Self::route(&backends, printer)?;
@@ -483,7 +483,7 @@ impl Registry {
     }
 
     /// After an attempt whose outcome is unknown: look for the job it may have created on a printer
-    /// (a namespaced id). See [`crate::backends::Backend::find_job`].
+    /// (a namespaced id). See [`crate::print::backends::Backend::find_job`].
     pub fn find_job(&self, printer: &str, fingerprint: &Fingerprint) -> Result<Reconciled, PrintError> {
         let backends = self.snapshot();
         let (backend, native) = Self::route(&backends, printer)?;
@@ -514,7 +514,7 @@ impl Registry {
     }
 
     /// One reading of an accepted job's status: a single bounded request to the backend that owns
-    /// the job. See [`crate::backends::Backend::job_status`]. A status carries no caller-supplied
+    /// the job. See [`crate::print::backends::Backend::job_status`]. A status carries no caller-supplied
     /// totals: a [`JobWatch`] applies [`Submitted::expected`] to what it reads.
     pub fn job_status(&self, job: &JobId) -> Result<JobStatus, PrintError> {
         let backends = self.snapshot();
@@ -522,7 +522,7 @@ impl Registry {
     }
 
     /// Ask the owning backend to cancel an accepted job. See
-    /// [`crate::backends::Backend::cancel_job`].
+    /// [`crate::print::backends::Backend::cancel_job`].
     pub fn cancel_job(&self, job: &JobId) -> Result<(), PrintError> {
         let backends = self.snapshot();
         Self::backend_of(&backends, job)?.cancel_job(job)
@@ -554,7 +554,7 @@ impl Registry {
     }
 
     /// A push channel for the job, when its backend has one (see
-    /// [`crate::backends::Backend::wake_source`]). `None` for a backend without one and for an id
+    /// [`crate::print::backends::Backend::wake_source`]). `None` for a backend without one and for an id
     /// that names no backend.
     pub fn wake_source(&self, job: &JobId) -> Option<WakeReceiver> {
         let backends = self.snapshot();
@@ -588,14 +588,9 @@ fn unsupported() -> PrintError {
 
 static GLOBAL: OnceLock<Registry> = OnceLock::new();
 
-/// The process-wide registry. On first use it holds the platform's built-in backend (`cups` on
-/// macOS and Linux, `spooler` on Windows; none elsewhere). Register more at start-up.
+/// The process-wide registry. It starts empty: register the backends the app uses at start-up.
 pub fn registry() -> &'static Registry {
-    GLOBAL.get_or_init(|| {
-        let registry = Registry::new();
-        crate::builtin::register_builtin(&registry);
-        registry
-    })
+    GLOBAL.get_or_init(Registry::new)
 }
 
 /// Register a backend with the process-wide registry. See [`Registry::register`].
@@ -614,7 +609,7 @@ pub fn printer_details(id: &str) -> Result<PrinterDetails, PrintError> {
 }
 
 /// Print through the process-wide registry; returns once the printer accepted the document. See
-/// [`Registry::submit`]. [`crate::submit`] is the unchanged single-backend entry point.
+/// [`Registry::submit`].
 pub fn submit_to_backend(request: SubmitRequest<'_>) -> Result<Receipt, PrintError> {
     registry().submit(request)
 }

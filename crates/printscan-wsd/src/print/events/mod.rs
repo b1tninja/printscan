@@ -29,7 +29,7 @@ use super::client::Client;
 use super::error::WsdError;
 use super::ns::Event;
 use super::policy::{NetworkLimits, PrinterUrl};
-use crate::{Clock, ErrorKind, PrintError, WakeReceiver, WakeSender, wake_channel};
+use printscan::print::{Clock, ErrorKind, PrintError, WakeReceiver, WakeSender, wake_channel};
 
 /// The events a subscription asks for: job news and printer news, not capability changes.
 pub const SUBSCRIBED: [Event; 5] =
@@ -145,7 +145,7 @@ impl NotifyConfig {
 
 /// A configuration refusal: invalid request, prepare phase, safe to retry once fixed.
 fn refused(why: String) -> PrintError {
-    PrintError::new(ErrorKind::InvalidRequest, why).with_phase(crate::Phase::Prepare).with_safety(crate::RetrySafety::Safe)
+    PrintError::new(ErrorKind::InvalidRequest, why).with_phase(printscan::print::Phase::Prepare).with_safety(printscan::print::RetrySafety::Safe)
 }
 
 /// The rules of the listener's addresses; run when a [`NotifyConfig`] is made and again by
@@ -396,7 +396,7 @@ impl Events {
         });
         let worker = Arc::clone(&shared);
         let thread = std::thread::Builder::new()
-            .name("craft-print-events".into())
+            .name("printscan::print-events".into())
             .spawn(move || http::serve(&worker, &listener))
             .map_err(|e| PrintError::new(ErrorKind::Failed, format!("cannot start the event listener: {e}")))?;
         Ok(Self { shared, thread: Mutex::new(Some(thread)), local })

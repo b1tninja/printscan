@@ -3,8 +3,8 @@
 
 use super::http::{self, Bucket, Request, ingest, token_of};
 use super::*;
-use crate::ManualClock;
-use crate::wsd::adapter::default_transport;
+use crate::print::adapter::default_transport;
+use printscan::print::ManualClock;
 
 fn secs(n: u64) -> Duration {
     Duration::from_secs(n)
@@ -121,7 +121,7 @@ fn the_advertised_address_is_the_bind_address_or_a_private_one() {
 fn a_wildcard_or_public_bind_is_refused_by_name() {
     for bind in ["0.0.0.0:0", "0.0.0.0:9000", "[::]:0", "[::]:9000", "[::ffff:0.0.0.0]:9000"] {
         let e = NotifyConfig::new(bind.parse().unwrap(), "http://127.0.0.1:1/").unwrap_err();
-        assert_eq!((e.kind(), e.retry_safety()), (ErrorKind::InvalidRequest, crate::RetrySafety::Safe), "{bind}");
+        assert_eq!((e.kind(), e.retry_safety()), (ErrorKind::InvalidRequest, printscan::print::RetrySafety::Safe), "{bind}");
         assert!(e.message().contains("wildcard") && e.message().contains("local interface address"), "{bind}: {e}");
         // The text form goes through the same check.
         assert!(NotifyConfig::parse(bind, "http://127.0.0.1:1/").is_err(), "{bind}");

@@ -6,8 +6,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use craft_print::testing::FakeBackend;
-use craft_print::{
+use printscan::print::testing::FakeBackend;
+use printscan::print::{
     CancelToken, Document, ErrorKind, Job, JobId, JobOptions, JobState, JobStatus, JobWatch, ManualClock, ParseIdErrorKind, Phase, PrintError,
     Progress, Registry, RetrySafety, SubmitRequest, UserConfirmed, WaitPolicy, WatchOutcome, WatchStep, WatchSupport, wait_for_job,
 };
@@ -216,7 +216,7 @@ fn expected_pages_become_the_total_only_where_the_backend_reports_none() {
     ]);
     let registry = registry(&printer);
     let options = JobOptions::new().with_expected_pages(6);
-    let duplex = Job { printer: Some("net:p1".into()), duplex: Some(craft_print::Duplex::LongEdge), ..Job::default() };
+    let duplex = Job { printer: Some("net:p1".into()), duplex: Some(printscan::print::Duplex::LongEdge), ..Job::default() };
     let submitted = registry.submit_job(SubmitRequest::new(Document::pdf(b"%PDF-1.7"), duplex).with_options(options)).unwrap();
     assert_eq!((submitted.expected.pages, submitted.expected.sheets), (Some(6), Some(3)));
     let mut watch =

@@ -333,8 +333,8 @@ impl DocumentDescription {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wsd::adapter::xml;
-    use crate::wsd::ns;
+    use crate::print::adapter::xml;
+    use crate::print::ns;
 
     fn wrapped(inner: &str) -> String {
         format!("<r xmlns:wprt=\"{}\">{inner}</r>", ns::WPRT)
@@ -343,7 +343,7 @@ mod tests {
     fn full() -> PrintTicket {
         PrintTicket {
             job_name: "a <b> & c".into(),
-            user_name: "craft".into(),
+            user_name: "printscan".into(),
             copies: Some(3),
             media_size: Some("iso_a4_210x297mm".into()),
             orientation: Some(Orientation::Landscape),

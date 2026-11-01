@@ -7,8 +7,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use craft_print::testing::{FakeBackend, SubmitStep};
-use craft_print::{
+use printscan::print::testing::{FakeBackend, SubmitStep};
+use printscan::print::{
     Document, DocumentConverter, DocumentFormat, ErrorKind, FnSource, Job, JobOptions, JobState, JobStatus, LifecycleState, ManualClock, Outcome,
     OwnedDocument, PrintError, PrintJob, Registry, Resolution, RetrySafety, UserConfirmed,
 };
@@ -25,7 +25,7 @@ impl DocumentConverter for ToRaster {
     fn targets(&self, from: DocumentFormat) -> Vec<DocumentFormat> {
         if from == DocumentFormat::Pdf { vec![DocumentFormat::PwgRaster] } else { Vec::new() }
     }
-    fn convert(&self, _: Document<'_>, target: DocumentFormat, _: &craft_print::ConvertContext) -> Result<OwnedDocument, PrintError> {
+    fn convert(&self, _: Document<'_>, target: DocumentFormat, _: &printscan::print::ConvertContext) -> Result<OwnedDocument, PrintError> {
         let n = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
         Ok(OwnedDocument::new(target, format!("raster#{n}").into_bytes()))
     }
@@ -137,13 +137,13 @@ fn a_retry_after_a_safe_failure_reads_the_source_and_converts_again() {
     assert_eq!(view.documents.first().unwrap().format.as_deref(), Some("pwg-raster"));
 }
 
-#[cfg(all(feature = "wsd", not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 mod wsd {
     use std::time::Duration;
 
-    use craft_print::wsd::WsdBackend;
-    use craft_print::wsd::testing::{FakeConfig, FakePrinter, MemTransport};
-    use craft_print::{BytesSource, Quality};
+    use printscan::print::{BytesSource, Quality};
+    use printscan_wsd::print::WsdBackend;
+    use printscan_wsd::print::testing::{FakeConfig, FakePrinter, MemTransport};
 
     use super::*;
 

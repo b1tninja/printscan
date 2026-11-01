@@ -16,8 +16,10 @@ use super::mtom::Transfer;
 use super::ops::JobSection;
 use super::policy::{NetworkLimits, PrinterUrl};
 use super::ticket::{self, Sides, TicketShape};
-use crate::backends::{Backend, BackendClass, DocumentFormat, JobHint, PrinterDetails, PrinterRef, PrinterState, PrinterStatus, SubmitRequest};
-use crate::{
+use printscan::print::backends::{
+    Backend, BackendClass, DocumentFormat, JobHint, PrinterDetails, PrinterRef, PrinterState, PrinterStatus, SubmitRequest,
+};
+use printscan::print::{
     Clock, ColourMode, Duplex, ErrorKind, Fingerprint, FingerprintExt as _, Job, JobFilter, JobId, JobOptions, JobQueryCaps, JobStatus, PrintError,
     Progress, Reconciled as FoundJobs, RemoteJob, Resolution, Scaling, Submitted, SystemClock, Tag, TagExt as _, TagPlacement, TagSupport,
     TagSupportExt as _, WakeReceiver, WatchSupport, filter_jobs, reconcile_jobs,
@@ -73,7 +75,7 @@ impl Default for Config {
             strict: false,
             transfer: Transfer::Mtom,
             poll_interval: Duration::from_secs(2),
-            user_name: "craft".into(),
+            user_name: "printscan".into(),
             limits: NetworkLimits::default(),
         }
     }
@@ -98,7 +100,7 @@ impl Default for Config {
 /// methods consume a backend and a clone shares the printer list, so
 /// `backend.clone().with_ticket_shape(TicketShape::Description).with_drop_ticket_settings(true)` is
 /// a cheap, independent variant that still prints to the same printers. Register it in a
-/// [`crate::Registry`] of its own, or call [`Backend::submit`] on it directly (it checks the
+/// [`printscan::print::Registry`] of its own, or call [`Backend::submit`] on it directly (it checks the
 /// consent itself).
 #[derive(Clone)]
 pub struct WsdBackend {
@@ -248,7 +250,7 @@ impl WsdBackend {
     }
 
     /// Use another transport (an in-memory fake, a wrapper that adds logging). The default is the
-    /// plain-HTTP transport of `craft-wsd`. The transport is only ever given validated URLs.
+    /// plain-HTTP transport of `printscan-wsd`. The transport is only ever given validated URLs.
     #[must_use]
     pub fn with_transport(mut self, transport: impl Transport + Send + Sync + 'static) -> Self {
         self.transport = Arc::new(transport);
@@ -285,14 +287,14 @@ impl WsdBackend {
     }
 
     /// The poll interval this backend recommends for [`Backend::job_status`] (default two seconds).
-    /// It is advice for [`crate::JobWatch`] and UIs: the backend itself never polls, and `submit`
+    /// It is advice for [`printscan::print::JobWatch`] and UIs: the backend itself never polls, and `submit`
     /// does not wait for the job.
     #[must_use]
     pub fn with_poll_interval(self, interval: Duration) -> Self {
         self.configured(|c| c.poll_interval = interval)
     }
 
-    /// The `JobOriginatingUserName` sent with jobs. Defaults to a fixed `craft`, never the account name.
+    /// The `JobOriginatingUserName` sent with jobs. Defaults to a fixed `printscan`, never the account name.
     #[must_use]
     pub fn with_user_name(self, name: &str) -> Self {
         self.configured(|c| c.user_name = name.to_owned())
@@ -339,6 +341,7 @@ impl WsdBackend {
             ColourMode::Auto => ColorMode::Auto,
             ColourMode::Colour => ColorMode::Color,
             ColourMode::Mono => ColorMode::Mono,
+            _ => ColorMode::Auto,
         };
         let options = PrintOptions {
             // The tag, when there is one, is the suffix of the name and survives the length cap.
@@ -377,7 +380,8 @@ impl WsdBackend {
     /// a panic.
     pub fn parse_native(native: &str) -> Result<WsdJob, PrintError> {
         let bad = |why: &str| {
-            PrintError::new(ErrorKind::InvalidRequest, format!("{native:?} is not a wsd job handle: {why}")).with_phase(crate::Phase::Prepare)
+            PrintError::new(ErrorKind::InvalidRequest, format!("{native:?} is not a wsd job handle: {why}"))
+                .with_phase(printscan::print::Phase::Prepare)
         };
         let (url, number) = native.rsplit_once('#').ok_or_else(|| bad("no job number"))?;
         let number: u32 = number.parse().map_err(|_| bad("the job number is not a number"))?;
@@ -389,9 +393,8 @@ impl WsdBackend {
     /// [`ErrorKind::InvalidRequest`].
     pub fn parse_job_id(job: &JobId) -> Result<WsdJob, PrintError> {
         if job.backend() != NAME {
-            return Err(
-                PrintError::new(ErrorKind::InvalidRequest, format!("{job} is not a job of the wsd backend")).with_phase(crate::Phase::Prepare)
-            );
+            return Err(PrintError::new(ErrorKind::InvalidRequest, format!("{job} is not a job of the wsd backend"))
+                .with_phase(printscan::print::Phase::Prepare));
         }
         Self::parse_native(job.native())
     }
@@ -406,11 +409,11 @@ pub struct WsdJob {
 }
 
 /// The ticket orientation for a neutral one; anything unknown is portrait.
-fn ticket_orientation(o: crate::Orientation) -> ticket::Orientation {
+fn ticket_orientation(o: printscan::print::Orientation) -> ticket::Orientation {
     match o {
-        crate::Orientation::Landscape => ticket::Orientation::Landscape,
-        crate::Orientation::ReversePortrait => ticket::Orientation::ReversePortrait,
-        crate::Orientation::ReverseLandscape => ticket::Orientation::ReverseLandscape,
+        printscan::print::Orientation::Landscape => ticket::Orientation::Landscape,
+        printscan::print::Orientation::ReversePortrait => ticket::Orientation::ReversePortrait,
+        printscan::print::Orientation::ReverseLandscape => ticket::Orientation::ReverseLandscape,
         _ => ticket::Orientation::Portrait,
     }
 }
@@ -418,11 +421,11 @@ fn ticket_orientation(o: crate::Orientation) -> ticket::Orientation {
 /// The ticket's `PrintQuality` token for the neutral hint. Whether the printer takes it is the
 /// plan's decision against its capability list: a value it does not list is left out with a warning,
 /// or refused in strict mode, like any other setting.
-fn ticket_quality(q: crate::Quality) -> ticket::Quality {
+fn ticket_quality(q: printscan::print::Quality) -> ticket::Quality {
     match q {
-        crate::Quality::Draft => ticket::Quality::Draft,
-        crate::Quality::High => ticket::Quality::High,
-        crate::Quality::Photo => ticket::Quality::Photo,
+        printscan::print::Quality::Draft => ticket::Quality::Draft,
+        printscan::print::Quality::High => ticket::Quality::High,
+        printscan::print::Quality::Photo => ticket::Quality::Photo,
         _ => ticket::Quality::Normal,
     }
 }
@@ -476,7 +479,7 @@ impl Backend for WsdBackend {
         NAME
     }
 
-    /// Every job goes over the network, so the registry asks for a [`crate::UserConfirmed`].
+    /// Every job goes over the network, so the registry asks for a [`printscan::print::UserConfirmed`].
     fn class(&self) -> BackendClass {
         BackendClass::Network
     }
@@ -519,9 +522,9 @@ impl Backend for WsdBackend {
     /// the sheets the printer has finished come from [`Backend::job_status`].
     ///
     /// Follow the job with [`Backend::job_status`] (through the registry, or a
-    /// [`crate::JobWatch`]). Failures say whether sending again is safe: a refusal is
-    /// [`crate::RetrySafety::Safe`]; a connection that closed or timed out **after** the request was
-    /// written is [`crate::RetrySafety::OutcomeUnknown`] (the job may exist) and the backend then
+    /// [`printscan::print::JobWatch`]). Failures say whether sending again is safe: a refusal is
+    /// [`printscan::print::RetrySafety::Safe`]; a connection that closed or timed out **after** the request was
+    /// written is [`printscan::print::RetrySafety::OutcomeUnknown`] (the job may exist) and the backend then
     /// leaves any created job alone; call [`WsdBackend::reconcile`] before submitting again.
     fn submit(&self, request: SubmitRequest<'_>) -> Result<Submitted, PrintError> {
         let SubmitRequest { document, job, options: per_job, consent, cancel, progress, tag } = request;
@@ -609,8 +612,8 @@ impl Backend for WsdBackend {
                 if error.kind() == ErrorKind::NotFound {
                     // Only the printer's own "no such job" means forgotten; anything else is a failure.
                     error = PrintError::new(ErrorKind::Failed, error.message().to_owned())
-                        .with_phase(crate::Phase::Poll)
-                        .with_safety(crate::RetrySafety::Idempotent);
+                        .with_phase(printscan::print::Phase::Poll)
+                        .with_safety(printscan::print::RetrySafety::Idempotent);
                 }
                 Err(error)
             }
@@ -678,36 +681,36 @@ fn job_native(url: &str, job_id: u32) -> String {
 
 /// A job a printer no longer lists. Printers drop finished jobs quickly, so "unknown" after an
 /// accepted job means finished, cancelled or lost; the neutral kind is [`ErrorKind::NotFound`] and a
-/// [`crate::JobWatch`] reports it as forgotten.
+/// [`printscan::print::JobWatch`] reports it as forgotten.
 fn forgotten(entry: &Entry, job_id: u32, cause: &WsdError) -> PrintError {
-    let phase = cause.print_error(Op::Status).phase().unwrap_or(crate::Phase::Poll);
+    let phase = cause.print_error(Op::Status).phase().unwrap_or(printscan::print::Phase::Poll);
     PrintError::job_not_found(format!(
         "the printer at {} does not list job {job_id}: printers forget finished jobs, so it most likely finished (or was cancelled)",
         entry.url.as_url()
     ))
     .with_phase(phase)
-    .with_safety(crate::RetrySafety::Safe)
+    .with_safety(printscan::print::RetrySafety::Safe)
 }
 
 /// The neutral status for a WS-Print job status.
 fn neutral_status(status: &model::JobStatus) -> JobStatus {
     let has = |r: JobReason| status.reasons.contains(&r);
     let state = match &status.state {
-        model::JobState::Pending => crate::JobState::Pending,
-        model::JobState::PendingHeld => crate::JobState::Held,
-        model::JobState::Processing | model::JobState::Started | model::JobState::Terminating => crate::JobState::Processing,
-        model::JobState::ProcessingStopped => crate::JobState::NeedsAttention,
-        model::JobState::Completed if has(JobReason::JobCompletedWithErrors) => crate::JobState::CompletedWithErrors,
-        model::JobState::Completed => crate::JobState::Completed,
-        model::JobState::Canceled => crate::JobState::Cancelled,
-        model::JobState::Aborted => crate::JobState::Aborted,
-        model::JobState::Other(_) => crate::JobState::Unknown,
+        model::JobState::Pending => printscan::print::JobState::Pending,
+        model::JobState::PendingHeld => printscan::print::JobState::Held,
+        model::JobState::Processing | model::JobState::Started | model::JobState::Terminating => printscan::print::JobState::Processing,
+        model::JobState::ProcessingStopped => printscan::print::JobState::NeedsAttention,
+        model::JobState::Completed if has(JobReason::JobCompletedWithErrors) => printscan::print::JobState::CompletedWithErrors,
+        model::JobState::Completed => printscan::print::JobState::Completed,
+        model::JobState::Canceled => printscan::print::JobState::Cancelled,
+        model::JobState::Aborted => printscan::print::JobState::Aborted,
+        model::JobState::Other(_) => printscan::print::JobState::Unknown,
     };
     let mut out = JobStatus::new(state);
     out.reasons = status.reasons.iter().filter(|r| **r != JobReason::None).map(|r| r.name().to_owned()).collect();
     out.sheets_done = Some(u32::try_from(status.sheets_completed).unwrap_or(u32::MAX));
     // "Completed with warnings" is a completed job plus the printer's words about it.
-    if state == crate::JobState::Completed && has(JobReason::JobCompletedWithWarnings) {
+    if state == printscan::print::JobState::Completed && has(JobReason::JobCompletedWithWarnings) {
         out.warnings.push("the printer completed the job with warnings".to_owned());
     }
     out
@@ -730,7 +733,7 @@ pub enum Reconciled {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JobMatch {
     /// The registry's id for the job (`wsd:<printer url>#<id>`), usable with `job_status` and
-    /// `cancel_job` of a [`crate::Registry`] that holds this backend.
+    /// `cancel_job` of a [`printscan::print::Registry`] that holds this backend.
     pub job: JobId,
     pub name: String,
     pub status: JobStatus,
@@ -829,7 +832,8 @@ impl WsdBackend {
     /// forgotten job).
     fn job_target(&self, job: &JobId) -> Result<(Entry, u32), PrintError> {
         let bad = |why: &str| {
-            PrintError::new(ErrorKind::InvalidRequest, format!("{job} is not a job of the wsd backend: {why}")).with_phase(crate::Phase::Prepare)
+            PrintError::new(ErrorKind::InvalidRequest, format!("{job} is not a job of the wsd backend: {why}"))
+                .with_phase(printscan::print::Phase::Prepare)
         };
         if job.backend() != NAME {
             return Err(bad("it belongs to another backend"));
@@ -844,7 +848,7 @@ impl WsdBackend {
     /// example a connection that closed with no reply to `SendDocument`), find out whether the
     /// printer made the job **before** sending again. It reads the printer's active jobs and its
     /// history (`GetActiveJobs`, `GetJobHistory`: idempotent reads) and looks for jobs named
-    /// `job_title` (the title of the [`crate::Job`], cut to the 255 characters this backend sends)
+    /// `job_title` (the title of the [`printscan::print::Job`], cut to the 255 characters this backend sends)
     /// from this backend's user name.
     ///
     /// WS-Print job summaries carry no creation time, so the window is whatever the printer still
@@ -893,7 +897,7 @@ impl WsdBackend {
             // its own is another print's, whatever its title.
             let listed = comparable(&listed_name);
             let exact = listed == name;
-            if !exact && !(Tag::find_in(&listed).is_none() && crate::remote::title_matches(&listed, &title)) {
+            if !exact && !(Tag::find_in(&listed).is_none() && printscan::print::title_matches(&listed, &title)) {
                 continue;
             }
             // Another user's job is not ours. A user the printer never told us (the summary and the

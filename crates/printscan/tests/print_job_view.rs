@@ -1,4 +1,4 @@
-//! `PrintJob::view` and `Snapshot::view`: the tracked print as a `craft_job::JobView`, field by
+//! `PrintJob::view` and `Snapshot::view`: the tracked print as a `printscan::job::JobView`, field by
 //! field and for every lifecycle state, through the public API with the exported fakes on an
 //! injected clock.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
@@ -6,8 +6,8 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use craft_print::testing::{FakeBackend, SubmitStep};
-use craft_print::{
+use printscan::print::testing::{FakeBackend, SubmitStep};
+use printscan::print::{
     BytesSource, DocumentFormat, ErrorKind, Job, JobId, JobKind, JobOptions, JobState, JobStatus, LifecycleState, ManualClock, NativeCode, Phase,
     PrintError, PrintJob, Progress, Registry, RetryAdvice, RetrySafety, Tag, TagPlacement, TagSupport, Timestamp, UserConfirmed, WatchSupport,
 };
@@ -249,7 +249,7 @@ fn a_printer_side_abort_is_aborted_and_completed_with_errors_keeps_its_name() {
     let rig_errors = rig(&network(vec![Ok(status(JobState::CompletedWithErrors))]));
     let mut job = print_job(&rig_errors);
     drive(&mut job, &rig_errors);
-    assert_eq!(job.state(), LifecycleState::Terminal(craft_print::Outcome::Failed));
+    assert_eq!(job.state(), LifecycleState::Terminal(printscan::print::Outcome::Failed));
     let view = job.view();
     assert_eq!(view.state, JobState::CompletedWithErrors);
     assert!(view.needs_attention());
@@ -340,7 +340,7 @@ fn a_tag_in_the_job_name_is_in_the_view_and_a_manual_retry_clears_the_remote_id_
     let fake = local(vec![Ok(status(JobState::Aborted)), Ok(status(JobState::Completed))])
         .with_tag_support(TagSupport::Carried(TagPlacement::JobNameSuffix));
     let rig = rig(&fake);
-    let mut job = print_job(&rig).with_tag(Tag::from_seed(7)).with_tag_policy(craft_print::TagPolicy::Always);
+    let mut job = print_job(&rig).with_tag(Tag::from_seed(7)).with_tag_policy(printscan::print::TagPolicy::Always);
     drive(&mut job, &rig);
     let aborted = job.view();
     assert_eq!(aborted.state, JobState::Aborted);

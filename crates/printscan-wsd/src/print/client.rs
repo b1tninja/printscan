@@ -73,7 +73,7 @@ impl<T: Transport> Client<T> {
     ) -> Result<()> {
         let action = Action::SendDocument;
         let dp = ticket.document_processing_xml();
-        let cid = format!("doc.{}@craft-print", super::adapter::new_uuid());
+        let cid = format!("doc.{}@printscan::print", super::adapter::new_uuid());
         let limits = self.soap.limits();
         let data_xml = match transfer {
             Transfer::Mtom => mtom::xop_include(&cid),
@@ -120,8 +120,8 @@ impl<T: Transport> Client<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wsd::adapter::{DeviceUrl, Request, Response, WireError};
-    use crate::wsd::testutil::reply;
+    use crate::print::adapter::{DeviceUrl, Request, Response, WireError};
+    use crate::print::testutil::reply;
 
     struct Canned(u16, Option<&'static str>, Vec<u8>);
 

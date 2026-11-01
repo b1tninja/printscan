@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, SystemTime};
 
-use craft_print::testing::{FakeBackend, SubmitStep};
-use craft_print::{
+use printscan::print::testing::{FakeBackend, SubmitStep};
+use printscan::print::{
     AttemptOutcome, BytesSource, DocumentFormat, ErrorKind, Fingerprint, FnSource, Job, JobFilter, JobId, JobOptions, JobQueryCaps, JobState,
     JobStatus, LifecycleState, ManualClock, Outcome, Phase, PrintError, PrintJob, PrintJobConfig, Reconciled, Registry, RemoteJob, RetryAdvice,
     RetryPolicy, RetrySafety, SimpleState, Staleness, Tag, TagPlacement, TagPolicy, TagSupport, Timestamp, TrailEvent, UserConfirmed, WatchSupport,
@@ -482,7 +482,7 @@ fn the_tag_defaults_on_for_network_backends_and_off_for_local_ones() {
 
 #[test]
 fn a_backend_that_cannot_carry_a_tag_is_never_handed_one() {
-    let fake = FakeBackend::new("net").with_class(craft_print::BackendClass::Network).with_printer("p1", true);
+    let fake = FakeBackend::new("net").with_class(printscan::print::BackendClass::Network).with_printer("p1", true);
     let rig = rig(&fake);
     let mut job = print_job(&rig, "net:p1");
     drive(&mut job, &rig);

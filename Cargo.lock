@@ -262,6 +262,7 @@ dependencies = [
  "image",
  "png",
  "printscan",
+ "printscan-wsd",
  "serde",
  "serde_json",
  "tempfile",
@@ -270,9 +271,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "printscan-ipp"
+version = "0.1.0"
+dependencies = [
+ "printscan",
+ "printscan-wsd",
+]
+
+[[package]]
 name = "printscan-wsd"
 version = "0.1.0"
 dependencies = [
+ "printscan",
  "printscan-wsd",
  "roxmltree",
  "thiserror",

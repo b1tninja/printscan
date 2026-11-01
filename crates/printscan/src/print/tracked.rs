@@ -1,6 +1,6 @@
 //! [`PrintJob`]: the lifecycle record of one user-visible print, stable across retries.
 //!
-//! A backend follows one remote job ([`crate::JobWatch`]). A person pressed Print once and expects
+//! A backend follows one remote job ([`crate::print::JobWatch`]). A person pressed Print once and expects
 //! one sheet of paper, however many connections, retries and printer-side restarts it takes. A
 //! `PrintJob` holds that print: it sends the document, follows the job, retries what is safe to
 //! retry, refuses to retry what could print twice, reconciles when the outcome of a send is unknown,
@@ -9,8 +9,8 @@
 //!
 //! ```
 //! use std::sync::Arc;
-//! use craft_print::testing::FakeBackend;
-//! use craft_print::{BytesSource, DocumentFormat, Job, JobState, JobStatus, LifecycleState, ManualClock, Outcome, PrintJob, Registry, WatchSupport};
+//! use printscan::print::testing::FakeBackend;
+//! use printscan::print::{BytesSource, DocumentFormat, Job, JobState, JobStatus, LifecycleState, ManualClock, Outcome, PrintJob, Registry, WatchSupport};
 //!
 //! let fake = FakeBackend::new("fake")
 //!     .with_printer("p1", true)
@@ -33,21 +33,21 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 
-use craft_job::{
+use crate::job::{
     DocumentRef, ErrorSummary, ExpectedTotals, Fingerprint, Jitter, JobDocuments, JobId, JobKind, JobState, JobTimes, JobView, NativeCode, Progress,
     RetryAdvice, RetryPolicy, RetrySafety, Tag, Timestamp,
 };
 
-use crate::Job;
-use crate::backend::{CancelToken, Document, DocumentFormat, ErrorKind, NotFoundSubject, PrintError, SubmitRequest, UserConfirmed};
-use crate::convert::Conversion;
-use crate::job::{ExpectedTotalsExt as _, JobStatus, Submitted};
-use crate::options::JobOptions;
-use crate::registry::{BackendInfo, Registry};
-use crate::remote::{Reconciled, RemoteJob};
-use crate::retry::{Clock, JitterExt as _, Phase, SystemClock, advise_error};
-use crate::tag::{TagExt as _, TagPolicy, TagSupportExt as _};
-use crate::watch::{JobWatch, WaitPolicy, WatchOutcome, WatchStep};
+use crate::print::Job;
+use crate::print::backend::{CancelToken, Document, DocumentFormat, ErrorKind, NotFoundSubject, PrintError, SubmitRequest, UserConfirmed};
+use crate::print::convert::Conversion;
+use crate::print::job::{ExpectedTotalsExt as _, JobStatus, Submitted};
+use crate::print::options::JobOptions;
+use crate::print::registry::{BackendInfo, Registry};
+use crate::print::remote::{Reconciled, RemoteJob};
+use crate::print::retry::{Clock, JitterExt as _, Phase, SystemClock, advise_error};
+use crate::print::tag::{TagExt as _, TagPolicy, TagSupportExt as _};
+use crate::print::watch::{JobWatch, WaitPolicy, WatchOutcome, WatchStep};
 
 /// The id of a [`PrintJob`] inside this process. It never changes across retries; the remote
 /// [`JobId`]s of the attempts come and go.
@@ -469,7 +469,7 @@ pub struct Staleness {
     /// [`Outcome::Abandoned`]. Default 3 h (the CUPS `MaxJobTime` default).
     pub ceiling: Option<Duration>,
     /// After a send whose outcome is unknown, wait this long before advising a resend, unless the
-    /// backend names its own ([`crate::backends::Backend::open_job_timeout`]). Default 65 s.
+    /// backend names its own ([`crate::print::backends::Backend::open_job_timeout`]). Default 65 s.
     pub reconcile_after: Duration,
 }
 
@@ -615,7 +615,7 @@ impl Snapshot {
         &self.trail
     }
 
-    /// The print as a [`craft_job::JobView`]. No I/O; the snapshot already holds everything.
+    /// The print as a [`crate::job::JobView`]. No I/O; the snapshot already holds everything.
     ///
     /// | `JobView` | Filled from |
     /// |---|---|
@@ -805,7 +805,7 @@ impl PrintJob {
     /// A print of the document `source` provides, with the settings of `job`. `job.printer` is a
     /// namespaced printer id, or `None` for the default printer (resolved at the first
     /// [`Self::advance`] and then fixed, so every retry goes to the same printer). Nothing is sent
-    /// until the first advance. A job for a [`BackendClass::Network`](crate::BackendClass::Network)
+    /// until the first advance. A job for a [`BackendClass::Network`](crate::print::BackendClass::Network)
     /// backend needs [`Self::with_consent`].
     pub fn new(job: Job, source: impl DocumentSource + 'static) -> Self {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
@@ -816,10 +816,10 @@ impl PrintJob {
             config: PrintJobConfig::default(),
             jitter: Jitter::from_clock(clock.as_ref()),
             created: clock.now(),
-            created_wall: crate::clock::wall_now(),
+            created_wall: crate::print::clock::wall_now(),
             finished_at: None,
             clock,
-            wall: Arc::new(crate::clock::wall_now),
+            wall: Arc::new(crate::print::clock::wall_now),
             source: Box::new(source),
             consent: None,
             cancel: CancelToken::new(),
@@ -872,7 +872,7 @@ impl PrintJob {
         self
     }
 
-    /// Measure all waiting on this clock (a [`crate::ManualClock`] in tests). Set it before the first
+    /// Measure all waiting on this clock (a [`crate::print::ManualClock`] in tests). Set it before the first
     /// advance.
     #[must_use]
     pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
@@ -1202,7 +1202,7 @@ impl PrintJob {
 
     /// How much longer to wait before a resend is advised after a send whose outcome is unknown
     /// (the device's own window to give up on the half-made job, see
-    /// [`crate::backends::Backend::open_job_timeout`]). `None` when not waiting.
+    /// [`crate::print::backends::Backend::open_job_timeout`]). `None` when not waiting.
     pub fn reconcile_wait(&self) -> Option<Duration> {
         if self.state != LifecycleState::NeedsAttention || self.stale.is_some() {
             return None;
@@ -1282,7 +1282,7 @@ impl PrintJob {
         match registry.backend_info(self.request.job.printer.as_deref()) {
             Ok(info) => {
                 let wants = match self.config.tag {
-                    TagPolicy::Auto => info.class == crate::BackendClass::Network,
+                    TagPolicy::Auto => info.class == crate::print::BackendClass::Network,
                     TagPolicy::Always => true,
                     TagPolicy::Never => false,
                 };
@@ -1927,7 +1927,7 @@ impl PrintJob {
         times
     }
 
-    /// The print as a [`craft_job::JobView`], the record a UI shows the same way for a print and a
+    /// The print as a [`crate::job::JobView`], the record a UI shows the same way for a print and a
     /// scan: no I/O, nothing blocks. Shorthand for `self.snapshot().view()`; see [`Snapshot::view`]
     /// for how each field is filled.
     pub fn view(&self) -> JobView {
@@ -2006,7 +2006,7 @@ fn kind_name(kind: ErrorKind) -> &'static str {
 #[cfg(test)]
 mod news_tests {
     use super::*;
-    use crate::{BytesSource, DocumentFormat};
+    use crate::print::{BytesSource, DocumentFormat};
 
     /// A print of a tiny PDF with default options and no printer chosen.
     fn job() -> PrintJob {

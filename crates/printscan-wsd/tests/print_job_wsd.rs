@@ -1,21 +1,21 @@
 //! `PrintJob` over the WS-Print backend and its in-memory printer: the tag travels in the job name
 //! of the ticket, a lost `SendDocument` reply is reconciled by the tag instead of being resent, and
 //! `list_jobs` fills the common remote-job base from `GetActiveJobs` and `GetJobHistory`.
-#![cfg(all(feature = "wsd", not(target_arch = "wasm32")))]
+#![cfg(all(feature = "print", not(target_arch = "wasm32")))]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use craft_print::backends::Backend;
-use craft_print::wsd::adapter::{DeviceUrl, Request, Response, Transport, TransportKind, WireError};
-use craft_print::wsd::testing::{FakeConfig, FakePrinter};
-use craft_print::wsd::{Reconciled as WsdReconciled, WsdBackend};
-use craft_print::{
+use printscan::print::backends::Backend;
+use printscan::print::{
     BytesSource, Document, DocumentFormat, Fingerprint, Job, JobFilter, LifecycleState, ManualClock, Outcome, PrintJob, Reconciled, Registry,
     RetryAdvice, SubmitRequest, Tag, TagExt as _, TagPlacement, TagPolicy, Timestamp, UserConfirmed,
 };
+use printscan_wsd::print::adapter::{DeviceUrl, Request, Response, Transport, TransportKind, WireError};
+use printscan_wsd::print::testing::{FakeConfig, FakePrinter};
+use printscan_wsd::print::{Reconciled as WsdReconciled, WsdBackend};
 
 const URL: &str = "http://127.0.0.1:5357/print";
 const PDF: &[u8] = b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n";
@@ -112,7 +112,7 @@ fn the_tag_is_a_suffix_of_the_ticket_job_name_and_the_snapshot_says_how_it_was_s
     assert_eq!(job.state(), LifecycleState::Terminal(Outcome::Completed));
     let stored = rig.printer.job(1).unwrap();
     assert_eq!(stored.name, format!("Quarterly report [ref {tag}]"));
-    assert_eq!(stored.user, "craft");
+    assert_eq!(stored.user, "printscan");
     let snapshot = job.snapshot();
     assert!(snapshot.tag_applied);
     let effective = snapshot.native.unwrap().effective.unwrap();
@@ -175,7 +175,7 @@ fn a_lost_send_reply_is_reconciled_and_nothing_is_sent_twice() {
     let Reconciled::Found(remote) = found else { panic!("{found:?}") };
     assert!(remote.ours, "the tag came back, so the job is ours");
     assert_eq!(remote.id.to_string(), format!("wsd:{URL}#2"));
-    assert_eq!(remote.user.as_deref(), Some("craft"));
+    assert_eq!(remote.user.as_deref(), Some("printscan"));
     assert_eq!(remote.created, None, "WS-Print job summaries carry no creation time");
 
     job.accept(&rig.registry, &remote.id).unwrap();
@@ -399,7 +399,7 @@ fn list_jobs_returns_active_and_finished_jobs_with_title_user_and_state() {
     assert_eq!(listed[0].id.to_string(), format!("wsd:{URL}#2"), "newest first");
     assert!(listed[0].ours && !listed[1].ours);
     assert_eq!((listed[0].display_title(), listed[1].display_title()), ("Second", "First"));
-    assert!(listed.iter().all(|j| j.user.as_deref() == Some("craft") && j.created.is_none()));
+    assert!(listed.iter().all(|j| j.user.as_deref() == Some("printscan") && j.created.is_none()));
     let caps = rig.registry.backend_info(Some(&format!("wsd:{URL}"))).unwrap().query_caps;
     assert!(caps.list && caps.user && caps.tag && caps.history && !caps.created_time);
 

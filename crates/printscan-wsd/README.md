@@ -1,4 +1,4 @@
-# craft-wsd
+# printscan-wsd
 
 The protocol-agnostic core for Web Services for Devices (WSD) clients: the pieces every device
 service shares, so a print client, a scan client or anything else only adds its own operations,
@@ -135,5 +135,5 @@ checks metadata and eventing against a loopback fake device you start yourself,
 and is skipped unless `CRAFT_WSD_LIVE_URL` is set. No test contacts anything but loopback.
 
 ```text
-cargo test -p craft-wsd
+cargo test -p printscan-wsd
 ```

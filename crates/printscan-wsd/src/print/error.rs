@@ -1,11 +1,11 @@
-//! The WS-Print layer's error type, and its mapping onto [`crate::PrintError`].
+//! The WS-Print layer's error type, and its mapping onto [`printscan::print::PrintError`].
 
 use std::fmt;
 use std::time::Duration;
 
 use super::adapter::{Stage, TransportKind, WireError, http_safety, transport_safety};
 use super::fault::{Fault, FaultCode};
-use crate::{ErrorKind, NativeCode, Phase, PrintError, RetrySafety};
+use printscan::print::{ErrorKind, NativeCode, Phase, PrintError, RetrySafety};
 
 /// Everything that can go wrong, as values an interface can show and an agent can act on.
 #[derive(Debug, Clone, PartialEq)]
@@ -85,8 +85,6 @@ impl From<WireError> for WsdError {
             WireError::Protocol(m) => Self::Protocol(m),
             WireError::Fault(f) => Self::Fault((*f).into()),
             WireError::Invalid(m) => Self::Invalid(m),
-            // The core's error type is non-exhaustive: a future variant is at least a protocol problem.
-            other => Self::Protocol(other.to_string()),
         }
     }
 }
@@ -169,7 +167,7 @@ impl WsdError {
     ///
     /// The principle: **a failure that proves the printer did not act is [`RetrySafety::Safe`]**
     /// (nothing sent, a refused address, a connect failure, a policy refusal, 408/425/429/503, a SOAP
-    /// fault, which is a definite answer). For the transport and HTTP errors `craft-wsd` says
+    /// fault, which is a definite answer). For the transport and HTTP errors `printscan-wsd` says
     /// which stage the exchange reached and whether repeating is safe; this adds what only the
     /// print service knows (a 408/425 decline, a fault being a definite answer). **A failure after the request may have arrived is
     /// [`RetrySafety::OutcomeUnknown`] for a non-idempotent operation** (create, send: a closed or
@@ -202,13 +200,12 @@ impl WsdError {
                 let kind_of = match kind {
                     T::ConnectTimeout | T::Timeout => K::Timeout,
                     // Not transient, like the HTTP errors that are not retryable: a refused redirect
-                    // and a peer that did not speak HTTP. `craft-wsd` calls both not retryable and
+                    // and a peer that did not speak HTTP. `printscan-wsd` calls both not retryable and
                     // so does this layer.
                     T::Redirect | T::InvalidResponse => K::Failed,
                     // Refused, unreachable, closed without a reply, an I/O error that matched no
-                    // other kind (transient), and any kind added later.
+                    // other kind (transient).
                     T::Refused | T::Unreachable | T::ConnectionClosed | T::Io => K::Unavailable,
-                    _ => K::Unavailable,
                 };
                 let phase = match stage {
                     Stage::Prepare => P::Prepare,
@@ -252,7 +249,7 @@ impl WsdError {
             error = error.with_native(NativeCode { domain: "wsd-fault", code, name });
             // The printer answered and named the job as unknown: the printer is fine, the job is gone.
             if f.code == FaultCode::ClientErrorJobIdNotFound {
-                error = error.with_subject(crate::NotFoundSubject::Job);
+                error = error.with_subject(printscan::print::NotFoundSubject::Job);
             }
         }
         error
@@ -296,7 +293,7 @@ pub struct Class {
 }
 
 /// HTTP statuses without a SOAP fault. `request` and `reply` are the phases for "the server
-/// refused before processing" and "it answered something unusable"; `reached` is what `craft-wsd`
+/// refused before processing" and "it answered something unusable"; `reached` is what `printscan-wsd`
 /// says about repeating after this status (429 and 503 are a decline), and is used where the
 /// request may have been processed. A wait the printer sent is kept for the busy kinds only.
 fn http_class(status: u16, wait: Option<Duration>, request: Phase, reply: Phase, reached: RetrySafety) -> Class {
@@ -368,12 +365,12 @@ impl From<WsdError> for PrintError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wsd::adapter::{Role, SubCode};
-    use crate::wsd::ns;
+    use crate::print::adapter::{Role, SubCode};
+    use crate::print::ns;
     use std::time::Duration;
 
     fn wire_samples() -> Vec<WireError> {
-        let fault = crate::wsd::adapter::WireFault::new(Role::Sender, SubCode::new(Some(ns::WPRT), "InvalidArgs"), "", "");
+        let fault = crate::print::adapter::WireFault::new(Role::Sender, SubCode::new(Some(ns::WPRT), "InvalidArgs"), "", "");
         vec![
             WireError::Policy("p".into()),
             WireError::transport(TransportKind::Refused, "t"),
@@ -391,7 +388,7 @@ mod tests {
 
     #[test]
     fn every_core_error_kind_maps_to_one_of_ours() {
-        use crate::wsd::adapter::WIRE_KINDS;
+        use crate::print::adapter::WIRE_KINDS;
         let samples = wire_samples();
         for kind in WIRE_KINDS {
             let e = samples.iter().find(|e| e.kind() == *kind).unwrap_or_else(|| panic!("no sample for the core kind {kind}"));
@@ -665,7 +662,7 @@ mod tests {
 
     /// Every typed transport kind x every operation, at the stage the kind usually happens in: the
     /// neutral kind, the phase and the safety follow from the typed values alone, and the
-    /// retryability agrees with `craft-wsd`.
+    /// retryability agrees with `printscan-wsd`.
     #[test]
     fn every_transport_kind_for_every_operation() {
         use ErrorKind as K;
@@ -681,9 +678,8 @@ mod tests {
                 TransportKind::Redirect => (K::Failed, P::Reply, false),
                 TransportKind::InvalidResponse => (K::Failed, P::Reply, false),
                 TransportKind::Io => (K::Unavailable, P::Reply, true),
-                _ => panic!("a new transport kind needs a row here"),
             };
-            assert_eq!(kind.is_retryable(), retryable, "{kind}: agrees with craft-wsd");
+            assert_eq!(kind.is_retryable(), retryable, "{kind}: agrees with the WSD core");
             let sent = stage.may_have_reached_device();
             for op in Op::ALL {
                 let e = transport(kind, stage);
@@ -750,7 +746,7 @@ mod tests {
 
     #[test]
     fn every_fault_code_maps_and_the_retryable_ones_stay_retryable() {
-        for (name, code) in crate::wsd::fault::WPRT_CODES.iter() {
+        for (name, code) in crate::print::fault::WPRT_CODES.iter() {
             let e =
                 WsdError::Fault(Fault { role: Role::Sender, code: code.clone(), reason: String::new(), detail: String::new(), retry_after: None });
             let neutral = PrintError::from(e.clone());
@@ -777,11 +773,11 @@ mod tests {
         }));
         assert_eq!((vendor.kind(), vendor.native().map(|n| (n.code, n.name))), (ErrorKind::Rejected, Some((0, None))));
         // Codes are distinct.
-        let mut codes: Vec<i64> = crate::wsd::fault::WPRT_CODES.iter().map(|(_, c)| c.native().0).collect();
+        let mut codes: Vec<i64> = crate::print::fault::WPRT_CODES.iter().map(|(_, c)| c.native().0).collect();
         codes.push(FaultCode::ActionNotSupported.native().0);
         codes.sort_unstable();
         codes.dedup();
-        assert_eq!(codes.len(), crate::wsd::fault::WPRT_CODES.len() + 1);
+        assert_eq!(codes.len(), crate::print::fault::WPRT_CODES.len() + 1);
     }
 
     #[test]

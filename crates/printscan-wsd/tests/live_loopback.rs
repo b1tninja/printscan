@@ -6,7 +6,7 @@
 //! Loopback only: the URLs go through the same policy as any device URL, and the test also insists
 //! on a loopback address. No discovery is attempted (that would be multicast).
 //!
-//! Run: `CRAFT_WSD_LIVE_URL=http://127.0.0.1:PORT/PATH cargo test -p craft-wsd --test live_loopback`
+//! Run: `CRAFT_WSD_LIVE_URL=http://127.0.0.1:PORT/PATH cargo test -p printscan-wsd --test live_loopback`
 #![cfg(not(target_arch = "wasm32"))]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 

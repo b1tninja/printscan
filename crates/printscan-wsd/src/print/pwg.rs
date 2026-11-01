@@ -1,27 +1,28 @@
-//! PWG raster (`image/pwg-raster`) writer. The encoder itself moved to [`crate::pwg`], which is
-//! available without the `wsd` feature (an app's [`DocumentConverter`](crate::DocumentConverter)
+//! PWG raster (`image/pwg-raster`) writer. The encoder itself moved to [`printscan::print::pwg`], which is
+//! available without the `wsd` feature (an app's [`DocumentConverter`](printscan::print::DocumentConverter)
 //! uses it too); this module keeps the old paths and the [`WsdError`] result type of
 //! [`encode`].
 
 use super::error::{Result, WsdError};
 
-pub use crate::pwg::{Duplex, MAX_PAGE_BYTES, MAX_PAGES, MAX_SIDE, MAX_STREAM_BYTES, PwgError, PwgOptions, RasterPage};
+pub use printscan::print::pwg::{Duplex, MAX_PAGE_BYTES, MAX_PAGES, MAX_SIDE, MAX_STREAM_BYTES, PwgError, PwgOptions, RasterPage};
 
 #[cfg(test)]
-pub(crate) use crate::pwg::decode_for_tests;
+pub(crate) use printscan::print::pwg::decode_for_tests;
 
 impl From<PwgError> for WsdError {
     fn from(error: PwgError) -> Self {
         match error {
             PwgError::TooLarge(what, limit) => WsdError::TooLarge(what, limit),
             PwgError::Invalid(why) => WsdError::Encode(why),
+            other => WsdError::Encode(other.to_string()),
         }
     }
 }
 
-/// Pack `pages` into a PWG raster stream; see [`crate::pwg::encode`].
+/// Pack `pages` into a PWG raster stream; see [`printscan::print::pwg::encode`].
 pub fn encode(pages: &[RasterPage], opts: &PwgOptions) -> Result<Vec<u8>> {
-    crate::pwg::encode(pages, opts).map_err(WsdError::from)
+    printscan::print::pwg::encode(pages, opts).map_err(WsdError::from)
 }
 
 #[cfg(test)]

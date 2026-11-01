@@ -1,0 +1,22 @@
+[package]
+name = "printscan-ipp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "An IPP (RFC 8010/8011) print backend for printscan: plain HTTP to numeric local addresses, no discovery, consent for every job"
+keywords = ["ipp", "print", "printer", "printscan"]
+categories = ["hardware-support", "network-programming"]
+
+[lints]
+workspace = true
+
+# The transport is printscan-wsd's blocking HTTP client and URL policy; not built for wasm32.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+printscan = { path = "../printscan", version = "0.1.0", default-features = false, features = ["print"] }
+printscan-wsd = { path = "../printscan-wsd", version = "0.1.0", default-features = false }
+
+[dev-dependencies]
+printscan = { path = "../printscan", features = ["testing"] }
+printscan-wsd = { path = "../printscan-wsd", features = ["testing"] }

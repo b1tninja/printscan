@@ -4,7 +4,7 @@
 //! scripted transport, renew / expiry / `SubscriptionEnd` flows on an injected clock, the fall back to
 //! polling, and a `JobWatch` that is woken. No fake printer sends anything here: the real-device-shaped
 //! integration lives in the pdfcraft-fakeprint harness (outside this repository).
-#![cfg(all(feature = "wsd", not(target_arch = "wasm32")))]
+#![cfg(all(feature = "print", not(target_arch = "wasm32")))]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
 use std::io::{Read, Write};
@@ -13,13 +13,13 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use craft_print::backends::Backend;
-use craft_print::wsd::adapter::{DeviceUrl, Request, Response, Transport, WireError};
-use craft_print::wsd::testing::{FakeConfig, FakePrinter, MemTransport};
-use craft_print::wsd::{EventTuning, NotifyConfig, PrinterUrl, WsdBackend};
-use craft_print::{
+use printscan::print::backends::Backend;
+use printscan::print::{
     Document, Job, JobId, JobWatch, ManualClock, Registry, SubmitRequest, UserConfirmed, WaitPolicy, WatchOutcome, WatchStep, WatchSupport,
 };
+use printscan_wsd::print::adapter::{DeviceUrl, Request, Response, Transport, WireError};
+use printscan_wsd::print::testing::{FakeConfig, FakePrinter, MemTransport};
+use printscan_wsd::print::{EventTuning, NotifyConfig, PrinterUrl, WsdBackend};
 
 const URL: &str = "http://127.0.0.1:5357/print";
 const MANAGER: &str = "http://127.0.0.1:5357/print";
@@ -178,14 +178,14 @@ impl Rig {
     }
 
     /// Register interest in a job and let the manager subscribe.
-    fn subscribed(&self, job: u32) -> craft_print::WakeReceiver {
+    fn subscribed(&self, job: u32) -> printscan::print::WakeReceiver {
         let rx = self.backend.events().unwrap().register(&self.url, job).unwrap();
         self.backend.maintain_events();
         assert_eq!(self.script.count("Subscribe"), 1, "{:?}", self.script.ops());
         rx
     }
 
-    fn stats(&self) -> craft_print::wsd::EventStats {
+    fn stats(&self) -> printscan_wsd::print::EventStats {
         self.backend.events().unwrap().stats()
     }
 
@@ -265,7 +265,7 @@ fn a_wildcard_bind_is_refused_before_any_socket_is_opened() {
     };
     for bind in [format!("0.0.0.0:{port}"), format!("[::]:{port}"), format!("[::ffff:0.0.0.0]:{port}")] {
         let refused = NotifyConfig::parse(&bind, "http://127.0.0.1:1/").unwrap_err();
-        assert_eq!(refused.kind(), craft_print::ErrorKind::InvalidRequest, "{bind}");
+        assert_eq!(refused.kind(), printscan::print::ErrorKind::InvalidRequest, "{bind}");
         assert!(refused.message().contains("wildcard"), "{bind}: {refused}");
     }
     assert!(TcpStream::connect(("127.0.0.1", port)).is_err(), "nothing listens after the refusals");
@@ -273,7 +273,7 @@ fn a_wildcard_bind_is_refused_before_any_socket_is_opened() {
     let mut config = NotifyConfig::new(format!("127.0.0.1:{port}").parse().unwrap(), "http://127.0.0.1:1/").unwrap();
     config.bind = format!("0.0.0.0:{port}").parse().unwrap();
     let error = WsdBackend::new().with_events(config).map(|_| ()).unwrap_err();
-    assert_eq!(error.kind(), craft_print::ErrorKind::InvalidRequest);
+    assert_eq!(error.kind(), printscan::print::ErrorKind::InvalidRequest);
     assert!(TcpStream::connect(("127.0.0.1", port)).is_err(), "nothing listens after the refusal");
     // A concrete interface address is accepted and listens there, advertised as itself.
     let config = NotifyConfig::new(format!("127.0.0.1:{port}").parse().unwrap(), "http://127.0.0.1:1/").unwrap();
@@ -641,7 +641,7 @@ fn a_printer_that_is_down_fails_the_subscribe_without_breaking_job_status() {
     let rx = rig.backend.events().unwrap().register(&rig.url, 1).unwrap();
     // The job does not exist, so this is the printer's "no such job"; the housekeeping before it failed quietly.
     let error = rig.backend.job_status(&job_id(1)).unwrap_err();
-    assert_eq!(error.kind(), craft_print::backends::ErrorKind::NotFound);
+    assert_eq!(error.kind(), printscan::print::backends::ErrorKind::NotFound);
     assert_eq!(rig.script.count("Subscribe"), 1);
     assert!(!rx.is_healthy());
 }
@@ -776,7 +776,7 @@ fn a_woken_watch_polls_now_and_the_lost_event_is_caught_by_the_safety_poll() {
 
 #[test]
 fn events_never_decide_an_outcome_even_when_they_claim_the_job_ended() {
-    let rig = rig_with(EventTuning::default(), FakeConfig { ending: craft_print::wsd::testing::Ending::Hangs, ..FakeConfig::default() });
+    let rig = rig_with(EventTuning::default(), FakeConfig { ending: printscan_wsd::print::testing::Ending::Hangs, ..FakeConfig::default() });
     let job = submit(&rig);
     let (registry, mut watch) = watch_over(&rig, &job);
     watch.tick(&registry);
@@ -791,7 +791,7 @@ fn events_never_decide_an_outcome_even_when_they_claim_the_job_ended() {
 
 #[test]
 fn losing_the_subscription_returns_the_watch_to_fast_polling() {
-    let rig = rig_with(EventTuning::default(), FakeConfig { ending: craft_print::wsd::testing::Ending::Hangs, ..FakeConfig::default() });
+    let rig = rig_with(EventTuning::default(), FakeConfig { ending: printscan_wsd::print::testing::Ending::Hangs, ..FakeConfig::default() });
     let job = submit(&rig);
     let (registry, mut watch) = watch_over(&rig, &job);
     watch.tick(&registry);
