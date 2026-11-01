@@ -89,10 +89,17 @@ combs = {
     "right": ((W - 2, H / 2), (W - 121, H / 2), [round(d * MM) + 1 for d in range(1, 9)]),
 }
 for side_name, (p0, p1, expect) in combs.items():
-    try:
-        found = line_centres(p0, p1, expect, window=5)
-    except (IndexError, ValueError):
+    # Paper at the edge of the scanner bed: start the profile a little inside, where the scan is.
+    found = None
+    for inset in range(0, 30, 2):
+        q0 = np.asarray(p0, float) + (np.asarray(p1, float) - np.asarray(p0, float)) / np.linalg.norm(np.asarray(p1, float) - np.asarray(p0, float)) * inset
+        try:
+            found = line_centres(q0, p1, [e - inset for e in expect], window=5)
+            break
+        except (IndexError, ValueError):
+            continue
+    if found is None:
         print(f"  {side_name:6} outside the scan")
         continue
-    present = [d for d, f in zip(range(1, 9), found) if f is not None]
+    present = [d for d, f, e in zip(range(1, 9), found, expect) if f is not None and e - inset > 3]
     print(f"  {side_name:6} {present}  -> margin about {present[0] if present else '>8'} mm")

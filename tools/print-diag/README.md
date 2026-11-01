@@ -34,6 +34,7 @@ python measure_colour.py page.bmp     # colour page
 python measure_regmap.py page.bmp     # registration map
 python measure_ramps.py page.bmp      # tone ramps
 python measure_geometry.py page.bmp   # geometry
+python measure_background.py page.bmp # toner on blank paper and its period (any page; give a blank strip)
 ```
 
 Scan at 600 dpi, colour, uncompressed (the script asks WIA for BMP). Every page has black locator
@@ -47,5 +48,7 @@ squares; `diaglib.Scan` fits the page-to-scan mapping through them and prints th
 - A toner offset that is the same in every column of a row but changes down the page is the
   paper feed or a drum; `measure_regmap.py` fits a sine to it. A period of about 94 mm is one turn
   of a 30 mm drum.
+- Grey bands on blank paper (`measure_background.py`) whose period matches a roller's circumference point at
+  that roller; scan a blank sheet once to rule out the scanner itself.
 - A bar whose density changes left to right is uneven toner along the cartridge (often a nearly
   empty cartridge); vertical streaks point at the drum or the developer.
