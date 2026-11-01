@@ -7,23 +7,19 @@ use std::ptr::{null, null_mut};
 
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Gdi::{
-    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateDCW, CreatePen, DEVMODEW, DIB_RGB_COLORS,
-    DM_IN_BUFFER, DM_IN_PROMPT, DM_OUT_BUFFER, DeleteDC, DeleteObject, Ellipse, GetDeviceCaps,
-    GetStockObject, HALFTONE, HDC, HOLLOW_BRUSH, HORZRES, LOGPIXELSX, LOGPIXELSY, LineTo, MoveToEx,
-    PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH, PS_SOLID, SRCCOPY,
-    SelectObject, SetBrushOrgEx, SetStretchBltMode, StretchDIBits, VERTRES,
+    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateDCW, CreatePen, DEVMODEW, DIB_RGB_COLORS, DM_IN_BUFFER, DM_IN_PROMPT, DM_OUT_BUFFER, DeleteDC,
+    DeleteObject, Ellipse, GetDeviceCaps, GetStockObject, HALFTONE, HDC, HOLLOW_BRUSH, HORZRES, LOGPIXELSX, LOGPIXELSY, LineTo, MoveToEx,
+    PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH, PS_SOLID, SRCCOPY, SelectObject, SetBrushOrgEx, SetStretchBltMode,
+    StretchDIBits, VERTRES,
 };
 use windows_sys::Win32::Graphics::Printing::{
-    ClosePrinter, DocumentPropertiesW, EnumPrintersW, GetDefaultPrinterW, OpenPrinterW,
-    PRINTER_ENUM_CONNECTIONS, PRINTER_ENUM_LOCAL, PRINTER_HANDLE, PRINTER_INFO_4W,
+    ClosePrinter, DocumentPropertiesW, EnumPrintersW, GetDefaultPrinterW, OpenPrinterW, PRINTER_ENUM_CONNECTIONS, PRINTER_ENUM_LOCAL, PRINTER_HANDLE,
+    PRINTER_INFO_4W,
 };
 use windows_sys::Win32::Storage::Xps::{AbortDoc, DOCINFOW, EndDoc, EndPage, StartDocW, StartPage};
 use windows_sys::Win32::UI::ColorSystem::{ICM_DONE_OUTSIDEDC, ICM_OFF, SetICMMode};
 
-use crate::{
-    ColorPolicy, DevMode, Job, Page, Primitive, PrintError, Printed, Printer, Result, RgbImage,
-    Shape,
-};
+use crate::gdi::{ColorPolicy, DevMode, Job, Page, Primitive, PrintError, Printed, Printer, Result, RgbImage, Shape};
 
 const IDOK: i32 = 1;
 const IDCANCEL: i32 = 2;
@@ -31,17 +27,12 @@ const IDCANCEL: i32 = 2;
 const MAX_WCHARS: usize = 32 * 1024;
 
 fn last_error(what: &str) -> PrintError {
-    PrintError::System(format!(
-        "{what} failed: {}",
-        std::io::Error::last_os_error()
-    ))
+    PrintError::System(format!("{what} failed: {}", std::io::Error::last_os_error()))
 }
 
 fn wide(s: &str) -> Result<Vec<u16>> {
     if s.contains('\0') {
-        return Err(PrintError::Invalid(
-            "a name contains a NUL character".into(),
-        ));
+        return Err(PrintError::Invalid("a name contains a NUL character".into()));
     }
     Ok(s.encode_utf16().chain(Some(0)).collect())
 }
@@ -82,17 +73,7 @@ pub fn printers() -> Result<Vec<Printer>> {
     }
     let mut buf = aligned(needed as usize);
     // SAFETY: `buf` holds at least `needed` writable bytes, aligned for PRINTER_INFO_4W.
-    let ok = unsafe {
-        EnumPrintersW(
-            flags,
-            null(),
-            4,
-            buf.as_mut_ptr().cast(),
-            needed,
-            &mut needed,
-            &mut count,
-        )
-    };
+    let ok = unsafe { EnumPrintersW(flags, null(), 4, buf.as_mut_ptr().cast(), needed, &mut needed, &mut count) };
     if ok == 0 {
         return Err(last_error("listing printers"));
     }
@@ -105,10 +86,7 @@ pub fn printers() -> Result<Vec<Printer>> {
         // the buffer size above); their name pointers point into `buf`, which is alive.
         let name = unsafe { read_wide((*infos.add(i)).pPrinterName) };
         if !name.is_empty() {
-            out.push(Printer {
-                default: default.as_deref() == Some(name.as_str()),
-                name,
-            });
+            out.push(Printer { default: default.as_deref() == Some(name.as_str()), name });
         }
     }
     Ok(out)
@@ -168,12 +146,7 @@ fn aligned_copy(settings: &DevMode) -> Vec<u64> {
     buf
 }
 
-pub fn properties(
-    printer: &str,
-    current: Option<&DevMode>,
-    parent: Option<isize>,
-    prompt: bool,
-) -> Result<Option<DevMode>> {
+pub fn properties(printer: &str, current: Option<&DevMode>, parent: Option<isize>, prompt: bool) -> Result<Option<DevMode>> {
     let name = wide(printer)?;
     let p = OpenPrinter::open(&name)?;
     let hwnd: HWND = parent.map_or(null_mut(), |h| h as HWND);
@@ -194,16 +167,11 @@ pub fn properties(
     let inp: *const DEVMODEW = input.as_ref().map_or(null(), |b| b.as_ptr().cast());
     // SAFETY: `out` holds `needed` aligned writable bytes as the size query asked for; `inp` is
     // null or an aligned copy of settings written by this printer's driver.
-    let r = unsafe {
-        DocumentPropertiesW(hwnd, p.0, name.as_ptr(), out.as_mut_ptr().cast(), inp, mode)
-    };
+    let r = unsafe { DocumentPropertiesW(hwnd, p.0, name.as_ptr(), out.as_mut_ptr().cast(), inp, mode) };
     match r {
         IDOK => {
             let all = bytes_of(&out, needed as usize);
-            let word = |at: usize| {
-                all.get(at..at + 2)
-                    .map_or(0, |w| usize::from(u16::from_le_bytes([w[0], w[1]])))
-            };
+            let word = |at: usize| all.get(at..at + 2).map_or(0, |w| usize::from(u16::from_le_bytes([w[0], w[1]])));
             let len = (word(68) + word(70)).min(all.len());
             DevMode::from_bytes(all.into_iter().take(len).collect()).map(Some)
         }
@@ -221,9 +189,9 @@ impl Dc {
         let normalized = if manual_copies {
             let defaults = match settings {
                 Some(s) => s.clone(),
-                None => properties(printer, None, None, false)?.ok_or_else(|| {
-                    PrintError::Invalid("the printer refused its default settings".into())
-                })?,
+                None => {
+                    properties(printer, None, None, false)?.ok_or_else(|| PrintError::Invalid("the printer refused its default settings".into()))?
+                }
             };
             Some(defaults.for_manual_copies()?)
         } else {
@@ -233,11 +201,10 @@ impl Dc {
         // The driver validates and completes the settings first (DM_IN_BUFFER | DM_OUT_BUFFER, no
         // dialog). If it refuses them, that is an error: never print on the defaults instead.
         let merged = match settings {
-            Some(s) => Some(properties(printer, Some(s), None, false)?.ok_or_else(|| {
-                PrintError::Invalid(format!(
-                    "printer “{printer}” refused these settings; choose Print Settings… again"
-                ))
-            })?),
+            Some(s) => Some(
+                properties(printer, Some(s), None, false)?
+                    .ok_or_else(|| PrintError::Invalid(format!("printer “{printer}” refused these settings; choose Print Settings… again")))?,
+            ),
             None => None,
         };
         #[cfg(test)]
@@ -250,9 +217,7 @@ impl Dc {
             );
         }
         if manual_copies && !merged.as_ref().is_some_and(DevMode::has_manual_copies) {
-            return Err(PrintError::Invalid(
-                "the driver refused single-copy settings; no print job was sent".into(),
-            ));
+            return Err(PrintError::Invalid("the driver refused single-copy settings; no print job was sent".into()));
         }
         let dm = merged.as_ref().map(aligned_copy);
         let dmp: *const DEVMODEW = dm.as_ref().map_or(null(), |b| b.as_ptr().cast());
@@ -273,9 +238,7 @@ impl Dc {
     fn page(&self) -> Result<Page> {
         let (dx, dy) = (self.cap(LOGPIXELSX), self.cap(LOGPIXELSY));
         if dx <= 0 || dy <= 0 {
-            return Err(PrintError::System(
-                "the printer reported no resolution".into(),
-            ));
+            return Err(PrintError::System("the printer reported no resolution".into()));
         }
         let (fx, fy) = (72.0 / f64::from(dx), 72.0 / f64::from(dy));
         let (pw, ph) = (self.cap(PHYSICALWIDTH), self.cap(PHYSICALHEIGHT));
@@ -284,12 +247,7 @@ impl Dc {
         let (pw, ph) = if pw > 0 && ph > 0 { (pw, ph) } else { (hw, vh) };
         Ok(Page {
             paper: (f64::from(pw) * fx, f64::from(ph) * fy),
-            printable: (
-                f64::from(ox) * fx,
-                f64::from(oy) * fy,
-                f64::from(hw) * fx,
-                f64::from(vh) * fy,
-            ),
+            printable: (f64::from(ox) * fx, f64::from(oy) * fy, f64::from(hw) * fx, f64::from(vh) * fy),
             dpi: (dx as u32, dy as u32),
         })
     }
@@ -309,11 +267,7 @@ pub fn page(printer: &str, settings: Option<&DevMode>) -> Result<Page> {
 /// RGB rows top-down → a bottom-up 24-bit DIB (BGR, rows padded to 4 bytes).
 fn dib(image: &RgbImage<'_>) -> Result<(BITMAPINFO, Vec<u8>)> {
     let (w, h) = (image.width as usize, image.height as usize);
-    let stride = (w
-        .checked_mul(3)
-        .ok_or_else(|| PrintError::Invalid("image too large".into()))?
-        + 3)
-        & !3;
+    let stride = (w.checked_mul(3).ok_or_else(|| PrintError::Invalid("image too large".into()))? + 3) & !3;
     let total = stride
         .checked_mul(h)
         .filter(|t| *t <= i32::MAX as usize)
@@ -324,12 +278,7 @@ fn dib(image: &RgbImage<'_>) -> Result<(BITMAPINFO, Vec<u8>)> {
         let Some(dst) = bits.get_mut(start..start + w * 3) else {
             continue;
         };
-        for (d, s) in dst
-            .as_chunks_mut::<3>()
-            .0
-            .iter_mut()
-            .zip(src.as_chunks::<3>().0)
-        {
+        for (d, s) in dst.as_chunks_mut::<3>().0.iter_mut().zip(src.as_chunks::<3>().0) {
             *d = [s[2], s[1], s[0]];
         }
     }
@@ -343,13 +292,7 @@ fn dib(image: &RgbImage<'_>) -> Result<(BITMAPINFO, Vec<u8>)> {
         biSizeImage: total as u32,
         ..Default::default()
     };
-    Ok((
-        BITMAPINFO {
-            bmiHeader: header,
-            bmiColors: [Default::default()],
-        },
-        bits,
-    ))
+    Ok((BITMAPINFO { bmiHeader: header, bmiColors: [Default::default()] }, bits))
 }
 
 /// Draw caller-composed strokes on a valid page DC. Geometry and marks remain with callers.
@@ -357,9 +300,7 @@ fn draw_primitives(dc: HDC, primitives: &[Primitive], page: &Page) -> Result<()>
     for primitive in primitives {
         let [r, g, b] = primitive.color;
         let color = u32::from(r) | (u32::from(g) << 8) | (u32::from(b) << 16);
-        let width = (primitive.width * f64::from(page.dpi.0) / 72.0)
-            .round()
-            .clamp(1.0, 1e8) as i32;
+        let width = (primitive.width * f64::from(page.dpi.0) / 72.0).round().clamp(1.0, 1e8) as i32;
         // SAFETY: documented pen/stock brush inputs; owned pen is deleted after restoring DC state.
         let pen = unsafe { CreatePen(PS_SOLID, width, color) };
         if pen.is_null() {
@@ -393,7 +334,7 @@ fn draw_primitives(dc: HDC, primitives: &[Primitive], page: &Page) -> Result<()>
             return Err(error);
         }
         let point = |(x, y)| {
-            let (x, y, _, _) = crate::device_rect(page, (x, y, 0.0, 0.0));
+            let (x, y, _, _) = crate::gdi::device_rect(page, (x, y, 0.0, 0.0));
             (x, y)
         };
         let ok = match primitive.shape {
@@ -404,7 +345,7 @@ fn draw_primitives(dc: HDC, primitives: &[Primitive], page: &Page) -> Result<()>
                 unsafe { MoveToEx(dc, x, y, null_mut()) != 0 && LineTo(dc, u, v) != 0 }
             }
             Shape::Ellipse { bounds } => {
-                let (x, y, w, h) = crate::device_rect(page, bounds);
+                let (x, y, w, h) = crate::gdi::device_rect(page, bounds);
                 // SAFETY: valid DC and bounded device coordinates.
                 unsafe { Ellipse(dc, x, y, x.saturating_add(w), y.saturating_add(h)) != 0 }
             }
@@ -429,7 +370,7 @@ pub fn print(job: &Job<'_>, image: &RgbImage<'_>, rect: (f64, f64, f64, f64)) ->
     }
     let dc = Dc::create(job.printer, job.settings, true)?;
     let page = dc.page()?;
-    let (x, y, w, h) = crate::device_rect(&page, rect);
+    let (x, y, w, h) = crate::gdi::device_rect(&page, rect);
     let (bmi, bits) = dib(image)?;
     let title = wide(job.title)?;
     let output = job.output_file.map(wide).transpose()?;
@@ -448,11 +389,7 @@ pub fn print(job: &Job<'_>, image: &RgbImage<'_>, rect: (f64, f64, f64, f64)) ->
     };
     let set_color_mode = || {
         // SAFETY: a valid printer DC and a documented SetICMMode value.
-        if unsafe { SetICMMode(dc.0, color_mode) } == 0 {
-            Err(last_error("setting GDI color policy"))
-        } else {
-            Ok(())
-        }
+        if unsafe { SetICMMode(dc.0, color_mode) } == 0 { Err(last_error("setting GDI color policy")) } else { Ok(()) }
     };
     set_color_mode()?;
     // SAFETY: a valid DC; HALFTONE resampling needs the brush origin reset afterwards.
@@ -484,21 +421,7 @@ pub fn print(job: &Job<'_>, image: &RgbImage<'_>, rect: (f64, f64, f64, f64)) ->
         // SAFETY: `bits` is a bottom-up DIB exactly as `bmi` describes (24-bit, padded rows,
         // `biSizeImage` bytes); the source rectangle is the whole image.
         let lines = unsafe {
-            StretchDIBits(
-                dc.0,
-                x,
-                y,
-                w,
-                h,
-                0,
-                0,
-                image.width as i32,
-                image.height as i32,
-                bits.as_ptr().cast(),
-                &bmi,
-                DIB_RGB_COLORS,
-                SRCCOPY,
-            )
+            StretchDIBits(dc.0, x, y, w, h, 0, 0, image.width as i32, image.height as i32, bits.as_ptr().cast(), &bmi, DIB_RGB_COLORS, SRCCOPY)
         };
         if lines <= 0 {
             return Err(fail("sending the image to the printer"));
@@ -517,10 +440,7 @@ pub fn print(job: &Job<'_>, image: &RgbImage<'_>, rect: (f64, f64, f64, f64)) ->
     if unsafe { EndDoc(dc.0) } <= 0 {
         return Err(last_error("finishing the print job"));
     }
-    Ok(Printed {
-        device_rect: (x, y, w, h),
-        dpi: page.dpi,
-    })
+    Ok(Printed { device_rect: (x, y, w, h), dpi: page.dpi })
 }
 
 #[cfg(test)]
@@ -532,12 +452,7 @@ mod tests {
     fn dib_is_bottom_up_bgr_with_padded_rows() {
         // 2×2: red, green / blue, white.
         let data = [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255];
-        let (bmi, bits) = dib(&RgbImage {
-            width: 2,
-            height: 2,
-            data: &data,
-        })
-        .unwrap();
+        let (bmi, bits) = dib(&RgbImage { width: 2, height: 2, data: &data }).unwrap();
         assert_eq!(bmi.bmiHeader.biHeight, 2);
         assert_eq!(bits.len(), 16, "6 bytes per row padded to 8");
         // First stored row is the bottom one: blue, white.
@@ -552,15 +467,8 @@ mod tests {
         b[70..72].copy_from_slice(&10u16.to_le_bytes());
         let d = DevMode::from_bytes(b.clone()).unwrap();
         let buf = aligned_copy(&d);
-        assert_eq!(
-            buf.as_ptr().align_offset(std::mem::align_of::<DEVMODEW>()),
-            0
-        );
-        assert_eq!(
-            bytes_of(&buf, b.len()),
-            b,
-            "no name check, no truncation: the bytes go through as chosen"
-        );
+        assert_eq!(buf.as_ptr().align_offset(std::mem::align_of::<DEVMODEW>()), 0);
+        assert_eq!(bytes_of(&buf, b.len()), b, "no name check, no truncation: the bytes go through as chosen");
     }
 
     /// Settings chosen for a printer are what the driver prints with: paper and resolution survive
@@ -569,30 +477,22 @@ mod tests {
     #[ignore]
     fn chosen_settings_reach_the_device_context() {
         let printer = "Microsoft Print to PDF";
-        let d = crate::default_settings(printer).unwrap();
+        let d = crate::gdi::default_settings(printer).unwrap();
         let mut b = d.as_bytes().to_vec();
         // dmPaperSize = DMPAPER_A3 (8); dmFields |= DM_PAPERSIZE (2).
         b[78..80].copy_from_slice(&8i16.to_le_bytes());
         let fields = u32::from_le_bytes([b[72], b[73], b[74], b[75]]) | 2;
         b[72..76].copy_from_slice(&fields.to_le_bytes());
         let a3 = DevMode::from_bytes(b).unwrap();
-        let pg = crate::page(printer, Some(&a3)).unwrap();
-        assert!(
-            (pg.paper.0 - 841.9).abs() < 2.0 && (pg.paper.1 - 1190.6).abs() < 2.0,
-            "A3, not the default: {:?}",
-            pg.paper
-        );
+        let pg = crate::gdi::page(printer, Some(&a3)).unwrap();
+        assert!((pg.paper.0 - 841.9).abs() < 2.0 && (pg.paper.1 - 1190.6).abs() < 2.0, "A3, not the default: {:?}", pg.paper);
         // Landscape (dmOrientation = 2, DM_ORIENTATION = 1): the page comes back wide.
         let mut b = a3.as_bytes().to_vec();
         b[76..78].copy_from_slice(&2i16.to_le_bytes());
         let fields = u32::from_le_bytes([b[72], b[73], b[74], b[75]]) | 1;
         b[72..76].copy_from_slice(&fields.to_le_bytes());
-        let pg = crate::page(printer, Some(&DevMode::from_bytes(b).unwrap())).unwrap();
-        assert!(
-            (pg.paper.0 - 1190.6).abs() < 2.0 && (pg.paper.1 - 841.9).abs() < 2.0,
-            "landscape A3: {:?}",
-            pg.paper
-        );
+        let pg = crate::gdi::page(printer, Some(&DevMode::from_bytes(b).unwrap())).unwrap();
+        assert!((pg.paper.0 - 1190.6).abs() < 2.0 && (pg.paper.1 - 841.9).abs() < 2.0, "landscape A3: {:?}", pg.paper);
     }
 
     /// A real job through Windows' "Microsoft Print to PDF" driver, written to a file (needs that
@@ -602,39 +502,18 @@ mod tests {
     fn prints_through_a_real_driver_to_a_file() {
         let out = std::env::temp_dir().join(format!("pc-winprint-{}.pdf", std::process::id()));
         let _ = std::fs::remove_file(&out);
-        let settings = crate::default_settings("Microsoft Print to PDF").unwrap();
+        let settings = crate::gdi::default_settings("Microsoft Print to PDF").unwrap();
         let mut bytes = settings.as_bytes().to_vec();
         bytes[86..88].copy_from_slice(&5i16.to_le_bytes());
         let fields = u32::from_le_bytes(bytes[72..76].try_into().unwrap()) | 0x100;
         bytes[72..76].copy_from_slice(&fields.to_le_bytes());
         let settings = DevMode::from_bytes(bytes).unwrap();
         let (w, h) = (300u32, 200u32);
-        let data: Vec<u8> = (0..w * h)
-            .flat_map(|i| {
-                if (i % w) < w / 2 {
-                    [220, 30, 30]
-                } else {
-                    [30, 30, 220]
-                }
-            })
-            .collect();
+        let data: Vec<u8> = (0..w * h).flat_map(|i| if (i % w) < w / 2 { [220, 30, 30] } else { [30, 30, 220] }).collect();
         let out_s = out.to_string_lossy().into_owned();
         let primitives = [
-            Primitive {
-                shape: Shape::Line {
-                    from: (60.0, 72.0),
-                    to: (66.0, 72.0),
-                },
-                width: 0.3,
-                color: [0; 3],
-            },
-            Primitive {
-                shape: Shape::Ellipse {
-                    bounds: (175.0, 50.0, 10.0, 10.0),
-                },
-                width: 0.3,
-                color: [0; 3],
-            },
+            Primitive { shape: Shape::Line { from: (60.0, 72.0), to: (66.0, 72.0) }, width: 0.3, color: [0; 3] },
+            Primitive { shape: Shape::Ellipse { bounds: (175.0, 50.0, 10.0, 10.0) }, width: 0.3, color: [0; 3] },
         ];
         let job = Job {
             printer: "Microsoft Print to PDF",
@@ -645,44 +524,18 @@ mod tests {
             color_policy: ColorPolicy::ApplicationManaged,
             primitives: &primitives,
         };
-        let done = crate::print(
-            &job,
-            &RgbImage {
-                width: w,
-                height: h,
-                data: &data,
-            },
-            (72.0, 72.0, 216.0, 144.0),
-        )
-        .unwrap();
+        let done = crate::gdi::print(&job, &RgbImage { width: w, height: h, data: &data }, (72.0, 72.0, 216.0, 144.0)).unwrap();
         assert_eq!(done.device_rect.2, done.dpi.0 as i32 * 3, "3 inches wide");
         let pdf = std::fs::read(&out).unwrap();
         assert!(pdf.starts_with(b"%PDF"), "the driver wrote a PDF");
         assert!(pdf.len() > 1000, "the page has content");
         // The driver vectorises our GDI line/ellipse calls as real PDF content: a job with every
         // mark on is meaningfully bigger than the same image with marks off.
-        let no_marks_job = Job {
-            primitives: &[],
-            ..job
-        };
-        let done2 = crate::print(
-            &no_marks_job,
-            &RgbImage {
-                width: w,
-                height: h,
-                data: &data,
-            },
-            (72.0, 72.0, 216.0, 144.0),
-        )
-        .unwrap();
+        let no_marks_job = Job { primitives: &[], ..job };
+        let done2 = crate::gdi::print(&no_marks_job, &RgbImage { width: w, height: h, data: &data }, (72.0, 72.0, 216.0, 144.0)).unwrap();
         let _ = done2;
         let pdf_no_marks = std::fs::read(&out).unwrap();
-        assert!(
-            pdf.len() > pdf_no_marks.len() + 100,
-            "marks add vector content: {} vs {}",
-            pdf.len(),
-            pdf_no_marks.len()
-        );
+        assert!(pdf.len() > pdf_no_marks.len() + 100, "marks add vector content: {} vs {}", pdf.len(), pdf_no_marks.len());
         if let Ok(evidence) = std::env::var("PHOTOCRAFT_WINPRINT_TEST_EVIDENCE") {
             let evidence = std::path::Path::new(&evidence);
             std::fs::create_dir_all(evidence).unwrap();
@@ -697,12 +550,7 @@ mod tests {
     #[ignore]
     fn lists_real_printers() {
         for p in printers().unwrap() {
-            println!(
-                "{}{} {:?}",
-                p.name,
-                if p.default { " (default)" } else { "" },
-                page(&p.name, None)
-            );
+            println!("{}{} {:?}", p.name, if p.default { " (default)" } else { "" }, page(&p.name, None));
         }
     }
 }

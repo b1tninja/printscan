@@ -1,0 +1,12 @@
+printscan
+Copyright (c) 2026 Justin Capella and the printscan contributors.
+Licensed under the Apache License, Version 2.0 or the MIT license, at your option.
+
+crates/printscan-windows/src/gdi (driver settings, printable geometry and the RGB/GDI transport)
+comes from crates/gdi of https://github.com/storytold/winprint.rs (revision
+417ac3c4d14d3da5485a99c7d5ce8f05664ec312), by @skylartaylor, MIT OR Apache-2.0. It derives from
+@Moiztermind's PhotoCraft printing proposal, https://github.com/storytold/photocraft/pull/3013,
+MIT OR Apache-2.0. Its history is kept in this repository.
+
+printscan-windows uses winprint (https://github.com/ArcticLampyrid/winprint.rs), BSD-3-Clause,
+Copyright (c) 2021 - 2024, alampy.com, as a dependency.

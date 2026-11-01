@@ -1,0 +1,46 @@
+[package]
+name = "printscan-windows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Windows printing for printscan: the print spooler as a backend (on winprint) and an RGB/GDI transport with the colour management under the caller's control"
+keywords = ["windows", "print", "printer", "printscan", "gdi"]
+categories = ["hardware-support", "os::windows-apis"]
+
+# `unsafe` is allowed only in the Win32 module of `gdi`; everything else follows the workspace.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+cognitive_complexity = "deny"
+too_many_arguments = "deny"
+wildcard_imports = "deny"
+dbg_macro = "warn"
+todo = "warn"
+
+[features]
+default = ["print", "gdi"]
+# The Windows print spooler as a `printscan::print` backend (`printscan_windows::spooler`).
+print = ["dep:printscan", "dep:winprint", "dep:tempfile"]
+# Driver settings, printable geometry and RGB/GDI printing (`printscan_windows::gdi`).
+gdi = ["dep:windows-sys"]
+
+[target.'cfg(windows)'.dependencies]
+printscan = { path = "../printscan", version = "0.1.0", default-features = false, features = ["print"], optional = true }
+# Pages drawn at the ticket's resolution, progress with cancellation, the cancel guard. Its default
+# `pdfium` feature downloads PDFium at build time and is off.
+winprint = { version = "0.3.1", default-features = false, optional = true }
+tempfile = { version = "3", optional = true }
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Printing",
+    "Win32_Storage_Xps",
+    "Win32_UI_ColorSystem",
+], optional = true }
+
+[target.'cfg(windows)'.dev-dependencies]
+# A temporary print-to-file printer for the spooler tests (Microsoft Print To PDF on a file port).
+winprint = { version = "0.3.1", default-features = false, features = ["test-utils"] }

@@ -2,14 +2,7 @@
 //! Callers own ICC conversion and page composition; this crate draws their pixels and strokes.
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Derived from Moiztermind's PhotoCraft printing proposal (#3013), with qualification fixes.
-#![deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unimplemented,
-    clippy::todo,
-    clippy::unreachable
-)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 #[cfg(windows)]
 #[allow(unsafe_code)]
@@ -64,17 +57,12 @@ const DM_MAX: usize = 1 << 20;
 impl DevMode {
     /// Validates driver settings bytes: the header's own sizes must add up to the length.
     pub fn from_bytes(b: Vec<u8>) -> Result<Self> {
-        let word = |at: usize| {
-            b.get(at..at + 2)
-                .map(|w| usize::from(u16::from_le_bytes([w[0], w[1]])))
-        };
+        let word = |at: usize| b.get(at..at + 2).map(|w| usize::from(u16::from_le_bytes([w[0], w[1]])));
         let (Some(size), Some(extra)) = (word(DM_SIZE_AT), word(DM_EXTRA_AT)) else {
             return Err(PrintError::Invalid("printer settings are too short".into()));
         };
         if b.len() > DM_MAX || size < DM_MIN || size.checked_add(extra) != Some(b.len()) {
-            return Err(PrintError::Invalid(
-                "printer settings are damaged; choose Print Settings again".into(),
-            ));
+            return Err(PrintError::Invalid("printer settings are damaged; choose Print Settings again".into()));
         }
         Ok(DevMode(b))
     }
@@ -89,33 +77,17 @@ impl DevMode {
     pub(crate) fn for_manual_copies(&self) -> Result<Self> {
         let mut bytes = self.0.clone();
         let invalid = || PrintError::Invalid("printer settings are too short".into());
-        let fields: [u8; 4] = bytes
-            .get(72..76)
-            .and_then(|b| b.try_into().ok())
-            .ok_or_else(invalid)?;
+        let fields: [u8; 4] = bytes.get(72..76).and_then(|b| b.try_into().ok()).ok_or_else(invalid)?;
         let fields = u32::from_le_bytes(fields) | 0x100 | 0x8000; // DM_COPIES | DM_COLLATE
-        bytes
-            .get_mut(72..76)
-            .ok_or_else(invalid)?
-            .copy_from_slice(&fields.to_le_bytes());
-        bytes
-            .get_mut(86..88)
-            .ok_or_else(invalid)?
-            .copy_from_slice(&1i16.to_le_bytes());
-        bytes
-            .get_mut(100..102)
-            .ok_or_else(invalid)?
-            .copy_from_slice(&0i16.to_le_bytes());
+        bytes.get_mut(72..76).ok_or_else(invalid)?.copy_from_slice(&fields.to_le_bytes());
+        bytes.get_mut(86..88).ok_or_else(invalid)?.copy_from_slice(&1i16.to_le_bytes());
+        bytes.get_mut(100..102).ok_or_else(invalid)?.copy_from_slice(&0i16.to_le_bytes());
         Ok(Self(bytes))
     }
 
     #[cfg(any(windows, test))]
     pub(crate) fn has_manual_copies(&self) -> bool {
-        let fields = self
-            .0
-            .get(72..76)
-            .and_then(|b| <[u8; 4]>::try_from(b).ok())
-            .map(u32::from_le_bytes);
+        let fields = self.0.get(72..76).and_then(|b| <[u8; 4]>::try_from(b).ok()).map(u32::from_le_bytes);
         // dmFields identifies valid fields. A driver without hardware copies/collation may
         // clear their flags and return unspecified values; those cannot multiply our pages.
         fields.is_some_and(|f| {
@@ -131,17 +103,10 @@ impl DevMode {
 
     pub fn from_hex(s: &str) -> Result<Self> {
         if !s.len().is_multiple_of(2) || s.len() > DM_MAX * 2 {
-            return Err(PrintError::Invalid(
-                "printer settings are damaged; choose Print Settings again".into(),
-            ));
+            return Err(PrintError::Invalid("printer settings are damaged; choose Print Settings again".into()));
         }
-        let bytes: Option<Vec<u8>> = (0..s.len())
-            .step_by(2)
-            .map(|i| s.get(i..i + 2).and_then(|h| u8::from_str_radix(h, 16).ok()))
-            .collect();
-        Self::from_bytes(bytes.ok_or_else(|| {
-            PrintError::Invalid("printer settings are damaged; choose Print Settings again".into())
-        })?)
+        let bytes: Option<Vec<u8>> = (0..s.len()).step_by(2).map(|i| s.get(i..i + 2).and_then(|h| u8::from_str_radix(h, 16).ok())).collect();
+        Self::from_bytes(bytes.ok_or_else(|| PrintError::Invalid("printer settings are damaged; choose Print Settings again".into()))?)
     }
 }
 
@@ -188,13 +153,8 @@ impl Primitive {
             return false;
         }
         match self.shape {
-            Shape::Line {
-                from: (x, y),
-                to: (u, v),
-            } => [x, y, u, v].iter().all(|v| v.is_finite()),
-            Shape::Ellipse {
-                bounds: (x, y, w, h),
-            } => [x, y, w, h].iter().all(|v| v.is_finite()) && w > 0.0 && h > 0.0,
+            Shape::Line { from: (x, y), to: (u, v) } => [x, y, u, v].iter().all(|v| v.is_finite()),
+            Shape::Ellipse { bounds: (x, y, w, h) } => [x, y, w, h].iter().all(|v| v.is_finite()) && w > 0.0 && h > 0.0,
         }
     }
 }
@@ -235,19 +195,10 @@ pub struct Printed {
 pub fn device_rect(page: &Page, rect: (f64, f64, f64, f64)) -> (i32, i32, i32, i32) {
     let (dx, dy) = (f64::from(page.dpi.0) / 72.0, f64::from(page.dpi.1) / 72.0);
     let px = |v: f64| {
-        if v.is_finite() {
-            v.round().clamp(-1e8, 1e8) as i32
-        } else {
-            0
-        }
+        if v.is_finite() { v.round().clamp(-1e8, 1e8) as i32 } else { 0 }
     };
     let (x, y, w, h) = rect;
-    (
-        px((x - page.printable.0) * dx),
-        px((y - page.printable.1) * dy),
-        px(w * dx),
-        px(h * dy),
-    )
+    (px((x - page.printable.0) * dx), px((y - page.printable.1) * dy), px(w * dx), px(h * dy))
 }
 
 /// The printers installed for this user, the default first.
@@ -255,11 +206,7 @@ pub fn printers() -> Result<Vec<Printer>> {
     #[cfg(windows)]
     {
         let mut v = windows::printers()?;
-        v.sort_by(|a, b| {
-            b.default
-                .cmp(&a.default)
-                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-        });
+        v.sort_by(|a, b| b.default.cmp(&a.default).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
         Ok(v)
     }
     #[cfg(not(windows))]
@@ -280,8 +227,7 @@ pub fn default_printer() -> Result<Option<String>> {
 pub fn default_settings(printer: &str) -> Result<DevMode> {
     #[cfg(windows)]
     {
-        windows::properties(printer, None, None, false)?
-            .ok_or_else(|| PrintError::System("the printer driver gave no settings".into()))
+        windows::properties(printer, None, None, false)?.ok_or_else(|| PrintError::System("the printer driver gave no settings".into()))
     }
     #[cfg(not(windows))]
     {
@@ -292,11 +238,7 @@ pub fn default_settings(printer: &str) -> Result<DevMode> {
 
 /// Shows the driver's Print Settings dialog (modal; `parent` is a window handle). `None` when
 /// the user cancels.
-pub fn settings_dialog(
-    printer: &str,
-    current: Option<&DevMode>,
-    parent: Option<isize>,
-) -> Result<Option<DevMode>> {
+pub fn settings_dialog(printer: &str, current: Option<&DevMode>, parent: Option<isize>) -> Result<Option<DevMode>> {
     #[cfg(windows)]
     {
         windows::properties(printer, current, parent, true)
@@ -323,29 +265,15 @@ pub fn page(printer: &str, settings: Option<&DevMode>) -> Result<Page> {
 
 /// Prints `image` into `rect` (points, origin top-left of the sheet), `job.copies` pages.
 pub fn print(job: &Job<'_>, image: &RgbImage<'_>, rect: (f64, f64, f64, f64)) -> Result<Printed> {
-    let row = (image.width as usize)
-        .checked_mul(3)
-        .ok_or_else(|| PrintError::Invalid("image too large".into()))?;
-    if image.width == 0
-        || image.height == 0
-        || row.checked_mul(image.height as usize) != Some(image.data.len())
-    {
+    let row = (image.width as usize).checked_mul(3).ok_or_else(|| PrintError::Invalid("image too large".into()))?;
+    if image.width == 0 || image.height == 0 || row.checked_mul(image.height as usize) != Some(image.data.len()) {
         return Err(PrintError::Invalid("nothing to print".into()));
     }
-    if ![rect.0, rect.1, rect.2, rect.3]
-        .iter()
-        .all(|v| v.is_finite())
-        || !(rect.2 > 0.0 && rect.3 > 0.0)
-    {
+    if ![rect.0, rect.1, rect.2, rect.3].iter().all(|v| v.is_finite()) || !(rect.2 > 0.0 && rect.3 > 0.0) {
         return Err(PrintError::Invalid("the print size is empty".into()));
     }
-    if image.data.len() > 512 * 1024 * 1024
-        || job.primitives.len() > 10_000
-        || job.primitives.iter().any(|p| !p.valid())
-    {
-        return Err(PrintError::Invalid(
-            "print image or vector strokes exceed supported limits".into(),
-        ));
+    if image.data.len() > 512 * 1024 * 1024 || job.primitives.len() > 10_000 || job.primitives.iter().any(|p| !p.valid()) {
+        return Err(PrintError::Invalid("print image or vector strokes exceed supported limits".into()));
     }
     #[cfg(windows)]
     {
@@ -403,93 +331,38 @@ mod tests {
         ignored[72..76].copy_from_slice(&0u32.to_le_bytes());
         ignored[86..88].copy_from_slice(&0i16.to_le_bytes());
         ignored[100..102].copy_from_slice(&1i16.to_le_bytes());
-        assert!(
-            DevMode::from_bytes(ignored.clone())
-                .unwrap()
-                .has_manual_copies(),
-            "drivers may omit unsupported copy/collation fields"
-        );
+        assert!(DevMode::from_bytes(ignored.clone()).unwrap().has_manual_copies(), "drivers may omit unsupported copy/collation fields");
         ignored[72..76].copy_from_slice(&0x8100u32.to_le_bytes());
-        assert!(
-            !DevMode::from_bytes(ignored).unwrap().has_manual_copies(),
-            "active driver fields must retain our copy policy"
-        );
+        assert!(!DevMode::from_bytes(ignored).unwrap().has_manual_copies(), "active driver fields must retain our copy policy");
     }
 
     #[test]
     fn device_rect_is_relative_to_the_printable_corner() {
         // A3 at 360 dpi with a 3 mm (8.5 pt) unprintable margin.
-        let page = Page {
-            paper: (841.89, 1190.55),
-            printable: (8.5, 8.5, 824.89, 1173.55),
-            dpi: (360, 360),
-        };
+        let page = Page { paper: (841.89, 1190.55), printable: (8.5, 8.5, 824.89, 1173.55), dpi: (360, 360) };
         assert_eq!(device_rect(&page, (8.5, 8.5, 72.0, 36.0)), (0, 0, 360, 180));
-        assert_eq!(
-            device_rect(&page, (72.0, 144.0, 144.0, 72.0)),
-            (318, 678, 720, 360)
-        );
+        assert_eq!(device_rect(&page, (72.0, 144.0, 144.0, 72.0)), (318, 678, 720, 360));
         assert_eq!(device_rect(&page, (f64::NAN, f64::INFINITY, 1.0, 1.0)).0, 0);
     }
 
     #[test]
     fn print_rejects_empty_or_short_images_before_any_system_call() {
-        let job = Job {
-            printer: "x",
-            settings: None,
-            title: "t",
-            output_file: None,
-            copies: 1,
-            color_policy: ColorPolicy::Unmanaged,
-            primitives: &[],
-        };
-        let short = RgbImage {
-            width: 2,
-            height: 2,
-            data: &[0; 11],
-        };
-        assert!(matches!(
-            print(&job, &short, (0.0, 0.0, 10.0, 10.0)),
-            Err(PrintError::Invalid(_))
-        ));
-        let ok = RgbImage {
-            width: 2,
-            height: 2,
-            data: &[0; 12],
-        };
-        assert!(matches!(
-            print(&job, &ok, (0.0, 0.0, 0.0, 10.0)),
-            Err(PrintError::Invalid(_))
-        ));
+        let job =
+            Job { printer: "x", settings: None, title: "t", output_file: None, copies: 1, color_policy: ColorPolicy::Unmanaged, primitives: &[] };
+        let short = RgbImage { width: 2, height: 2, data: &[0; 11] };
+        assert!(matches!(print(&job, &short, (0.0, 0.0, 10.0, 10.0)), Err(PrintError::Invalid(_))));
+        let ok = RgbImage { width: 2, height: 2, data: &[0; 12] };
+        assert!(matches!(print(&job, &ok, (0.0, 0.0, 0.0, 10.0)), Err(PrintError::Invalid(_))));
         for rect in [(f64::NAN, 0.0, 10.0, 10.0), (0.0, 0.0, f64::INFINITY, 10.0)] {
-            assert!(matches!(
-                print(&job, &ok, rect),
-                Err(PrintError::Invalid(_))
-            ));
+            assert!(matches!(print(&job, &ok, rect), Err(PrintError::Invalid(_))));
         }
     }
 
     #[test]
     fn hostile_vector_geometry_is_rejected_before_opening_a_printer() {
-        let image = RgbImage {
-            width: 1,
-            height: 1,
-            data: &[0; 3],
-        };
-        for shape in [
-            Shape::Line {
-                from: (f64::NAN, 0.0),
-                to: (1.0, 1.0),
-            },
-            Shape::Ellipse {
-                bounds: (0.0, 0.0, -1.0, 1.0),
-            },
-        ] {
-            let primitives = [Primitive {
-                shape,
-                width: 0.3,
-                color: [0; 3],
-            }];
+        let image = RgbImage { width: 1, height: 1, data: &[0; 3] };
+        for shape in [Shape::Line { from: (f64::NAN, 0.0), to: (1.0, 1.0) }, Shape::Ellipse { bounds: (0.0, 0.0, -1.0, 1.0) }] {
+            let primitives = [Primitive { shape, width: 0.3, color: [0; 3] }];
             let job = Job {
                 printer: "not a printer",
                 settings: None,
@@ -499,10 +372,7 @@ mod tests {
                 color_policy: ColorPolicy::Unmanaged,
                 primitives: &primitives,
             };
-            assert!(matches!(
-                print(&job, &image, (0.0, 0.0, 10.0, 10.0)),
-                Err(PrintError::Invalid(_))
-            ));
+            assert!(matches!(print(&job, &image, (0.0, 0.0, 10.0, 10.0)), Err(PrintError::Invalid(_))));
         }
     }
 }
