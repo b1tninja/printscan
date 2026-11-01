@@ -493,7 +493,7 @@ mod tests {
         let printer = GdiPrinter::new(device.device().clone());
         let empty = RgbImage { width: 0, height: 0, data: &[] };
         assert!(matches!(printer.print_rgb(&empty, AREA, &GdiOptions::default()), Err(GdiPrinterError::InvalidImage)));
-        let named = GdiOptions { title: OsString::from("a b"), ..Default::default() };
+        let named = GdiOptions { title: OsString::from("a\0b"), ..Default::default() };
         let data = red_image();
         let image = RgbImage { width: 40, height: 30, data: &data };
         assert!(matches!(printer.print_rgb(&image, AREA, &named), Err(GdiPrinterError::InvalidName)));
