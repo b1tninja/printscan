@@ -262,7 +262,64 @@ fn content(label: &str) -> Image {
         img.text(tx + 15, y + 90, 4, "CHROMA 4PX", *a);
         img.text(tx + 15, y + 140, 7, "CHROMA", *a);
     }
+    registration(&mut img, 2630);
     img
+}
+
+/// Single-toner colours on a CMYK laser (the driver may still add others).
+const TONERS: [([u8; 3], &str); 3] = [([0, 255, 255], "C"), ([255, 0, 255], "M"), ([255, 255, 0], "Y")];
+
+/// Registration of each toner against black, from `y` down (about 360 pixels).
+///
+/// A vernier per toner and direction: black ticks every 20 pixels, the toner's ticks every 21,
+/// both counted -7 to 7 from the centre (long black ticks at 0 and +-5). Where tick `i` of the
+/// toner lines up with tick `i` of black, the toner is offset by `-i` pixels from black (1 pixel
+/// = 0.085 mm); lined up at 0 is perfect registration. Beside them, a black line meets a line of
+/// each toner end to end, across and down, 1 and 3 pixels wide: misregistration shows as a step
+/// at the joint.
+fn registration(img: &mut Image, y: usize) {
+    img.text(90, y, 3, "REGISTRATION VS BLACK. TICK N LINED UP: TONER OFF BY -N PX. 1 PX 0.085 MM", BLACK);
+    let top = y + 40;
+    // Horizontal offset: vertical ticks along a row.
+    for (t, (c, name)) in TONERS.iter().enumerate() {
+        let x0 = 90 + t * 340;
+        let centre = x0 + 160;
+        img.text(x0, top, 3, &format!("{name} ACROSS"), BLACK);
+        for i in -7i32..=7 {
+            let long = i % 5 == 0;
+            let kx = (centre as i32 + i * 20) as usize;
+            img.fill(kx, top + 55 - if long { 15 } else { 0 }, 2, if long { 55 } else { 40 }, BLACK);
+            let cx = (centre as i32 + i * 21) as usize;
+            img.fill(cx, top + 95, 2, 40, *c);
+        }
+    }
+    // Vertical offset: horizontal ticks down a column.
+    for (t, (c, name)) in TONERS.iter().enumerate() {
+        let x0 = 1130 + t * 220;
+        let centre = top + 190;
+        img.text(x0 - 15, top, 3, &format!("{name} DOWN"), BLACK);
+        for i in -7i32..=7 {
+            let long = i % 5 == 0;
+            let ky = (centre as i32 + i * 20) as usize;
+            img.fill(x0 - if long { 15 } else { 0 }, ky, if long { 55 } else { 40 }, 2, BLACK);
+            let cy = (centre as i32 + i * 21) as usize;
+            img.fill(x0 + 40, cy, 40, 2, *c);
+        }
+    }
+    // Black meeting each toner end to end: across (a step up or down at the joint) and down (a
+    // step left or right).
+    let x0 = 1820;
+    img.text(x0, top, 3, "JOINTS 1PX 3PX", BLACK);
+    for (t, (c, _)) in TONERS.iter().enumerate() {
+        for (k, width) in [1usize, 3].iter().enumerate() {
+            let y = top + 50 + (t * 2 + k) * 22;
+            img.fill(x0, y, 100, *width, BLACK);
+            img.fill(x0 + 100, y, 100, *width, *c);
+            let x = x0 + 230 + (t * 2 + k) * 22;
+            img.fill(x, top + 50, *width, 100, BLACK);
+            img.fill(x, top + 150, *width, 100, *c);
+        }
+    }
 }
 
 /// A 24-bit BMP at 300 dpi.
