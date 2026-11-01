@@ -22,19 +22,12 @@ use windows::Win32::Storage::Xps::{AbortDoc, DOCINFOW, EndDoc, EndPage, StartDoc
 use windows::Win32::UI::ColorSystem::{ICM_DONE_OUTSIDEDC, ICM_OFF, SetICMMode};
 use windows::core::{HRESULT, PCWSTR};
 use winprint::printer::{PrintOutcome, PrinterDevice};
-use winprint::ticket::{PrintTicket, ToDevModeError};
+use winprint::ticket::{Copies, PrintTicket, PrintTicketBuilder, PrintTicketBuilderError, ToDevModeError};
 
 /// The largest image, in bytes, that [`GdiPrinter`] sends in one piece.
 const MAX_IMAGE_BYTES: usize = 512 * 1024 * 1024;
 /// The largest number of copies of a page that one job holds.
 const MAX_COPIES: u32 = 999;
-
-/// Offset of `dmFields` in a `DEVMODEW`.
-const DM_FIELDS_AT: usize = 72;
-/// Offset of `dmCopies` in a `DEVMODEW`.
-const DM_COPIES_AT: usize = 86;
-/// `DM_COPIES`: `dmCopies` is valid.
-const DM_COPIES: u32 = 0x100;
 
 #[derive(Error, Debug)]
 /// Represents an error from [`GdiPrinter`].
@@ -54,9 +47,9 @@ pub enum GdiPrinterError {
     /// Print ticket error.
     #[error("Print Ticket Error")]
     PrintTicketError(#[source] ToDevModeError),
-    /// The settings the print ticket was converted to are too short to hold a copy count.
-    #[error("The printer settings are damaged")]
-    InvalidDevMode,
+    /// The print ticket could not be completed for the printer.
+    #[error("Failed to build the print ticket")]
+    TicketBuilderError(#[source] PrintTicketBuilderError),
     /// Failed to open printer.
     #[error("Failed to open printer")]
     FailedToOpenPrinter,
@@ -173,8 +166,13 @@ impl GdiPrinter {
         let title = checked_wide(&options.title)?;
         let output = options.output_file.as_deref().map(checked_wide).transpose()?;
         let dib = Dib::new(image);
-        let mut dev_mode = options.ticket.to_dev_mode(&self.printer).map_err(GdiPrinterError::PrintTicketError)?;
-        set_one_copy(&mut dev_mode)?;
+        // Every copy is a page of this job, so the driver must print one. The copy count goes into
+        // the ticket before it is converted: the conversion lets the driver validate the settings.
+        let mut builder = PrintTicketBuilder::new(&self.printer).map_err(GdiPrinterError::TicketBuilderError)?;
+        builder.merge(options.ticket.clone()).map_err(GdiPrinterError::TicketBuilderError)?;
+        builder.merge(Copies(1)).map_err(GdiPrinterError::TicketBuilderError)?;
+        let ticket = builder.build().map_err(GdiPrinterError::TicketBuilderError)?;
+        let dev_mode = ticket.to_dev_mode(&self.printer).map_err(GdiPrinterError::PrintTicketError)?;
         let color_mode = match options.color_policy {
             ColorPolicy::DriverManaged => ICM_OFF,
             // ICM_OFF would turn on old-style halftone correction. Pixels the caller converted
@@ -183,9 +181,8 @@ impl GdiPrinter {
         };
 
         unsafe {
-            // See `PdfiumPrinter` on the driver name.
-            let hdc =
-                CreateDCW(PCWSTR(PRINT_DRIVER.as_ptr()), PCWSTR(to_wide(self.printer.os_name()).as_ptr()), None, Some(dev_mode.as_ptr() as *const _));
+            // GDI ignores the driver name for printers; Microsoft recommends NULL (CreateDCW).
+            let hdc = CreateDCW(PCWSTR::null(), PCWSTR(to_wide(self.printer.os_name()).as_ptr()), None, Some(dev_mode.as_ptr() as *const _));
             if hdc.is_invalid() {
                 return Err(GdiPrinterError::FailedToOpenPrinter);
             }
@@ -193,13 +190,18 @@ impl GdiPrinter {
                 let _ = DeleteDC(hdc);
             }
             let target = Target::of(hdc, &area)?;
-            let set_color_mode = || {
-                if SetICMMode(hdc, color_mode) == 0 { Err(GdiPrinterError::SetColorModeFailed) } else { Ok(()) }
+            // The colour mode, the stretching mode and the brush origin, which must follow HALFTONE.
+            // SetICMMode says StartPage resets the DC and StartPage says it does not, so they are set
+            // before the job and again on every page.
+            let set_page_state = || {
+                if SetICMMode(hdc, color_mode) == 0 {
+                    return Err(GdiPrinterError::SetColorModeFailed);
+                }
+                SetStretchBltMode(hdc, HALFTONE);
+                let _ = SetBrushOrgEx(hdc, 0, 0, None);
+                Ok(())
             };
-            set_color_mode()?;
-            SetStretchBltMode(hdc, HALFTONE);
-            // After setting the HALFTONE stretching mode, the brush origin must be set again.
-            let _ = SetBrushOrgEx(hdc, 0, 0, None);
+            set_page_state()?;
 
             let doc_info = DOCINFOW {
                 cbSize: mem::size_of::<DOCINFOW>() as i32,
@@ -230,9 +232,7 @@ impl GdiPrinter {
                 if started <= 0 {
                     return Err(GdiPrinterError::StartPageFailed(copy, started));
                 }
-                // StartPage restores the state of the device context. Set the policy for every
-                // page, before the pixels.
-                set_color_mode()?;
+                set_page_state()?;
                 let drawn = StretchDIBits(
                     hdc,
                     target.x,
@@ -281,9 +281,6 @@ impl GdiPrinter {
         self.timeout = timeout;
     }
 }
-
-// See `PdfiumPrinter`.
-const PRINT_DRIVER: [u16; 9] = ['W' as u16, 'I' as u16, 'N' as u16, 'S' as u16, 'P' as u16, 'O' as u16, 'O' as u16, 'L' as u16, 0];
 
 /// The image box in device pixels, from the origin of the printable area, where GDI draws.
 struct Target {
@@ -383,16 +380,6 @@ fn checked_wide(name: &OsStr) -> Result<Vec<u16>, GdiPrinterError> {
     Ok(wide)
 }
 
-/// Make the settings print one copy of each page, whatever the ticket said.
-fn set_one_copy(dev_mode: &mut [u8]) -> Result<(), GdiPrinterError> {
-    let fields: [u8; 4] =
-        dev_mode.get(DM_FIELDS_AT..DM_FIELDS_AT + 4).and_then(|bytes| bytes.try_into().ok()).ok_or(GdiPrinterError::InvalidDevMode)?;
-    let fields = u32::from_le_bytes(fields) | DM_COPIES;
-    dev_mode[DM_FIELDS_AT..DM_FIELDS_AT + 4].copy_from_slice(&fields.to_le_bytes());
-    dev_mode.get_mut(DM_COPIES_AT..DM_COPIES_AT + 2).ok_or(GdiPrinterError::InvalidDevMode)?.copy_from_slice(&1i16.to_le_bytes());
-    Ok(())
-}
-
 /// Whether the last failed GDI print call failed because the job was deleted from the print queue.
 fn job_deleted_from_queue() -> bool {
     HRESULT::from_win32(unsafe { GetLastError() }.0) == HRESULT::from_win32(ERROR_PRINT_CANCELLED.0)
@@ -426,7 +413,6 @@ impl Deadline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use windows::Win32::Graphics::Gdi::DEVMODEW;
     use winprint::test_utils::file_device::{FilePrinterDevice, Pdf};
 
     #[test]
@@ -457,19 +443,6 @@ mod tests {
         assert!(check_area(&area(f64::NAN, 1.0)).is_err());
         assert!(check_area(&area(0.0, 0.0)).is_err());
         assert!(check_area(&area(0.0, f64::INFINITY)).is_err());
-    }
-
-    #[test]
-    fn the_offsets_of_the_copy_fields_are_those_of_devmodew() {
-        let mut mode = DEVMODEW::default();
-        mode.Anonymous1.Anonymous1.dmCopies = 0x0102;
-        let bytes = unsafe { std::slice::from_raw_parts(&mode as *const DEVMODEW as *const u8, mem::size_of::<DEVMODEW>()) };
-        assert_eq!(bytes[DM_COPIES_AT..DM_COPIES_AT + 2], [0x02, 0x01]);
-        let mut bytes = bytes.to_vec();
-        set_one_copy(&mut bytes).unwrap();
-        assert_eq!(bytes[DM_COPIES_AT..DM_COPIES_AT + 2], [1, 0]);
-        assert_eq!(u32::from_le_bytes(bytes[DM_FIELDS_AT..DM_FIELDS_AT + 4].try_into().unwrap()) & DM_COPIES, DM_COPIES);
-        assert!(set_one_copy(&mut [0u8; 8]).is_err());
     }
 
     fn pdf_device() -> FilePrinterDevice<Pdf> {
