@@ -15,7 +15,9 @@
 //! - black corner squares (for scanning the sheet back) and a label naming the job.
 //!
 //! With `--regmap`, the page is a registration map instead (see [`regmap_page`]); with `--ramps`, tone
-//! ramps and uniformity bars (see [`ramp_page`]).
+//! ramps and uniformity bars (see [`ramp_page`]); with `--geometry`, rulers, a 100 mm square and
+//! circle and margin lines (see [`geometry_page`]). `--suite` is all four pages as one job: a
+//! multi-page TIFF, which winprint's `ImagePrinter` prints a page per frame.
 //!
 //! `print` sends it with winprint's `ImagePrinter` at 300 dpi. `driver` and `none` merge
 //! `psk:PageColorManagement` (`Driver`: the driver converts the colours; `None`: the application
@@ -24,36 +26,51 @@
 #[cfg(windows)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    let regmap = args.iter().any(|a| a == "--regmap");
-    let ramps = args.iter().any(|a| a == "--ramps");
-    args.retain(|a| a != "--regmap" && a != "--ramps");
-    let page = |label: &str| {
-        if regmap {
-            regmap_page(label)
-        } else if ramps {
-            ramp_page(label)
-        } else {
-            page(label)
-        }
-    };
+    let kind = ["--regmap", "--ramps", "--geometry", "--suite"].into_iter().find(|k| args.iter().any(|a| a == k)).unwrap_or("--colour");
+    args.retain(|a| !a.starts_with("--"));
     match args.first().map(String::as_str) {
         Some("render") => {
             let out = args.get(1).ok_or("render needs an output path")?;
-            let label = args.get(2).map_or("PRINTSCAN COLOUR DIAG", String::as_str);
-            write_bmp(std::path::Path::new(out), &page(label))?;
-            println!("wrote {out}");
+            let label = args.get(2).map_or("PRINTSCAN DIAG", String::as_str);
+            let sheets = pages(kind, label);
+            let path = std::path::Path::new(out);
+            if sheets.len() == 1 && !out.to_ascii_lowercase().ends_with(".tif") {
+                write_bmp(path, &sheets[0])?;
+            } else {
+                write_tiff(path, &sheets)?;
+            }
+            println!("wrote {out} ({} page(s))", sheets.len());
             Ok(())
         }
         Some("print") => {
             let printer = args.get(1).ok_or("print needs a printer name")?;
             let mode = args.get(2).map_or("default", String::as_str);
             let label = args.get(3).cloned().unwrap_or_else(|| format!("CM {}", mode.to_uppercase()));
-            print(printer, mode, &page(&label), &label)
+            print(printer, mode, &pages(kind, &label), &label)
         }
         _ => {
-            eprintln!("usage: colour_diag render <out.bmp> [label] | print <printer> <driver|none|default> [label]");
+            eprintln!("usage: colour_diag render <out.bmp|out.tif> [label] [--regmap|--ramps|--geometry|--suite]");
+            eprintln!("       colour_diag print <printer> <driver|none|default> [label] [--regmap|--ramps|--geometry|--suite]");
             std::process::exit(2);
         }
+    }
+}
+
+/// A page generator.
+type Maker = fn(&str) -> Image;
+
+/// The pages of one kind; `--suite` is every page, each labelled with its number.
+fn pages(kind: &str, label: &str) -> Vec<Image> {
+    match kind {
+        "--regmap" => vec![regmap_page(label)],
+        "--ramps" => vec![ramp_page(label)],
+        "--geometry" => vec![geometry_page(label)],
+        "--suite" => {
+            let suite: [(&str, Maker); 4] =
+                [("COLOUR", page), ("REGISTRATION MAP", regmap_page), ("TONE RAMPS", ramp_page), ("GEOMETRY", geometry_page)];
+            suite.iter().enumerate().map(|(i, (name, make))| make(&format!("{label} {}/4 {name}", i + 1))).collect()
+        }
+        _ => vec![page(label)],
     }
 }
 
@@ -458,6 +475,171 @@ const REGMAP_X0: usize = 150;
 // The last cell ends at 150 + 5 * 340 + 285 = 2135, clear of the locators at 2190.
 const REGMAP_Y0: usize = 110;
 
+/// Rulers, sizes and the printable area, on the whole Letter sheet (sheet coordinates).
+///
+/// - Margin combs at each paper edge: thin lines 1 to 8 mm from the edge (1 mm apart). The first
+///   one that prints is the printer's margin on that side.
+/// - Rulers along the top and left of the content: millimetres (a tick each mm, longer each 5,
+///   numbered each 10) and inches (a tick each 0.1 in, numbered each inch).
+/// - A 100 mm square with a 100 mm circle and diagonals (scale, aspect ratio and skew), and a 4 in
+///   square.
+/// - The registration map's locators, at the same sheet positions.
+fn geometry_page(label: &str) -> Image {
+    let margin = DPI / 2;
+    let mut s = Image::new(DPI * 17 / 2, DPI * 11);
+    let mm = |v: f64| (v * DPI as f64 / 25.4).round() as usize;
+    for (cx, cy) in REGMAP_LOCATORS {
+        s.fill(margin + cx - 30, margin + cy - 30, 60, 60, BLACK);
+    }
+    s.text(margin + 110, margin + 15, 4, label, BLACK);
+    s.text(margin + 110, margin + 55, 2, "GEOMETRY: MARGIN LINES 1-8 MM FROM EACH PAPER EDGE, RULERS, 100 MM SQUARE AND CIRCLE. 300 DPI", BLACK);
+    let (w, h) = (s.width, s.height);
+    // Margin combs: lines 1..8 mm from each edge, in the middle third of that edge.
+    for d in 1..=8usize {
+        let o = mm(d as f64);
+        s.fill(w / 3, o, w / 3, 2, BLACK);
+        s.fill(w / 3, h - 2 - o, w / 3, 2, BLACK);
+        s.fill(o, h / 3, 2, h / 3, BLACK);
+        s.fill(w - 2 - o, h / 3, 2, h / 3, BLACK);
+    }
+    s.text(w / 3, mm(12.0), 2, "TOP: LINES AT 1-8 MM FROM THE EDGE", BLACK);
+    s.text(w / 3, h - mm(12.0) - 14, 2, "BOTTOM: LINES AT 1-8 MM FROM THE EDGE", BLACK);
+    s.text(mm(12.0), h / 3 - 30, 2, "LEFT", BLACK);
+    s.text(w - mm(12.0) - 60, h / 3 - 30, 2, "RIGHT", BLACK);
+    // Rulers.
+    let (rx, ry) = (margin + 110, margin + 160);
+    s.text(rx, ry - 30, 2, "MM", BLACK);
+    for m in 0..=180usize {
+        let x = rx + mm(m as f64);
+        let len = if m % 10 == 0 {
+            40
+        } else if m % 5 == 0 {
+            28
+        } else {
+            16
+        };
+        s.fill(x, ry, 2, len, BLACK);
+        if m % 10 == 0 {
+            s.text(x + 4, ry + 44, 2, &format!("{m}"), BLACK);
+        }
+    }
+    let iy = ry + 100;
+    s.text(rx, iy - 30, 2, "INCH", BLACK);
+    for t in 0..=70usize {
+        let x = rx + t * DPI / 10;
+        let len = if t % 10 == 0 {
+            40
+        } else if t % 5 == 0 {
+            28
+        } else {
+            16
+        };
+        s.fill(x, iy, 2, len, BLACK);
+        if t % 10 == 0 {
+            s.text(x + 4, iy + 44, 2, &format!("{}", t / 10), BLACK);
+        }
+    }
+    let (vx, vy) = (margin + 110, margin + 340);
+    for m in 0..=200usize {
+        let y = vy + mm(m as f64);
+        let len = if m % 10 == 0 {
+            40
+        } else if m % 5 == 0 {
+            28
+        } else {
+            16
+        };
+        s.fill(vx, y, len, 2, BLACK);
+        if m % 10 == 0 {
+            s.text(vx + 46, y - 6, 2, &format!("{m}"), BLACK);
+        }
+    }
+    // A 100 mm square, its circle and diagonals.
+    let (sx, sy, side) = (margin + 450, margin + 450, mm(100.0));
+    for t in 0..3 {
+        s.fill(sx, sy + t, side, 1, BLACK);
+        s.fill(sx, sy + side - 1 - t, side, 1, BLACK);
+        s.fill(sx + t, sy, 1, side, BLACK);
+        s.fill(sx + side - 1 - t, sy, 1, side, BLACK);
+    }
+    let (cx, cy, r) = (sx as f64 + side as f64 / 2.0, sy as f64 + side as f64 / 2.0, side as f64 / 2.0);
+    for k in 0..7200 {
+        let a = k as f64 * std::f64::consts::TAU / 7200.0;
+        for dr in [-1.0, 0.0] {
+            s.set((cx + (r + dr) * a.cos()) as usize, (cy + (r + dr) * a.sin()) as usize, BLACK);
+        }
+    }
+    for k in 0..side - 1 {
+        s.fill(sx + k, sy + k, 2, 2, BLACK);
+        s.fill(sx + side - 2 - k, sy + k, 2, 2, BLACK);
+    }
+    s.text(sx, sy + side + 15, 3, "100 MM SQUARE AND CIRCLE", BLACK);
+    // A 4 inch square.
+    let (qx, qy, q) = (margin + 450, sy + side + 120, 4 * DPI);
+    for t in 0..3 {
+        s.fill(qx, qy + t, q, 1, BLACK);
+        s.fill(qx, qy + q - 1 - t, q, 1, BLACK);
+        s.fill(qx + t, qy, 1, q, BLACK);
+        s.fill(qx + q - 1 - t, qy, 1, q, BLACK);
+    }
+    s.text(qx, qy + q + 15, 3, "4 INCH SQUARE", BLACK);
+    s
+}
+
+/// A multi-page baseline TIFF (uncompressed 8-bit RGB, 300 dpi), a page per image.
+fn write_tiff(path: &std::path::Path, pages: &[Image]) -> std::io::Result<()> {
+    let mut b: Vec<u8> = b"II*\0".to_vec();
+    b.extend_from_slice(&0u32.to_le_bytes()); // the first IFD's offset, written below
+    let mut next_ifd_slot = 4usize;
+    for img in pages {
+        let data_at = b.len() as u32;
+        b.extend_from_slice(&img.rgb);
+        let bits_at = b.len() as u32;
+        for _ in 0..3 {
+            b.extend_from_slice(&8u16.to_le_bytes());
+        }
+        let res_at = b.len() as u32;
+        b.extend_from_slice(&(DPI as u32).to_le_bytes());
+        b.extend_from_slice(&1u32.to_le_bytes());
+        if b.len() % 2 == 1 {
+            b.push(0);
+        }
+        let ifd_at = b.len() as u32;
+        b[next_ifd_slot..next_ifd_slot + 4].copy_from_slice(&ifd_at.to_le_bytes());
+        // (tag, type, count, value or offset): type 3 SHORT, 4 LONG, 5 RATIONAL
+        let entries: [(u16, u16, u32, u32); 13] = [
+            (256, 4, 1, img.width as u32),
+            (257, 4, 1, img.height as u32),
+            (258, 3, 3, bits_at),
+            (259, 3, 1, 1),
+            (262, 3, 1, 2),
+            (273, 4, 1, data_at),
+            (277, 3, 1, 3),
+            (278, 4, 1, img.height as u32),
+            (279, 4, 1, img.rgb.len() as u32),
+            (282, 5, 1, res_at),
+            (283, 5, 1, res_at),
+            (284, 3, 1, 1),
+            (296, 3, 1, 2),
+        ];
+        b.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+        for (tag, ty, count, value) in entries {
+            b.extend_from_slice(&tag.to_le_bytes());
+            b.extend_from_slice(&ty.to_le_bytes());
+            b.extend_from_slice(&count.to_le_bytes());
+            if ty == 3 && count == 1 {
+                b.extend_from_slice(&(value as u16).to_le_bytes());
+                b.extend_from_slice(&0u16.to_le_bytes());
+            } else {
+                b.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        next_ifd_slot = b.len();
+        b.extend_from_slice(&0u32.to_le_bytes());
+    }
+    std::fs::write(path, b)
+}
+
 /// A 24-bit BMP at 300 dpi.
 fn write_bmp(path: &std::path::Path, img: &Image) -> std::io::Result<()> {
     let (w, h) = (img.width as u32, img.height as u32);
@@ -487,15 +669,19 @@ fn write_bmp(path: &std::path::Path, img: &Image) -> std::io::Result<()> {
 }
 
 #[cfg(windows)]
-fn print(printer: &str, mode: &str, sheet: &Image, label: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn print(printer: &str, mode: &str, sheets: &[Image], label: &str) -> Result<(), Box<dyn std::error::Error>> {
     use winprint::printer::{FilePrinter as _, ImagePrinter, PrinterDevice};
     use winprint::ticket::{PrintCapabilities, PrintTicket, PrintTicketBuilder};
 
     let device = PrinterDevice::by_os_name(printer)?;
     let dir = std::env::temp_dir().join(format!("printscan-colour-diag-{}", std::process::id()));
     std::fs::create_dir_all(&dir)?;
-    let bmp = dir.join("page.bmp");
-    write_bmp(&bmp, sheet)?;
+    let bmp = if sheets.len() == 1 { dir.join("page.bmp") } else { dir.join("pages.tif") };
+    if sheets.len() == 1 {
+        write_bmp(&bmp, &sheets[0])?;
+    } else {
+        write_tiff(&bmp, sheets)?;
+    }
 
     let mut builder = PrintTicketBuilder::new(&device)?;
     if mode != "default" {
