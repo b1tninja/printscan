@@ -1,0 +1,35 @@
+[package]
+name = "printscan"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Printing and scanning: a shared job and device vocabulary, the scan contract and backend registry, and a scan job journal"
+keywords = ["print", "scan", "scanner", "printer", "wia"]
+categories = ["hardware-support"]
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+image = { version = "0.25", default-features = false, features = ["bmp", "jpeg", "png", "tiff"], optional = true }
+png = { version = "0.18", default-features = false, optional = true }
+tiff = { version = "0.11", default-features = false, optional = true }
+tempfile = { version = "3", optional = true }
+
+[features]
+default = ["scan"]
+# Serialize and Deserialize on the plain data types (see docs/job.md, "Wire format").
+serde = ["dep:serde"]
+# The scan contract, backend registry, ScanJob and page handling (`printscan::scan`).
+scan = ["dep:thiserror", "dep:image", "dep:png", "dep:tiff"]
+# The scan job journal for large piles and manual duplex (`printscan::devices`).
+devices = ["scan", "serde", "dep:serde_json", "dep:tempfile"]
+
+[dev-dependencies]
+printscan = { path = ".", features = ["serde", "scan", "devices"] }
+serde_json = { workspace = true }
