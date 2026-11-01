@@ -14,7 +14,8 @@
 //!   ones survive; a path that keeps chroma prints all of them;
 //! - black corner squares (for scanning the sheet back) and a label naming the job.
 //!
-//! With `--regmap`, the page is a registration map instead (see [`regmap_page`]).
+//! With `--regmap`, the page is a registration map instead (see [`regmap_page`]); with `--ramps`, tone
+//! ramps and uniformity bars (see [`ramp_page`]).
 //!
 //! `print` sends it with winprint's `ImagePrinter` at 300 dpi. `driver` and `none` merge
 //! `psk:PageColorManagement` (`Driver`: the driver converts the colours; `None`: the application
@@ -24,8 +25,17 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let regmap = args.iter().any(|a| a == "--regmap");
-    args.retain(|a| a != "--regmap");
-    let page = |label: &str| if regmap { regmap_page(label) } else { page(label) };
+    let ramps = args.iter().any(|a| a == "--ramps");
+    args.retain(|a| a != "--regmap" && a != "--ramps");
+    let page = |label: &str| {
+        if regmap {
+            regmap_page(label)
+        } else if ramps {
+            ramp_page(label)
+        } else {
+            page(label)
+        }
+    };
     match args.first().map(String::as_str) {
         Some("render") => {
             let out = args.get(1).ok_or("render needs an output path")?;
@@ -364,6 +374,70 @@ fn regmap_page(label: &str) -> Image {
         img.text(REGMAP_X0 - 45, REGMAP_Y0 + row * 200 + 140, 2, &format!("{row}"), BLACK);
     }
     // on a Letter sheet inside a 0.5 in margin, like the colour page
+    let margin = DPI / 2;
+    let mut sheet = Image::new(DPI * 17 / 2, DPI * 11);
+    for y in 0..img.height {
+        let from = y * img.width * 3;
+        let to = ((y + margin) * sheet.width + margin) * 3;
+        sheet.rgb[to..to + img.width * 3].copy_from_slice(&img.rgb[from..from + img.width * 3]);
+    }
+    sheet
+}
+
+/// Tone ramps and uniformity bars, on a Letter sheet like [`page`], with the registration map's
+/// locators.
+///
+/// - Seven ramps of 21 steps (0 to 100 % in 5 % steps, 100 x 120 px each): cyan, magenta and
+///   yellow alone (RGB with one channel lowered, one toner on a CMYK device), grey (R = G = B,
+///   which a driver may build from all four toners), and the overprints blue (C + M), green
+///   (C + Y) and red (M + Y). They show where each toner saturates, whether one is weak, and
+///   whether two-toner colours (the dark blues and purples) are limited.
+/// - Seven bars across the whole width, 2100 x 110 px: cyan, magenta and yellow at 100 % and
+///   50 %, and grey at 50 %. Density changing along a bar is uneven toner across the page.
+fn ramp_page(label: &str) -> Image {
+    let (w, h) = (DPI * 15 / 2, DPI * 10);
+    let mut img = Image::new(w, h);
+    for (cx, cy) in REGMAP_LOCATORS {
+        img.fill(cx - 30, cy - 30, 60, 60, BLACK);
+    }
+    img.text(110, 15, 4, label, BLACK);
+    img.text(110, 55, 2, "TONE RAMPS 0-100 PCT IN 5 PCT STEPS, OVERPRINTS, AND UNIFORMITY BARS ACROSS THE PAGE. 300 DPI", BLACK);
+    let ink = |t: usize| (255 * (20 - t) / 20) as u8; // channel value for step t (0 = no ink)
+    let ramps: [(&str, fn(u8) -> [u8; 3]); 7] = [
+        ("CYAN", |v| [v, 255, 255]),
+        ("MAGENTA", |v| [255, v, 255]),
+        ("YELLOW", |v| [255, 255, v]),
+        ("GREY (R=G=B)", |v| [v, v, v]),
+        ("BLUE C+M", |v| [v, v, 255]),
+        ("GREEN C+Y", |v| [v, 255, v]),
+        ("RED M+Y", |v| [255, v, v]),
+    ];
+    for (r, (name, colour)) in ramps.iter().enumerate() {
+        let y = 110 + r * 190;
+        img.text(REGMAP_X0 - 75, y, 2, name, BLACK);
+        for t in 0..=20usize {
+            let x = REGMAP_X0 - 75 + t * 100;
+            img.fill(x, y + 22, 100, 120, colour(ink(t)));
+            img.text(x + 25, y + 150, 2, &format!("{}", t * 5), BLACK);
+        }
+        // a thin outline of the 0 % step, so the paper step is visible
+        img.fill(REGMAP_X0 - 75, y + 22, 100, 1, BLACK);
+        img.fill(REGMAP_X0 - 75, y + 141, 100, 1, BLACK);
+    }
+    let bars: [(&str, [u8; 3]); 7] = [
+        ("CYAN 100", [0, 255, 255]),
+        ("CYAN 50", [128, 255, 255]),
+        ("MAGENTA 100", [255, 0, 255]),
+        ("MAGENTA 50", [255, 128, 255]),
+        ("YELLOW 100", [255, 255, 0]),
+        ("YELLOW 50", [255, 255, 128]),
+        ("GREY 50", [128, 128, 128]),
+    ];
+    for (k, (name, colour)) in bars.iter().enumerate() {
+        let y = 1470 + k * 160;
+        img.text(REGMAP_X0 - 75, y, 2, name, BLACK);
+        img.fill(REGMAP_X0 - 75, y + 22, 2100, 110, *colour);
+    }
     let margin = DPI / 2;
     let mut sheet = Image::new(DPI * 17 / 2, DPI * 11);
     for y in 0..img.height {
