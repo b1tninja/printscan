@@ -438,6 +438,11 @@ fn document_format(listed: &str) -> Option<DocumentFormat> {
     FORMATS.iter().copied().find(|f| f.mime().eq_ignore_ascii_case(listed.split(';').next().unwrap_or("").trim()))
 }
 
+/// The printer's state reasons without `None`, the keyword WS-Print sends when there is no reason.
+fn printer_reasons(reasons: Vec<String>) -> Vec<String> {
+    reasons.into_iter().filter(|r| !r.eq_ignore_ascii_case("None")).collect()
+}
+
 /// The neutral state of a WSD `PrinterState` (`Idle`, `Processing`, `Stopped`); `None` otherwise.
 fn printer_state(state: &str) -> Option<PrinterState> {
     match state {
@@ -473,7 +478,7 @@ fn details_of(entry: &Entry, elements: PrinterElements) -> PrinterDetails {
         details.max_copies = caps.copies.map(|(_, max)| max);
         details.resolutions = caps.resolutions.iter().map(|(x, y)| Resolution::new(*x, *y)).collect();
     }
-    details.status = elements.status.and_then(|s| printer_state(&s.state).map(|state| PrinterStatus { state, reasons: s.reasons }));
+    details.status = elements.status.and_then(|s| printer_state(&s.state).map(|state| PrinterStatus { state, reasons: printer_reasons(s.reasons) }));
     details
 }
 
@@ -923,5 +928,17 @@ impl WsdBackend {
             1 => matches.pop().map_or(Reconciled::NotFound, Reconciled::Found),
             _ => Reconciled::Ambiguous(matches),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::printer_reasons;
+
+    #[test]
+    fn the_none_reason_is_no_reason() {
+        let reasons = |r: &[&str]| printer_reasons(r.iter().map(|s| (*s).to_owned()).collect());
+        assert!(reasons(&["None"]).is_empty());
+        assert_eq!(reasons(&["none", "MediaEmpty"]), ["MediaEmpty"]);
     }
 }
