@@ -53,8 +53,26 @@ fn a_pdf_reaches_the_printer_with_the_settings_it_offers() {
     assert!(submitted.warnings.is_empty(), "A4 is offered: {:?}", submitted.warnings);
 
     device.wait_for_idle(Duration::from_secs(120)).unwrap();
-    let written = std::fs::read(device.file_path()).unwrap();
-    assert!(written.starts_with(b"%PDF"), "the driver wrote a PDF");
+    // The queue can be idle a moment before the driver has finished writing the file.
+    let started = std::time::Instant::now();
+    let written = loop {
+        let written = std::fs::read(device.file_path()).unwrap_or_default();
+        if written.ends_with(b"%%EOF")
+            || written.ends_with(
+                b"%%EOF
+",
+            )
+            || written.ends_with(
+                b"%%EOF
+",
+            )
+            || started.elapsed() > Duration::from_secs(60)
+        {
+            break written;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    assert!(written.starts_with(b"%PDF"), "the driver wrote a PDF ({} bytes)", written.len());
 }
 
 #[test]
