@@ -14,13 +14,18 @@
 //!   ones survive; a path that keeps chroma prints all of them;
 //! - black corner squares (for scanning the sheet back) and a label naming the job.
 //!
+//! With `--regmap`, the page is a registration map instead (see [`regmap_page`]).
+//!
 //! `print` sends it with winprint's `ImagePrinter` at 300 dpi. `driver` and `none` merge
 //! `psk:PageColorManagement` (`Driver`: the driver converts the colours; `None`: the application
 //! already did) when the driver lists it; `default` sends the driver's default ticket.
 
 #[cfg(windows)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let regmap = args.iter().any(|a| a == "--regmap");
+    args.retain(|a| a != "--regmap");
+    let page = |label: &str| if regmap { regmap_page(label) } else { page(label) };
     match args.first().map(String::as_str) {
         Some("render") => {
             let out = args.get(1).ok_or("render needs an output path")?;
@@ -33,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let printer = args.get(1).ok_or("print needs a printer name")?;
             let mode = args.get(2).map_or("default", String::as_str);
             let label = args.get(3).cloned().unwrap_or_else(|| format!("CM {}", mode.to_uppercase()));
-            print(printer, mode, &label)
+            print(printer, mode, &page(&label), &label)
         }
         _ => {
             eprintln!("usage: colour_diag render <out.bmp> [label] | print <printer> <driver|none|default> [label]");
@@ -322,6 +327,60 @@ fn registration(img: &mut Image, y: usize) {
     }
 }
 
+/// Locator squares of the registration map, 60 px, centres in content coordinates: the corners and
+/// the middle of each long edge.
+pub const REGMAP_LOCATORS: [(usize, usize); 6] = [(30, 30), (2220, 30), (30, 1500), (2220, 1500), (30, 2970), (2220, 2970)];
+
+/// The registration map, on a Letter sheet like [`page`]: a grid of 14 rows x 6 cells over the
+/// whole content area, so an offset that changes down (or across) the page shows where it does.
+///
+/// Each cell (top left at `REGMAP_X0 + col * 340`, `REGMAP_Y0 + row * 200`) holds four solid
+/// blocks, 60 x 60 px with 15 px between them: cyan, magenta, yellow and black (RGB primaries,
+/// one toner each on a CMYK device, except black, which a driver may build from all four), and
+/// under them a bar 285 x 12 px whose thirds are cyan, magenta and yellow end to end, so a
+/// vertical offset shows as a step by eye. Labels sit 40 px or more from any block. Measuring:
+/// every block edge is found in its own toner's scan channel; the edges of different toners in
+/// one cell give their relative offsets there without any page-to-scan mapping.
+fn regmap_page(label: &str) -> Image {
+    let (w, h) = (DPI * 15 / 2, DPI * 10);
+    let mut img = Image::new(w, h);
+    for (cx, cy) in REGMAP_LOCATORS {
+        img.fill(cx - 30, cy - 30, 60, 60, BLACK);
+    }
+    img.text(110, 15, 4, label, BLACK);
+    img.text(110, 55, 2, "REGISTRATION MAP: 14 X 6 CELLS OF C M Y K BLOCKS 60 PX AND A C/M/Y BAR. 300 DPI", BLACK);
+    let colours = [[0u8, 255, 255], [255, 0, 255], [255, 255, 0], BLACK];
+    for row in 0..REGMAP_ROWS {
+        for col in 0..REGMAP_COLS {
+            let (x, y) = (REGMAP_X0 + col * 340, REGMAP_Y0 + row * 200);
+            for (k, c) in colours.iter().enumerate() {
+                img.fill(x + k * 75, y, 60, 60, *c);
+            }
+            for (k, c) in colours[..3].iter().enumerate() {
+                img.fill(x + k * 95, y + 100, 95, 12, *c);
+            }
+        }
+        // row number at the left margin, clear of the blocks
+        img.text(REGMAP_X0 - 45, REGMAP_Y0 + row * 200 + 140, 2, &format!("{row}"), BLACK);
+    }
+    // on a Letter sheet inside a 0.5 in margin, like the colour page
+    let margin = DPI / 2;
+    let mut sheet = Image::new(DPI * 17 / 2, DPI * 11);
+    for y in 0..img.height {
+        let from = y * img.width * 3;
+        let to = ((y + margin) * sheet.width + margin) * 3;
+        sheet.rgb[to..to + img.width * 3].copy_from_slice(&img.rgb[from..from + img.width * 3]);
+    }
+    sheet
+}
+
+/// The registration map's grid.
+const REGMAP_ROWS: usize = 14;
+const REGMAP_COLS: usize = 6;
+const REGMAP_X0: usize = 150;
+// The last cell ends at 150 + 5 * 340 + 285 = 2135, clear of the locators at 2190.
+const REGMAP_Y0: usize = 110;
+
 /// A 24-bit BMP at 300 dpi.
 fn write_bmp(path: &std::path::Path, img: &Image) -> std::io::Result<()> {
     let (w, h) = (img.width as u32, img.height as u32);
@@ -351,7 +410,7 @@ fn write_bmp(path: &std::path::Path, img: &Image) -> std::io::Result<()> {
 }
 
 #[cfg(windows)]
-fn print(printer: &str, mode: &str, label: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn print(printer: &str, mode: &str, sheet: &Image, label: &str) -> Result<(), Box<dyn std::error::Error>> {
     use winprint::printer::{FilePrinter as _, ImagePrinter, PrinterDevice};
     use winprint::ticket::{PrintCapabilities, PrintTicket, PrintTicketBuilder};
 
@@ -359,7 +418,7 @@ fn print(printer: &str, mode: &str, label: &str) -> Result<(), Box<dyn std::erro
     let dir = std::env::temp_dir().join(format!("printscan-colour-diag-{}", std::process::id()));
     std::fs::create_dir_all(&dir)?;
     let bmp = dir.join("page.bmp");
-    write_bmp(&bmp, &page(label))?;
+    write_bmp(&bmp, sheet)?;
 
     let mut builder = PrintTicketBuilder::new(&device)?;
     if mode != "default" {
