@@ -5,7 +5,7 @@
 //! cargo run -p printscan-windows --example colour_diag -- print "<printer>" <driver|none|default> [label]
 //! ```
 //!
-//! The page (7.5 x 10 in at 300 dpi, sRGB, no profile) has:
+//! The page (7.5 x 10 in at 300 dpi inside a 0.5 in margin of a Letter sheet, sRGB, no profile) has:
 //! - patches: primaries, secondaries, saturated greens, skin tones, pastels and deep colours;
 //! - ramps: 32 grey steps, near-white (230 to 255) and near-black (0 to 25) in steps of 1;
 //! - chroma detail: stripes and checkers of colour pairs with equal luma at 1, 2, 4 and 8 pixels,
@@ -186,7 +186,23 @@ const PATCHES: [([u8; 3], &str); 30] = [
 const PAIRS: [([u8; 3], [u8; 3], &str); 3] =
     [([255, 0, 255], [0, 180, 0], "MAGENTA/GREEN"), ([255, 0, 0], [0, 128, 128], "RED/TEAL"), ([0, 0, 255], [75, 75, 75], "BLUE/GREY")];
 
+/// The page on a full Letter sheet (8.5 x 11 in), the content inside a 0.5 in margin: the image is
+/// printed from the corner of the paper, so content at its edge would fall in the printer's
+/// unprintable border.
 fn page(label: &str) -> Image {
+    let content = content(label);
+    let margin = DPI / 2;
+    let mut sheet = Image::new(DPI * 17 / 2, DPI * 11);
+    for y in 0..content.height {
+        let from = y * content.width * 3;
+        let to = ((y + margin) * sheet.width + margin) * 3;
+        sheet.rgb[to..to + content.width * 3].copy_from_slice(&content.rgb[from..from + content.width * 3]);
+    }
+    sheet
+}
+
+/// The diagnostic content, 7.5 x 10 in.
+fn content(label: &str) -> Image {
     let (w, h) = (DPI * 15 / 2, DPI * 10);
     let mut img = Image::new(w, h);
     // Corner squares for registration.
