@@ -384,6 +384,9 @@ fn regmap_page(label: &str) -> Image {
     sheet
 }
 
+/// A colour for a channel value (255 is no ink, 0 full ink).
+type Shade = fn(u8) -> [u8; 3];
+
 /// Tone ramps and uniformity bars, on a Letter sheet like [`page`], with the registration map's
 /// locators.
 ///
@@ -403,7 +406,7 @@ fn ramp_page(label: &str) -> Image {
     img.text(110, 15, 4, label, BLACK);
     img.text(110, 55, 2, "TONE RAMPS 0-100 PCT IN 5 PCT STEPS, OVERPRINTS, AND UNIFORMITY BARS ACROSS THE PAGE. 300 DPI", BLACK);
     let ink = |t: usize| (255 * (20 - t) / 20) as u8; // channel value for step t (0 = no ink)
-    let ramps: [(&str, fn(u8) -> [u8; 3]); 7] = [
+    let ramps: [(&str, Shade); 7] = [
         ("CYAN", |v| [v, 255, 255]),
         ("MAGENTA", |v| [255, v, 255]),
         ("YELLOW", |v| [255, 255, v]),
