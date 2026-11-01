@@ -1,13 +1,13 @@
 //! What the WIA backend knows about WIA, kept free of COM so it builds and is tested on every
 //! platform: the HRESULT name and kind tables, the sentences WIA and the Windows WSD driver are
 //! known to produce, the document-handling status bits, and the rules that sharpen a vague
-//! transfer failure with a status read. `craft-scan` knows only [`NativeCode`] and
+//! transfer failure with a status read. `printscan::scan` knows only [`NativeCode`] and
 //! [`InterruptKind`]; this module is what the Windows backend does with them.
 
-use craft_scan::{HandlingStatus, InterruptKind, NativeCode, PageSize, ScanError, ScannerRef, Source, interrupt_kind};
+use printscan::scan::{HandlingStatus, InterruptKind, NativeCode, PageSize, ScanError, ScannerRef, Source, interrupt_kind};
 
 /// The sentence for a feeder transfer that answered busy while nothing names a cause.
-pub const BUSY_OR_FEEDER_EMPTY: &str = craft_scan::BUSY_OR_FEEDER_EMPTY;
+pub const BUSY_OR_FEEDER_EMPTY: &str = printscan::scan::BUSY_OR_FEEDER_EMPTY;
 
 /// HRESULTs with a name Microsoft documents (the WIA error code list), by that exact name. Codes
 /// classified but not listed by Microsoft (0x80210010 to 0x80210014: the Windows WSD driver was
@@ -424,10 +424,10 @@ pub fn feeder_empty_blocks_acquire(source: Source, feeder_ready: bool, wsd_port:
 
 /// WIA `IPS_PAGES` / `DPS_PAGES` for inbox WSD when the user asked for the whole feeder (`0`).
 pub fn wsd_feeder_ticket_pages(page_count: i32) -> i32 {
-    if page_count == 0 { i32::try_from(craft_scan::MAX_PAGES).unwrap_or(i32::MAX) } else { page_count }
+    if page_count == 0 { i32::try_from(printscan::scan::MAX_PAGES).unwrap_or(i32::MAX) } else { page_count }
 }
 
-/// [`craft_scan::after_transfer`] with the Windows clarification: a generic failure (an `E_FAIL`
+/// [`printscan::scan::after_transfer`] with the Windows clarification: a generic failure (an `E_FAIL`
 /// the driver gave no reason for) after some pages is a stack that stopped part-way, and with no
 /// pages a page the scanner did not deliver. Other faults keep their own sentence.
 pub fn after_transfer(page_count: usize, cancelled: bool, download_error: Option<ScanError>) -> Result<(), ScanError> {
@@ -444,7 +444,7 @@ pub fn after_transfer(page_count: usize, cancelled: bool, download_error: Option
             )
         }
     });
-    craft_scan::after_transfer(page_count, cancelled, download_error)
+    printscan::scan::after_transfer(page_count, cancelled, download_error)
 }
 
 /// True when the transfer stopped because the feeder had no more sheets, not because of a jam.
@@ -453,7 +453,7 @@ fn feeder_ended(error: &ScanError) -> bool {
 }
 
 /// [`after_transfer`] plus the page-count check for a fixed-count feeder scan, as
-/// [`craft_scan::after_transfer_checked`] does it, but over the Windows wording of
+/// [`printscan::scan::after_transfer_checked`] does it, but over the Windows wording of
 /// [`after_transfer`].
 ///
 /// `pages_requested` is `0` for "the whole feeder" (a short stack is a normal end). Pass `0` for
@@ -471,7 +471,7 @@ pub fn after_transfer_checked(
         return Err(ScanError::Native {
             kind: InterruptKind::FeederEmpty,
             native: None,
-            message: craft_scan::feeder_shortfall_message(pages_requested, pages_transferred),
+            message: printscan::scan::feeder_shortfall_message(pages_requested, pages_transferred),
         });
     }
     Ok(())
@@ -581,10 +581,10 @@ pub fn rejected_property_message(id: u32, driver_text: &str) -> String {
     }
 }
 
-/// [`craft_scan::contract_json`] with the HRESULT table beside it, under `hresults` (hex string to
+/// [`printscan::scan::contract_json`] with the HRESULT table beside it, under `hresults` (hex string to
 /// symbolic name). The core dump has no backend code table; this is the one the bindings use.
 pub fn contract_json() -> String {
-    let mut dump = craft_scan::contract_json();
+    let mut dump = printscan::scan::contract_json();
     let table: Vec<String> = CODE_NAMES.iter().map(|(code, name)| format!("\"{code:#010x}\":\"{name}\"")).collect();
     if dump.ends_with('}') {
         dump.pop();

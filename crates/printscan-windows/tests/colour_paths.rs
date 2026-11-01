@@ -9,7 +9,7 @@
 //! `PRINTSCAN_COLOUR_OUT` set, the rasters are kept there.
 //! Run by hand: `cargo test -p printscan-windows --test colour_paths -- --ignored --nocapture`.
 
-#![cfg(windows)]
+#![cfg(all(windows, feature = "print"))]
 
 use std::path::Path;
 use std::time::Duration;

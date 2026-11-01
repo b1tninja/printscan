@@ -5,7 +5,7 @@
 //! [`store`]); the rest of each method is safe state handling.
 //!
 //! All three objects live on the thread that runs the transfer (they hold `Rc`/`RefCell`), and WIA
-//! calls them on that thread, in the apartment that [`crate::ffi::ComInit`] entered.
+//! calls them on that thread, in the apartment that [`crate::wia::ffi::ComInit`] entered.
 #![allow(unsafe_code)]
 
 use std::cell::RefCell;
@@ -13,9 +13,9 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use craft_scan::bw::{self, PageRule};
-use craft_scan::trace::AcquireTrace;
-use craft_scan::{CancelToken, Page, ProgressToken, ScanError};
+use printscan::scan::bw::{self, PageRule};
+use printscan::scan::trace::AcquireTrace;
+use printscan::scan::{CancelToken, Page, ProgressToken, ScanError};
 use windows::Win32::Devices::ImageAcquisition::{
     IT_MSG_DATA, IT_MSG_NEW_PAGE, IT_MSG_TERMINATION, IWiaDataCallback, IWiaDataCallback_Impl, IWiaItem2, IWiaTransfer, IWiaTransferCallback,
     IWiaTransferCallback_Impl, WIA_ERROR_PAPER_EMPTY, WIA_TRANSFER_MSG_END_OF_STREAM, WIA_TRANSFER_MSG_STATUS, WiaTransferParams,
@@ -26,7 +26,7 @@ use windows::Win32::System::Com::{
 };
 use windows::core::{BSTR, implement};
 
-use crate::ffi;
+use crate::wia::ffi;
 
 // ---------------------------------------------------------------------------------------------
 // Raw-pointer helpers. They are private and are called only with the pointer arguments COM passed
@@ -278,7 +278,7 @@ pub(crate) fn band_bytes(width: u32, depth: u32) -> u32 {
 /// Create the temp file a page is written to and return it with its path. The caller removes the file.
 fn temp_page() -> Result<(std::fs::File, PathBuf), ScanError> {
     let path = std::env::temp_dir().join(format!(
-        "pdfcraft-scan-{}-{}.bin",
+        "printscan-scan-{}-{}.bin",
         std::process::id(),
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
     ));

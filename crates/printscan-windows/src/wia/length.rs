@@ -2,7 +2,7 @@
 //! [`PageLength`] request. No COM here, so it builds and is tested on every platform; the backend reads the item's
 //! properties into a [`PropTable`] and applies the [`Decision`].
 //!
-//! Policy, in priority order (see `craft-scan`'s `length` module for the vocabulary):
+//! Policy, in priority order (see `printscan::scan`'s `length` module for the vocabulary):
 //!
 //! 1. **Device detection**, only when the item *publishes* it: `WIA_IPS_AUTO_CROP` accepting
 //!    `WIA_AUTO_CROP_SINGLE`, the `WIA_IPS_PAGE_SIZE` list holding `WIA_PAGE_AUTO`, or `WIA_IPS_LONG_DOCUMENT`
@@ -17,7 +17,7 @@
 //!
 //! An explicit region always wins: it already says which area to scan.
 
-use craft_scan::{PageLength, PageLengthSupport, PageSize, Presence, ValueSpan, align_to_span, mils_of, rows_for_mils};
+use printscan::scan::{PageLength, PageLengthSupport, PageSize, Presence, ValueSpan, align_to_span, mils_of, rows_for_mils};
 
 /// `WIA_IPS_AUTO_CROP` (checked against the `windows` crate in the Windows build's tests).
 pub const WIA_IPS_AUTO_CROP: u32 = 4170;
@@ -481,7 +481,7 @@ mod tests {
     /// repository.
     #[test]
     fn the_saved_scan_is_inferred_at_the_measured_sheet_end() {
-        use craft_scan::{InferOptions, assess_sheet_end};
+        use printscan::scan::{InferOptions, assess_sheet_end};
         let Some(path) = std::env::var_os("PDFCRAFT_TEST_PADDED_SCAN") else { return };
         let Ok(bytes) = std::fs::read(path) else { return };
         let Ok(found) = assess_sheet_end(&bytes, 200, &InferOptions::default()) else {

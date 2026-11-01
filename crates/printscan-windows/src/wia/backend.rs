@@ -1,11 +1,11 @@
 //! The WIA 2.0 operations: listing, details, device dump and acquire. This module is safe code. It
-//! reaches COM only through [`crate::ffi`] (single calls and variant reads) and [`crate::sinks`]
+//! reaches COM only through [`crate::wia::ffi`] (single calls and variant reads) and [`crate::wia::sinks`]
 //! (the callback objects).
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use craft_scan::{
+use printscan::scan::{
     Acquired, Backend, CancelToken, ChoiceField, Color, Compression, Connection, HandlingStatus, ImageChoices, ImageFormat, InferOptions, Intent,
     LengthSource, MAX_PAGES, Page, PageLengthSupport, PageSize, Reported, Rotation, ScanError, ScanSettings, Scanner, ScannerRef, Source, ValueSpan,
     align_to_span, fit_region, listed_values, planned_frame, spanned_values,
@@ -29,19 +29,19 @@ use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
 use windows::Win32::System::Variant::{VT_BSTR, VT_CLSID, VT_I4, VT_LPWSTR, VT_UI2, VT_UI4};
 use windows::core::{GUID, Interface};
 
-use crate::ffi::{self, ComInit, CrossThreadTransfer};
-use crate::length::{self, Action, DeviceDetect, PropTable};
-use crate::rules::{self, describe_windows_error, handling_caps, status_from_bits};
-use crate::sinks::{Bands, TransferState, band_bytes, band_callback, finish_band, halt_feeder, transfer_callback};
+use crate::wia::ffi::{self, ComInit, CrossThreadTransfer};
+use crate::wia::length::{self, Action, DeviceDetect, PropTable};
+use crate::wia::rules::{self, describe_windows_error, handling_caps, status_from_bits};
+use crate::wia::sinks::{Bands, TransferState, band_bytes, band_callback, finish_band, halt_feeder, transfer_callback};
 
-/// The WIA backend. Register it with [`crate::register`]; its ids are the WIA device ids, which the
+/// The WIA backend. Register it with [`crate::wia::register`]; its ids are the WIA device ids, which the
 /// registry shows with a `wia:` prefix.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Wia;
 
 impl Backend for Wia {
     fn name(&self) -> &'static str {
-        crate::NAME
+        crate::wia::NAME
     }
 
     fn scanner_list(&self) -> Result<Vec<ScannerRef>, ScanError> {
@@ -371,18 +371,18 @@ fn acquire(settings: &ScanSettings) -> Result<Acquired, ScanError> {
     let route = Cell::new(None);
     let mut result = acquire_pages(settings, &route);
     if let (Err(error), Some((resolved, has_glass))) = (&result, route.get())
-        && (craft_scan::auto_fallback_to_glass(settings.source, resolved, has_glass, craft_scan::pages_in_error(error), error)
-            || feeder_gave_nothing(settings.source, resolved, has_glass, craft_scan::pages_in_error(error), error))
+        && (printscan::scan::auto_fallback_to_glass(settings.source, resolved, has_glass, printscan::scan::pages_in_error(error), error)
+            || feeder_gave_nothing(settings.source, resolved, has_glass, printscan::scan::pages_in_error(error), error))
     {
         // Drivers keep FEED_READY set with an empty tray, so Auto picks the feeder and only the
         // transfer finds it empty (after the printer's own ~10 s timeout). Try the glass once.
         let reason = match error.interrupt_kind() {
-            craft_scan::InterruptKind::FeederEmpty => "feeder_empty",
-            craft_scan::InterruptKind::BusyOrFeederEmpty => "busy_or_feeder_empty",
+            printscan::scan::InterruptKind::FeederEmpty => "feeder_empty",
+            printscan::scan::InterruptKind::BusyOrFeederEmpty => "busy_or_feeder_empty",
             _ => "no_usable_page",
         };
         log::info!("scan: auto: the feeder had no paper ({reason}); trying the glass");
-        let trace = craft_scan::trace::AcquireTrace::from_env();
+        let trace = printscan::scan::trace::AcquireTrace::from_env();
         if trace.enabled() {
             trace.phase("auto_fallback", &[("from", "feeder"), ("to", "glass"), ("reason", reason)]);
         }
@@ -463,9 +463,12 @@ fn file_tymed(previous: i32, callback: i32) -> i32 {
 }
 
 /// `route` receives the resolved source and whether the glass exists, as soon as they are known.
+// One pass over the transfer loop as it was reviewed in storytold/pdfcraft#1724; printscan's
+// workspace limits cognitive complexity to 30 and splitting it is left to a change of its own.
+#[allow(clippy::cognitive_complexity)]
 fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) -> Result<Acquired, ScanError> {
     let settings = settings.checked()?;
-    let trace = craft_scan::trace::AcquireTrace::from_env();
+    let trace = printscan::scan::trace::AcquireTrace::from_env();
     let _com = ComInit::new().map_err(failed)?;
     let mgr = device_manager()?;
     let devices = enum_devices(&mgr)?;
@@ -565,7 +568,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
         require_choice(&item, WIA_IPS_CUR_INTENT, intent.driver(), "intent")?;
         write_i4(&item, WIA_IPS_CUR_INTENT, intent.driver())?;
     }
-    // Page length (see `crate::length`): device detection when the item publishes it, else the chosen page size as
+    // Page length (see `crate::wia::length`): device detection when the item publishes it, else the chosen page size as
     // extents, else (opt in) the longest extent and an inference from the image. `Driver` does none of it.
     let length_table = read_length_table(&item);
     let length_request = length::Request {
@@ -637,7 +640,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
         // already in thousandths of an inch, which is the unit a region uses. When the bed
         // size is missing too, leave the driver's own page size rather than writing 0.
         if let Some((width, height)) = max {
-            let full = craft_scan::Region { left: 0, top: 0, width, height };
+            let full = printscan::scan::Region { left: 0, top: 0, width, height };
             planned_frame(old_x, old_y, from_dpi, settings.dpi, Some(full), None)?
         } else {
             // The installed WSD item can be a named Flatbed whose format and extent never
@@ -779,8 +782,8 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
         );
     }
 
-    let page_rule = craft_scan::bw::PageRule::for_settings(settings)
-        .with_length(craft_scan::bw::LengthPlan { source: length_source, infer: inferring.then(InferOptions::default) });
+    let page_rule = printscan::scan::bw::PageRule::for_settings(settings)
+        .with_length(printscan::scan::bw::LengthPlan { source: length_source, infer: inferring.then(InferOptions::default) });
     let wanted_n = if page_count == 0 { usize::try_from(MAX_PAGES).unwrap_or(0) } else { usize::try_from(page_count).unwrap_or(0) };
     // Media type is a whole file or a banded callback. Inbox WSD (wsdscdrv) accepts a
     // TYMED_CALLBACK (128) write, starts CreateScanJob, then fails the banded transfer
@@ -858,7 +861,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
             // Compressed MTOM size is unknown up front; BMP estimate would pin the bar at ~3%.
             progress.set_expected_bytes(None);
         } else {
-            progress.set_expected_bytes(craft_scan::estimated_bmp_bytes(x, y, settings.color.depth()));
+            progress.set_expected_bytes(printscan::scan::estimated_bmp_bytes(x, y, settings.color.depth()));
         }
     }
 
@@ -894,7 +897,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
         }));
     }
     let _clear_cancel = CancelTransferClear(settings.cancel.clone());
-    if settings.cancel.as_ref().is_some_and(craft_scan::CancelToken::is_requested) {
+    if settings.cancel.as_ref().is_some_and(printscan::scan::CancelToken::is_requested) {
         halt_feeder(&state);
         return Err(ScanError::Failed("the scan was cancelled".into()));
     }
@@ -912,7 +915,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
         let mut guard = state.try_borrow_mut().map_err(|_| ScanError::Failed("the transfer state was still borrowed".into()))?;
         std::mem::take(&mut guard.pages)
     };
-    let cancelled = settings.cancel.as_ref().is_some_and(craft_scan::CancelToken::is_requested);
+    let cancelled = settings.cancel.as_ref().is_some_and(printscan::scan::CancelToken::is_requested);
     let status_after = rules::status_for_inference(read_i4(&root, WIA_DPS_DOCUMENT_HANDLING_STATUS).ok());
     if trace.enabled() {
         trace.status("after_transfer", status_after);
@@ -1483,7 +1486,7 @@ fn apply_page_size(
     item: &IWiaPropertyStorage,
     requested: PageSize,
     source: Source,
-    trace: &craft_scan::trace::AcquireTrace,
+    trace: &printscan::scan::trace::AcquireTrace,
 ) -> Result<Option<PageSize>, ScanError> {
     let published = published_page_sizes(item);
     let (applied, omit) = match rules::plan_page_size(requested, published.as_deref()) {
@@ -1735,16 +1738,16 @@ fn receive_bands(
     width: u32,
     height: u32,
     depth: u32,
-    rule: craft_scan::bw::PageRule,
+    rule: printscan::scan::bw::PageRule,
     limit: usize,
     pages_requested: usize,
-    progress: Option<craft_scan::ProgressToken>,
-    cancel: Option<craft_scan::CancelToken>,
+    progress: Option<printscan::scan::ProgressToken>,
+    cancel: Option<printscan::scan::CancelToken>,
     device: &IWiaItem2,
     root: &IWiaPropertyStorage,
     feeder: bool,
 ) -> Result<Vec<Page>, ScanError> {
-    let expected_bytes = craft_scan::estimated_bmp_bytes(width, height, depth);
+    let expected_bytes = printscan::scan::estimated_bmp_bytes(width, height, depth);
     if let Some(progress) = &progress {
         progress.set_expected_bytes(expected_bytes);
     }
@@ -1775,7 +1778,7 @@ fn receive_bands(
     drop(guard);
     let status_after = rules::status_for_inference(read_i4(root, WIA_DPS_DOCUMENT_HANDLING_STATUS).ok());
     let page_count = pages.len();
-    let cancelled = cancel.as_ref().is_some_and(craft_scan::CancelToken::is_requested);
+    let cancelled = cancel.as_ref().is_some_and(printscan::scan::CancelToken::is_requested);
     // After a cancel, whatever the driver returns is the stop, not a fault.
     let download_error = transfer
         .err()

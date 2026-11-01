@@ -3,10 +3,12 @@
 //! example tests in `rules.rs` document individual cases; these make sure a new code, a reordered
 //! rule or a changed sentence cannot leave the tables disagreeing with each other.
 
+#![cfg(feature = "scan")]
+
 use std::collections::HashSet;
 
-use craft_scan::{HandlingStatus, InterruptKind, PageSize, ScanError, Source};
-use pdfcraft_wia::rules::{self, PageSizeOmit, PageSizePlan};
+use printscan::scan::{HandlingStatus, InterruptKind, PageSize, ScanError, Source};
+use printscan_windows::wia::rules::{self, PageSizeOmit, PageSizePlan};
 
 // ---- the HRESULT tables ------------------------------------------------------------------------
 
@@ -199,7 +201,7 @@ impl Fault {
             Fault::FeederEmpty => Some(rules::from_hresult(0x8021_0003, "")),
             Fault::BusyOrEmpty => Some(ScanError::native_error(
                 InterruptKind::BusyOrFeederEmpty,
-                craft_scan::NativeCode::hresult(0x8021_0006, Some("WIA_ERROR_BUSY")),
+                printscan::scan::NativeCode::hresult(0x8021_0006, Some("WIA_ERROR_BUSY")),
                 rules::BUSY_OR_FEEDER_EMPTY,
             )),
             Fault::Jam => Some(rules::from_hresult(0x8021_0002, "")),
@@ -240,7 +242,7 @@ fn every_transfer_outcome_is_decided_by_the_documented_rules() {
                         if short {
                             let error = result.expect_err(&case);
                             assert_eq!(error.interrupt_kind(), InterruptKind::FeederEmpty, "{case}");
-                            assert_eq!(error.to_string(), craft_scan::feeder_shortfall_message(requested, transferred), "{case}");
+                            assert_eq!(error.to_string(), printscan::scan::feeder_shortfall_message(requested, transferred), "{case}");
                         } else {
                             assert!(result.is_ok(), "{case}: {result:?}");
                         }
@@ -298,7 +300,7 @@ fn a_busy_feeder_with_no_naming_bit_is_busy_or_empty_and_a_named_bit_wins() {
 
 #[test]
 fn a_whole_feeder_ticket_asks_for_the_maximum_and_a_count_is_kept() {
-    assert_eq!(rules::wsd_feeder_ticket_pages(0), i32::try_from(craft_scan::MAX_PAGES).unwrap_or(i32::MAX));
+    assert_eq!(rules::wsd_feeder_ticket_pages(0), i32::try_from(printscan::scan::MAX_PAGES).unwrap_or(i32::MAX));
     for n in [1, 2, 25, 500] {
         assert_eq!(rules::wsd_feeder_ticket_pages(n), n);
     }

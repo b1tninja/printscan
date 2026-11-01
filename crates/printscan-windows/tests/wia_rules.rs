@@ -2,12 +2,14 @@
 //! status bits and the rules that sharpen a vague transfer failure. They come from the craft-scan
 //! tests that documented them (`wia_reference`), which keep only the neutral core.
 
-use craft_scan::{HandlingStatus, InterruptKind, ScanError, Source};
-use pdfcraft_wia::rules;
+#![cfg(feature = "scan")]
+
+use printscan::scan::{HandlingStatus, InterruptKind, ScanError, Source};
+use printscan_windows::wia::rules;
 
 mod windows_rules {
     use super::*;
-    use craft_scan::InterruptKind as K;
+    use printscan::scan::InterruptKind as K;
     use rules::BUSY_OR_FEEDER_EMPTY;
 
     #[test]
@@ -126,7 +128,7 @@ mod windows_rules {
         for (transferred, requested) in [(0, 0), (0, 4), (2, 4)] {
             let explained =
                 rules::explain_transfer_failure(ScanError::Failed("The scan failed (0x80004005).".into()), interlock, true, transferred, requested);
-            assert_eq!(rules::wia_interrupt_kind(&explained.to_string()), craft_scan::InterruptKind::Attention, "{explained}");
+            assert_eq!(rules::wia_interrupt_kind(&explained.to_string()), printscan::scan::InterruptKind::Attention, "{explained}");
         }
         // Without the attention bit a clear FEED_READY is still an empty tray.
         let empty = HandlingStatus { feeder_ready: Some(false), ..HandlingStatus::default() };
@@ -320,7 +322,7 @@ mod windows_rules {
 
     #[test]
     fn wsd_whole_feeder_uses_a_large_ticket_page_count() {
-        assert_eq!(rules::wsd_feeder_ticket_pages(0), i32::try_from(craft_scan::MAX_PAGES).unwrap_or(i32::MAX));
+        assert_eq!(rules::wsd_feeder_ticket_pages(0), i32::try_from(printscan::scan::MAX_PAGES).unwrap_or(i32::MAX));
         assert_eq!(rules::wsd_feeder_ticket_pages(3), 3);
     }
 
@@ -351,23 +353,23 @@ mod windows_rules {
         assert_eq!(problem().to_string(), "The scanner has a paper problem.");
         // No bit names a cause: stay neutral.
         let none = rules::explain_transfer_failure(problem(), HandlingStatus::default(), true, 1, 3);
-        assert_eq!(rules::wia_interrupt_kind(&none.to_string()), craft_scan::InterruptKind::PaperProblem);
+        assert_eq!(rules::wia_interrupt_kind(&none.to_string()), printscan::scan::InterruptKind::PaperProblem);
         // The double-feed bit read after the transfer is used.
         let multi = rules::explain_transfer_failure(problem(), rules::status_from_bits(0x200 | 0x1), true, 1, 3);
-        assert_eq!(rules::wia_interrupt_kind(&multi.to_string()), craft_scan::InterruptKind::MultiFeed);
+        assert_eq!(rules::wia_interrupt_kind(&multi.to_string()), printscan::scan::InterruptKind::MultiFeed);
         // A real jam bit still says jam; a cover says cover.
         let jam = rules::explain_transfer_failure(problem(), rules::status_from_bits(0x20), true, 1, 3);
-        assert_eq!(rules::wia_interrupt_kind(&jam.to_string()), craft_scan::InterruptKind::Jam);
+        assert_eq!(rules::wia_interrupt_kind(&jam.to_string()), printscan::scan::InterruptKind::Jam);
         let cover = rules::explain_transfer_failure(problem(), rules::status_from_bits(0x8), true, 1, 3);
-        assert_eq!(rules::wia_interrupt_kind(&cover.to_string()), craft_scan::InterruptKind::CoverOpen);
+        assert_eq!(rules::wia_interrupt_kind(&cover.to_string()), printscan::scan::InterruptKind::CoverOpen);
         // The wire message names the fault: it beats the folded HRESULT.
         assert_eq!(
             rules::wia_interrupt_kind(&rules::describe_windows_error(0x8021_0004, "ClientErrorMultiFeed: sheets stuck")),
-            craft_scan::InterruptKind::MultiFeed
+            printscan::scan::InterruptKind::MultiFeed
         );
         assert_eq!(
             rules::wia_interrupt_kind(&rules::describe_windows_error(0x8021_0004, "ClientErrorMediaJam: jam_after_n=2")),
-            craft_scan::InterruptKind::Jam
+            printscan::scan::InterruptKind::Jam
         );
     }
 
@@ -407,7 +409,7 @@ mod windows_rules {
         // A generic failure with the attention bit set (door interlock, full store) says so.
         let generic = ScanError::Failed(rules::describe_windows_error(0x8000_4005, ""));
         let explained = rules::explain_transfer_failure(generic, attention, true, 0, 3);
-        assert_eq!(rules::wia_interrupt_kind(&explained.to_string()), craft_scan::InterruptKind::Attention);
+        assert_eq!(rules::wia_interrupt_kind(&explained.to_string()), printscan::scan::InterruptKind::Attention);
         assert!(!rules::retry_with_file_transfer(&explained));
         // Without the bit the failure stays generic.
         let plain = ScanError::Failed(rules::describe_windows_error(0x8000_4005, ""));
@@ -430,7 +432,7 @@ mod windows_rules {
             [(0x8021_0010, InterruptKind::CoverOpen), (0x8021_0011, InterruptKind::DeviceError), (0x8021_0014, InterruptKind::MultiFeed)]
         {
             assert_eq!(rules::code_name(code), None, "{code:#x}");
-            let info = rules::from_hresult(code, "").info(craft_scan::ErrorContext::default());
+            let info = rules::from_hresult(code, "").info(printscan::scan::ErrorContext::default());
             assert_eq!((info.hresult(), info.code_name(), info.kind), (Some(code), None, kind));
         }
         assert_eq!(rules::kind_for_hresult(0x8021_0015), Some(InterruptKind::Offline));
@@ -439,13 +441,13 @@ mod windows_rules {
     #[test]
     fn a_hresult_error_carries_its_code_name_and_kind_without_reading_the_sentence() {
         let error = rules::from_hresult(0x8021_0006, "some driver text that names nothing");
-        let info = error.info(craft_scan::ErrorContext::default());
+        let info = error.info(printscan::scan::ErrorContext::default());
         assert_eq!((info.hresult(), info.code_name(), info.kind), (Some(0x8021_0006), Some("WIA_ERROR_BUSY"), InterruptKind::Busy));
         assert_eq!(info.hresult_hex().as_deref(), Some("0x80210006"));
         // A sentence chosen from a status read keeps the HRESULT that triggered it.
         let busy = rules::from_hresult(0x8021_0006, "");
         let explained = rules::explain_transfer_failure(busy, HandlingStatus { feeder_ready: Some(true), ..HandlingStatus::default() }, true, 0, 1);
-        let info = explained.info(craft_scan::ErrorContext::default());
+        let info = explained.info(printscan::scan::ErrorContext::default());
         assert_eq!((info.kind, info.code_name()), (InterruptKind::BusyOrFeederEmpty, Some("WIA_ERROR_BUSY")));
         let jam = rules::explain_transfer_failure(rules::from_hresult(0x8021_0004, ""), rules::status_from_bits(0x20), true, 0, 1);
         assert_eq!((jam.interrupt_kind(), jam.hresult()), (InterruptKind::Jam, Some(0x8021_0004)));
@@ -470,31 +472,31 @@ mod registration {
         assert!(dump.starts_with("{\"kinds\":[") && dump.ends_with("}}"), "{dump}");
         assert!(dump.contains("\"hresults\":{\"0x80210001\":\"WIA_ERROR_GENERAL_ERROR\""), "{dump}");
         assert!(dump.contains("\"0x80210006\":\"WIA_ERROR_BUSY\""), "{dump}");
-        assert!(craft_scan::contract_json().len() < dump.len());
+        assert!(printscan::scan::contract_json().len() < dump.len());
     }
 
     #[test]
     fn the_native_code_is_an_hresult_that_the_info_reports_under_the_old_names() {
-        let info = rules::from_hresult(0x8021_0020, "").info(craft_scan::ErrorContext::default());
+        let info = rules::from_hresult(0x8021_0020, "").info(printscan::scan::ErrorContext::default());
         assert_eq!(info.native.map(|native| (native.domain, native.code)), Some(("hresult", 0x8021_0020)));
         assert_eq!((info.hresult_hex().as_deref(), info.code_name()), (Some("0x80210020"), Some("WIA_ERROR_MULTI_FEED")));
     }
 
     #[test]
     fn registering_twice_leaves_one_backend() {
-        let first = pdfcraft_wia::register();
-        let second = pdfcraft_wia::register();
+        let first = printscan_windows::wia::register();
+        let second = printscan_windows::wia::register();
         assert_eq!(first, cfg!(windows));
         assert_eq!(second, cfg!(windows));
-        let names = craft_scan::backend_names();
-        assert_eq!(names.iter().filter(|name| **name == pdfcraft_wia::NAME).count(), usize::from(cfg!(windows)));
-        assert_eq!(craft_scan::supported(), cfg!(windows));
+        let names = printscan::scan::backend_names();
+        assert_eq!(names.iter().filter(|name| **name == printscan_windows::wia::NAME).count(), usize::from(cfg!(windows)));
+        assert_eq!(printscan::scan::supported(), cfg!(windows));
     }
 }
 
 mod page_size_per_source {
     use super::*;
-    use craft_scan::PageSize as P;
+    use printscan::scan::PageSize as P;
     use rules::{PageSizeOmit, PageSizePlan};
 
     /// The page-size list the inbox WSD driver published for the feeder item of a letter-only tray
@@ -560,7 +562,7 @@ mod page_size_per_source {
 }
 
 mod pick_scanner {
-    use craft_scan::ScannerRef;
+    use printscan::scan::ScannerRef;
 
     use super::*;
 

@@ -2,7 +2,7 @@
 //! driver on a file port), so nothing reaches a real printer. Needs Windows and the right to add a
 //! printer; the printer is removed afterwards.
 
-#![cfg(windows)]
+#![cfg(all(windows, feature = "print"))]
 
 use std::time::Duration;
 

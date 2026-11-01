@@ -5,24 +5,50 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Windows printing for printscan: the print spooler as a backend, on winprint"
-keywords = ["windows", "print", "printer", "printscan", "spooler"]
+description = "Windows printing and scanning for printscan: the print spooler as a backend (on winprint) and WIA scanners"
+keywords = ["windows", "print", "scan", "wia", "spooler"]
 categories = ["hardware-support", "os::windows-apis"]
 
-[lints]
-workspace = true
+# The workspace forbids unsafe code. WIA is COM, and its calls cannot be made without `unsafe`:
+# this crate denies it instead, and only `wia::ffi` and `wia::sinks` allow it, every block with a
+# `// SAFETY:` comment (docs/wia-unsafe-audit.md).
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+cognitive_complexity = "deny"
+too_many_arguments = "deny"
+wildcard_imports = "deny"
+dbg_macro = "warn"
+todo = "warn"
+undocumented_unsafe_blocks = "deny"
 
 [features]
-default = ["print"]
+default = ["print", "scan"]
 # The Windows print spooler as a `printscan::print` backend (`printscan_windows::spooler`).
-print = ["dep:printscan", "dep:winprint", "dep:tempfile"]
+print = ["dep:printscan", "printscan?/print", "dep:winprint", "dep:tempfile"]
+# WIA 2.0 scanners as a `printscan::scan` backend (`printscan_windows::wia`). Its rule tables (no
+# COM) build on every platform.
+scan = ["dep:printscan", "printscan?/scan", "dep:log", "dep:windows", "dep:windows-core"]
+
+[dependencies]
+printscan = { path = "../printscan", version = "0.1.0", default-features = false, optional = true }
+log = { version = "0.4", optional = true }
 
 [target.'cfg(windows)'.dependencies]
-printscan = { path = "../printscan", version = "0.1.0", default-features = false, features = ["print"], optional = true }
 # Pages drawn at the ticket's resolution, progress with cancellation, the cancel guard. Its default
 # `pdfium` feature downloads PDFium at build time and is off.
 winprint = { version = "0.3.1", default-features = false, optional = true }
 tempfile = { version = "3", optional = true }
+# The implement macro names windows-core; it is the same one the windows crate (and winprint) use.
+windows-core = { version = "0.62", optional = true }
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Devices_ImageAcquisition",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+], optional = true }
 
 [target.'cfg(windows)'.dev-dependencies]
 # A temporary print-to-file printer for the tests (Microsoft Print To PDF or PWG raster on a file port).
