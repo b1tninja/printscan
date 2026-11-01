@@ -261,6 +261,11 @@ mod tests {
         // nothing in common: the baseline type every PWG raster printer takes
         assert_eq!(choose_raster_type(&[AdobeRgb16], &[Srgb8], true), Srgb8);
         assert_eq!(choose_raster_type(&[], &RasterType::ALL, false), Sgray8);
+        // Device colour only when the converter offers it and the printer lists it.
+        assert_eq!(choose_raster_type(&[Cmyk8, Srgb8], &[Srgb8, Cmyk8], true), Cmyk8);
+        assert_eq!(choose_raster_type(&[Cmyk8, Srgb8], &[Srgb8, Sgray8], true), Srgb8);
+        assert_eq!(choose_raster_type(&[Srgb8, Sgray8], &[Cmyk8, Black8], true), Srgb8);
+        assert_eq!(choose_raster_type(&[Black8, Sgray8], &[Black8, Srgb8], false), Black8);
         // the default converter offers the baseline
         struct Plain;
         impl DocumentConverter for Plain {

@@ -51,10 +51,15 @@ const SYNC: &[u8; 4] = b"RaS2";
 const HEADER: usize = 1796;
 
 /// The pixel formats of a PWG raster page: a colour space and a depth (what a printer lists in
-/// `pwg-raster-document-type-supported`: `sgray_8`, `srgb_16`, `adobe-rgb_8`...). The raster header
-/// names the colour space (18 sGray, 19 sRGB, 20 Adobe RGB) and the bits per colour; 16-bit samples
-/// are written most significant byte first. Types a printer may also list (CMYK, device colour, one
-/// bit) are not written here and [`Self::from_keyword`] does not know them.
+/// `pwg-raster-document-type-supported`: `sgray_8`, `srgb_16`, `adobe-rgb_8`, `cmyk_8`...). The
+/// raster header names the colour space (3 black, 6 CMYK, 18 sGray, 19 sRGB, 20 Adobe RGB) and the
+/// bits per colour; 16-bit samples are written most significant byte first.
+///
+/// `Black8` and `Cmyk8` are device colour, counted in ink: 0 is no ink (white paper) and 255 full
+/// ink, the opposite of `Sgray8`. A converter writes them only for a printer that lists them; they
+/// carry colour already separated for that printer (PWG 5102.4). Types a printer may also list
+/// (device colour of other channel counts, one bit) are not written here and [`Self::from_keyword`]
+/// does not know them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RasterType {
     Sgray8,
@@ -63,11 +68,14 @@ pub enum RasterType {
     Srgb16,
     AdobeRgb8,
     AdobeRgb16,
+    Black8,
+    Cmyk8,
 }
 
 impl RasterType {
     /// Every type, in no particular order.
-    pub const ALL: [RasterType; 6] = [Self::Sgray8, Self::Sgray16, Self::Srgb8, Self::Srgb16, Self::AdobeRgb8, Self::AdobeRgb16];
+    pub const ALL: [RasterType; 8] =
+        [Self::Sgray8, Self::Sgray16, Self::Srgb8, Self::Srgb16, Self::AdobeRgb8, Self::AdobeRgb16, Self::Black8, Self::Cmyk8];
 
     /// What a printer is taken to accept when it does not list its types: the two every PWG raster
     /// printer is required to take.
@@ -82,6 +90,8 @@ impl RasterType {
             Self::Srgb16 => "srgb_16",
             Self::AdobeRgb8 => "adobe-rgb_8",
             Self::AdobeRgb16 => "adobe-rgb_16",
+            Self::Black8 => "black_8",
+            Self::Cmyk8 => "cmyk_8",
         }
     }
 
@@ -93,20 +103,30 @@ impl RasterType {
         Self::ALL.into_iter().find(|t| plain(t.keyword()) == keyword)
     }
 
-    /// One channel (grey) or three (RGB).
+    /// One channel (grey or black), three (RGB) or four (CMYK).
     pub const fn channels(self) -> usize {
-        if self.is_gray() { 1 } else { 3 }
+        match self {
+            Self::Cmyk8 => 4,
+            _ if self.is_gray() => 1,
+            _ => 3,
+        }
     }
 
-    /// Whether the type has one grey channel (`sgray_8` or `sgray_16`).
+    /// Whether the type is monochrome: one grey channel (`sgray_8`, `sgray_16`) or one black ink
+    /// channel (`black_8`).
     pub const fn is_gray(self) -> bool {
-        matches!(self, Self::Sgray8 | Self::Sgray16)
+        matches!(self, Self::Sgray8 | Self::Sgray16 | Self::Black8)
+    }
+
+    /// Whether the samples count ink (`black_8`, `cmyk_8`: 0 is white paper) rather than light.
+    pub const fn is_device_colour(self) -> bool {
+        matches!(self, Self::Black8 | Self::Cmyk8)
     }
 
     /// Bits in one colour sample: 8 or 16.
     pub const fn bits(self) -> u32 {
         match self {
-            Self::Sgray8 | Self::Srgb8 | Self::AdobeRgb8 => 8,
+            Self::Sgray8 | Self::Srgb8 | Self::AdobeRgb8 | Self::Black8 | Self::Cmyk8 => 8,
             _ => 16,
         }
     }
@@ -116,9 +136,11 @@ impl RasterType {
         self.channels() * (self.bits() as usize / 8)
     }
 
-    /// The header's colour space code: 18 sGray, 19 sRGB, 20 Adobe RGB.
+    /// The header's colour space code: 3 black, 6 CMYK, 18 sGray, 19 sRGB, 20 Adobe RGB.
     pub const fn colour_space(self) -> u32 {
         match self {
+            Self::Black8 => 3,
+            Self::Cmyk8 => 6,
             Self::Sgray8 | Self::Sgray16 => 18,
             Self::Srgb8 | Self::Srgb16 => 19,
             Self::AdobeRgb8 | Self::AdobeRgb16 => 20,
@@ -220,7 +242,7 @@ fn page_header(page: &View<'_>, total: u32, opts: &PwgOptions) -> Vec<u8> {
     set_u32(&mut h, 388, 8 * bpp); // bits per pixel
     set_u32(&mut h, 392, page.width.saturating_mul(bpp)); // bytes per line
     set_u32(&mut h, 396, 0); // chunky
-    set_u32(&mut h, 400, page.kind.colour_space()); // sGray / sRGB / Adobe RGB
+    set_u32(&mut h, 400, page.kind.colour_space()); // black / CMYK / sGray / sRGB / Adobe RGB
     set_u32(&mut h, 420, page.kind.channels() as u32); // colours
     set_u32(&mut h, 452, total); // TotalPageCount
     set_u32(&mut h, 456, 1); // CrossFeedTransform
@@ -381,6 +403,8 @@ pub(crate) fn decode_typed_for_tests(data: &[u8]) -> Result<Vec<TypedPage>> {
             (19, 16) => RasterType::Srgb16,
             (20, 8) => RasterType::AdobeRgb8,
             (20, 16) => RasterType::AdobeRgb16,
+            (3, 8) => RasterType::Black8,
+            (6, 8) => RasterType::Cmyk8,
             other => return invalid(format!("unknown colour space and depth {other:?}")),
         };
         pages.push(TypedPage { width: w as u32, height: ht as u32, kind, data: pixels });
@@ -516,17 +540,31 @@ mod tests {
             let one = encode_typed(std::slice::from_ref(&pages[i]), &opts()).unwrap();
             let h = &one[4..4 + HEADER];
             let be = |at: usize| u32::from_be_bytes([h[at], h[at + 1], h[at + 2], h[at + 3]]);
-            let want_cs = if kind.is_gray() {
-                18
-            } else if matches!(kind, RasterType::Srgb8 | RasterType::Srgb16) {
-                19
-            } else {
-                20
+            let want_cs = match kind {
+                RasterType::Sgray8 | RasterType::Sgray16 => 18,
+                RasterType::Srgb8 | RasterType::Srgb16 => 19,
+                RasterType::AdobeRgb8 | RasterType::AdobeRgb16 => 20,
+                RasterType::Black8 => 3,
+                RasterType::Cmyk8 => 6,
             };
             let channels = kind.channels() as u32;
             assert_eq!((be(400), be(384), be(388), be(420)), (want_cs, kind.bits(), kind.bits() * channels, channels), "{kind:?}");
             assert_eq!(be(392) as usize, 7 * kind.bytes_per_pixel(), "bytes per line, {kind:?}");
         }
+    }
+
+    #[test]
+    fn device_colour_counts_ink_and_has_its_channels() {
+        assert_eq!((RasterType::Cmyk8.channels(), RasterType::Cmyk8.bytes_per_pixel()), (4, 4));
+        assert_eq!((RasterType::Black8.channels(), RasterType::Black8.bytes_per_pixel()), (1, 1));
+        assert!(RasterType::Black8.is_gray() && !RasterType::Cmyk8.is_gray());
+        assert!(RasterType::Cmyk8.is_device_colour() && RasterType::Black8.is_device_colour() && !RasterType::Srgb8.is_device_colour());
+        // A blank CMYK page is all zero (no ink): both rows are one line (a repeat count) of three
+        // runs (128, 128 and 44 pixels), each a control byte and one 4-byte pixel.
+        let blank = typed(300, 2, RasterType::Cmyk8, |_, _, _| 0);
+        let bytes = encode_typed(std::slice::from_ref(&blank), &opts()).unwrap();
+        assert_eq!(bytes.len(), 4 + HEADER + 1 + 3 * (1 + 4));
+        assert_eq!(decode_typed_for_tests(&bytes).unwrap(), [blank]);
     }
 
     #[test]
@@ -546,7 +584,9 @@ mod tests {
         // the schema's spelling is the same type
         assert_eq!(RasterType::from_keyword("AdobeRgb_16"), Some(RasterType::AdobeRgb16));
         assert_eq!(RasterType::from_keyword(" Sgray_8 "), Some(RasterType::Sgray8));
-        for other in ["cmyk_8", "rgb_8", "black_1", "device1_8", "adobe-rgb", "adobe-rgb_12", ""] {
+        assert_eq!(RasterType::from_keyword("cmyk_8"), Some(RasterType::Cmyk8));
+        assert_eq!(RasterType::from_keyword("black_8"), Some(RasterType::Black8));
+        for other in ["cmyk_16", "rgb_8", "black_1", "device1_8", "adobe-rgb", "adobe-rgb_12", ""] {
             assert_eq!(RasterType::from_keyword(other), None, "{other}");
         }
         assert!(RasterType::BASELINE.contains(&RasterType::Srgb8) && RasterType::BASELINE.contains(&RasterType::Sgray8));

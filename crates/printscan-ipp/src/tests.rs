@@ -736,7 +736,7 @@ fn the_printers_listed_raster_types_decide_the_pixel_format_the_converter_is_ask
     // not published: the baseline every PWG raster printer takes
     let (asked, reported) = ask(None);
     assert_eq!((asked, reported), (vec![Srgb8], Some(Srgb8)));
-    // listed but nothing this crate writes: still the baseline, not a refusal
+    // listed but nothing the converter writes (it offers the baseline only): still the baseline, not a refusal
     let (asked, _) = ask(Some(&["cmyk_8", "rgb_8"]));
     assert_eq!(asked, vec![Srgb8]);
 }
@@ -749,7 +749,7 @@ fn a_printer_that_lists_raster_types_has_them_in_its_details() {
     script.ok(vec![pwg_raster_printer(Some(&["sgray_8", "srgb_8", "srgb_16", "adobe-rgb_8", "adobe-rgb_16", "cmyk_8", "SRGB_8"]))]);
     let details = r.printer_details(&id()).unwrap();
     use printscan::print::RasterType::*;
-    assert_eq!(details.raster_types, vec![Sgray8, Srgb8, Srgb16, AdobeRgb8, AdobeRgb16], "ours only, no duplicates, any case");
+    assert_eq!(details.raster_types, vec![Sgray8, Srgb8, Srgb16, AdobeRgb8, AdobeRgb16, Cmyk8], "ours only, no duplicates, any case");
     script.ok(vec![pwg_raster_printer(None)]);
     assert!(r.printer_details(&id()).unwrap().raster_types.is_empty(), "not published is empty");
 }
