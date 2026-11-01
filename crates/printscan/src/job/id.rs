@@ -1,6 +1,6 @@
 //! Typed `<backend>:<native>` ids for jobs and devices.
 //!
-//! The text form is the one craft-print's job ids and craft-scan's device ids already use:
+//! The text form is the one printscan::print's job ids and printscan::scan's device ids already use:
 //! `"<backend>:<native>"`. The backend part is a registry name (lowercase ASCII, digits, `-`, `_`,
 //! not empty); the native part is the backend's own handle, may contain colons and anything else,
 //! and must not be empty. Only the first colon separates the two.

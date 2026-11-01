@@ -13,7 +13,7 @@
 
 use std::time::Duration;
 
-/// What repeating a failed request would do. (craft-wsd keeps its own, identical enum.)
+/// What repeating a failed request would do. (printscan-wsd keeps its own, identical enum.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

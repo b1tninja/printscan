@@ -1,4 +1,4 @@
-# craft-job
+# printscan::job
 
 The vocabulary that printing and scanning crates would otherwise each define for themselves, plus
 two plain records (`JobView`, `DeviceView`) so a UI can show a print job and a scan job, a printer
@@ -57,7 +57,7 @@ A clear bit from some drivers means "unknown", not "no", so every indicator is a
 clear, so all of those map to `NotReported`, never `Off`. The lamp bit is an error flag only (there
 is no on/off readback), so `LampError` is `On` or `NotReported`.
 
-| craft-scan `HandlingStatus` | Indicator | Notes |
+| printscan::scan `HandlingStatus` | Indicator | Notes |
 |---|---|---|
 | `feeder_ready` | `FeederPaper` (readiness) and `PaperPathView::feeder_loaded` | `Option<bool>` becomes `Tri` |
 | `flat_ready` | `FlatbedReady`, `PaperPathView::glass_available` | |
@@ -69,7 +69,7 @@ is no on/off readback), so `LampError` is `On` or `NotReported`.
 | `attention` | `Attention` | warning |
 | `lamp_error` | `LampError` | error; no readback |
 
-| craft-print printer state reason | Indicator |
+| printscan::print printer state reason | Indicator |
 |---|---|
 | `media-jam` | `Jam` |
 | `media-empty` / `media-needed` | `PaperOut` |
@@ -79,13 +79,13 @@ is no on/off readback), so `LampError` is `On` or `NotReported`.
 | any other reason | `Other("<reason>")` |
 
 `DeviceView::problems()` yields the warnings and errors; `worst_severity()` the highest.
-`DeviceConnection` is named apart from craft-scan's `Connection`: `Usb` maps to `Usb`, `Wsd` to
+`DeviceConnection` is named apart from printscan::scan's `Connection`: `Usb` maps to `Usb`, `Wsd` to
 `Network`, `Other` to `Other` and `Unknown` to `Unknown`. `Local` (a local port or virtual device)
 has no scan counterpart today; a print spooler port uses it.
 
 ## Vocabulary: existing names
 
-| craft-print | craft-scan | craft-job |
+| printscan::print | printscan::scan | printscan::job |
 |---|---|---|
 | `NativeCode` | `NativeCode`, `HRESULT_DOMAIN` | `NativeCode`, `HRESULT_DOMAIN` |
 | `JobId`, `ParseJobIdError` | - | `JobId`, `ParseIdError` |
@@ -96,7 +96,7 @@ has no scan counterpart today; a print spooler port uses it.
 
 ## Wire format (optional `serde` feature)
 
-`craft-job = { version = "0.1", features = ["serde"] }` derives `Serialize` and `Deserialize` on the plain
+`printscan = { version = "0.1", features = ["serde"] }` derives `Serialize` and `Deserialize` on the plain
 data types, so an app can write a job journal or print a `JobView` without hand-written JSON. The feature
 is off by default and changes nothing in a default build. The crate itself never reads or writes a file.
 
@@ -124,5 +124,5 @@ is off by default and changes nothing in a default build. The crate itself never
 
 ## Migration
 
-craft-print and craft-scan are expected to depend on this crate and `pub use` these names, so
-their public paths do not change. craft-wsd has its own identical `RetrySafety`; it is not touched.
+printscan::print and printscan::scan are expected to depend on this crate and `pub use` these names, so
+their public paths do not change. printscan-wsd has its own identical `RetrySafety`; it is not touched.

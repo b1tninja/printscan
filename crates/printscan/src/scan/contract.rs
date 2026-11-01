@@ -521,7 +521,7 @@ impl ScanErrorInfo {
     }
 }
 
-/// What craft-scan adds to [`NativeCode`] (which lives in craft-job, so it cannot have inherent methods here).
+/// What printscan::scan adds to [`NativeCode`] (which lives in printscan::job, so it cannot have inherent methods here).
 pub trait NativeCodeExt {
     /// The code as an unsigned HRESULT, when the domain is `"hresult"` and it fits.
     fn as_hresult(&self) -> Option<u32>;

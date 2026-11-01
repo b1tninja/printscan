@@ -1,6 +1,6 @@
-# craft-scan
+# printscan::scan
 
-The portable core of scanning for the Craft apps: scan settings and the enums behind them, the
+The portable core of scanning: scan settings and the enums behind them, the
 neutral error contract (`ScanError`, `ScanErrorInfo`, `NativeCode`, recovery hints), paper-path
 status that may be unknown, the auto-fallback-to-glass decision, cancel and
 progress tokens, the BMP parser and software 1-bit conversion, an optional JSONL acquire trace, and
@@ -159,9 +159,9 @@ A backend may override `Backend::page_length_support` (unknown by default) and f
 
 | Variable | Meaning |
 |---|---|
-| `CRAFT_SCAN_TRACE` | `1` traces acquire phases to stderr, or a file path to append JSON lines to. Phases only: no ids, names, ports or image bytes. |
+| `PRINTSCAN_TRACE` | `1` traces acquire phases to stderr, or a file path to append JSON lines to. Phases only: no ids, names, ports or image bytes. |
 
-The older `PDFCRAFT_SCAN_TRACE` is still read when the new name is not set.
+The older `CRAFT_SCAN_TRACE` is still read when the new name is not set.
 
 ## Tests
 

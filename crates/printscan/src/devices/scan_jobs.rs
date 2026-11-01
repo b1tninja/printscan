@@ -48,7 +48,7 @@ pub const fn exit_code(class: ExitClass) -> u8 {
         ExitClass::Completed => 0,
         ExitClass::Failed => 11,
         ExitClass::Cancelled => 12,
-        // `needs_attention`, and any class a later craft-scan adds: a person looks first.
+        // `needs_attention`, and any class a later printscan::scan adds: a person looks first.
         _ => 10,
     }
 }

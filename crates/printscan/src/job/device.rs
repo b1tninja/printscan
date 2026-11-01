@@ -273,7 +273,7 @@ pub enum DeviceState {
     Unknown,
 }
 
-/// How a device is attached. Named apart from craft-scan's `Connection`; the mapping is in the README.
+/// How a device is attached. Named apart from printscan::scan's `Connection`; the mapping is in the README.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

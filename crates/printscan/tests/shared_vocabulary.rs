@@ -1,4 +1,4 @@
-//! craft-scan's native code, backend names and namespaced ids are craft-job's. These tests pin that the names
+//! printscan::scan's native code, backend names and namespaced ids are printscan::job's. These tests pin that the names
 //! and wire formats did not change when they moved.
 
 mod common;
@@ -7,7 +7,7 @@ use printscan::job::{BackendName, DeviceId};
 use printscan::scan::{Backend, HRESULT_DOMAIN, NativeCode, NativeCodeExt, RegisterError, Registry, ScanError, namespaced_id, split_id};
 
 #[test]
-fn the_native_code_is_craft_jobs_with_the_same_wire_values() {
+fn the_native_code_is_the_job_modules_with_the_same_wire_values() {
     let from_job: printscan::job::NativeCode = NativeCode::hresult(0x8021_0006, Some("WIA_ERROR_BUSY"));
     let back: NativeCode = from_job;
     assert_eq!((back.domain, back.code, back.name), (HRESULT_DOMAIN, 0x8021_0006, Some("WIA_ERROR_BUSY")));
@@ -50,9 +50,9 @@ impl Backend for Named {
 }
 
 #[test]
-fn the_registry_accepts_exactly_the_names_craft_job_accepts() {
+fn the_registry_accepts_exactly_the_names_the_job_module_accepts() {
     for name in ["", "Wia", "a b", "a:b", "w.ia", "\u{e9}", "wia ", "WIA"] {
-        assert!(BackendName::new(name).is_err(), "{name:?} is not a craft-job name");
+        assert!(BackendName::new(name).is_err(), "{name:?} is not a printscan::job name");
         let registry = Registry::new();
         assert_eq!(registry.register(Box::new(Named(name))), Err(RegisterError::InvalidName { name }), "{name:?}");
     }

@@ -1,5 +1,5 @@
 //! The names the printing stack imports from this crate, without the `serde` feature. A compile
-//! check: removing or renaming any of them is a breaking change for craft-print.
+//! check: removing or renaming any of them is a breaking change for printscan::print.
 
 use std::time::Duration;
 

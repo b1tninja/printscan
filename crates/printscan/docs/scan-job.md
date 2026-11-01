@@ -90,7 +90,7 @@ The lifecycle is the job's own; it is separate from anything the scanner reports
 `JobView::state` is that, reduced to `printscan::job::JobState`: `Preparing` is `Pending`; `Acquiring` is `Processing`;
 `Interrupted` is `NeedsAttention` unless the advice is an automatic retry, then `Pending`; `NeedsAttention` is
 `NeedsAttention`; `Completed` is `Completed`; `CompletedWithWarnings` is `CompletedWithErrors` (pages are
-missing); `Failed` is `Aborted` (craft-job's word for "stopped by a failure"); `Cancelled` and `CancelledByDevice`
+missing); `Failed` is `Aborted` (printscan::job's word for "stopped by a failure"); `Cancelled` and `CancelledByDevice`
 are both `Cancelled`, and the reason `cancelled_by_device` tells them apart.
 
 ## 3. Pages so far
@@ -223,7 +223,7 @@ per status bit.
 * Indicators for hardware the scanner lacks (no feeder, flatbed or duplexer) are left out unless the status asserts
   them. The lamp bit is an error flag: `LampError` is `On` or "no error reported".
 * `From<Connection> for DeviceConnection`: `Usb` to `Usb`, `Wsd` to `Network`, `Other` to `Other`, `Unknown` to
-  `Unknown`, as in craft-job's README. `DeviceConnection::Local` has no scan counterpart.
+  `Unknown`, as in docs/job.md. `DeviceConnection::Local` has no scan counterpart.
 
 ### The source actually used
 
@@ -283,7 +283,7 @@ For the terminal, `ScanJobSnapshot::summary_line()` gives `Archive: interrupted,
 
 ## 12. Journal and the optional `serde` feature
 
-`craft-scan = { features = ["serde"] }` (off by default; it also turns on `craft-job/serde`) derives
+`printscan = { features = ["serde"] }` (off by default) derives
 `Serialize` and `Deserialize` on `ScanJobSnapshot`, `ScanJobJournal`, `PageInfo`, `AttemptRecord`, `AttemptFailure`,
 `AttemptOutcome`, `InFlight`, `ScanJobState`, `Outcome`, `ExitClass`, `Continuation`, `LocalJobId`, `ScanErrorInfo`,
 and on the contract enums, **with the wire strings they always had** (`Source`, `Color`, `Intent`, `PageSize`,
@@ -312,8 +312,8 @@ timeline of earlier runs beyond the count and the last error.
 
 **Forward compatibility.** Names are snake_case. Unknown fields are ignored and fields an older writer lacked are
 defaulted. A page `format` this version does not know reads as `bin`; an unknown `InterruptKind` reads as `other`
-(craft-job's `Unknown` fallbacks cover job and device state). Other enums fail on an unknown value rather than
+(printscan::job's `Unknown` fallbacks cover job and device state). Other enums fail on an unknown value rather than
 guess. `version` is written as `ScanJobJournal::VERSION` (1); additions keep it, a change that cannot be read by
 an older reader raises it. A reader that meets a `version` newer than its own does not trust `state`: the job
-seeds as an unknown outcome (`NeedsAttention`, `CheckDeviceFirst`) so nothing is resent on a guess. Durations and timestamps are milliseconds (craft-job README, "Wire format").
+seeds as an unknown outcome (`NeedsAttention`, `CheckDeviceFirst`) so nothing is resent on a guess. Durations and timestamps are milliseconds (docs/job.md, "Wire format").
 

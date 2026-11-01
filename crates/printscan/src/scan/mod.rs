@@ -34,7 +34,7 @@ pub mod job;
 pub mod length;
 pub mod trace;
 
-/// The vocabulary shared with the print side lives in craft-job; these are the same names and wire formats this
+/// The vocabulary shared with the print side lives in printscan::job; these are the same names and wire formats this
 /// crate has always exported (`"<backend>:<native id>"`, the native error code).
 pub use crate::job::{HRESULT_DOMAIN, NativeCode, namespaced_id, split_id};
 pub use backend::{

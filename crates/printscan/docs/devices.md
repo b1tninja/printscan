@@ -1,7 +1,7 @@
-# craft-devices
+# printscan::devices
 
-Device tools the Craft apps share, with no UI and no platform code. An app registers its platform backends into
-`craft-scan` (and later `craft-print`) and uses these tools from its own command line and tool list instead of
+Device tools applications share, with no UI and no platform code. An app registers its platform backends into
+`printscan::scan` (and later `printscan::print`) and uses these tools from its own command line and tool list instead of
 copying them.
 
 ## In
@@ -10,7 +10,7 @@ copying them.
   over it.
   - `JobRecord`: a small versioned wrapper around `printscan::scan::job::ScanJobJournal` with the request the scan repeats
     on `--continue`, the `printscan::job::JobView` and the attempt timeline. It never holds page bytes. Written with
-    `craft-atomic` (staged beside the file, then renamed), read leniently (unknown fields ignored, a newer version
+    `tempfile` (staged beside the file, then renamed), read leniently (unknown fields ignored, a newer version
     refused with a message to upgrade).
   - Listing and detail views (`jobs_listing`, `list_line`, `job_json`, `detail_text`, `next_step`), exit codes, and
     the request round-trip (`request_json`, `settings_from_request`). The command name in the next-step hints is the
@@ -29,13 +29,13 @@ copying them.
 
 ## Not in (deliberately)
 
-- Opening a scanner, or any backend: that is `craft-scan` and the app's platform component.
+- Opening a scanner, or any backend: that is `printscan::scan` and the app's platform component.
 - UI, translations, argument parsing: the app's.
 - Writing page files: the app writes them where `duplex_page_number` says.
 
 ## Tests
 
-`cargo test -p craft-devices`. The unit tests in `src/scan_jobs.rs` cover the journal format, the views, the request
+`cargo test -p printscan --features devices`. The unit tests in `src/scan_jobs.rs` cover the journal format, the views, the request
 round-trip and the manual-duplex numbering and renumbering (including a renumbering that was cut off).
 `tests/public_surface.rs` is a compile check of the names an app imports, and `tests/manual_duplex.rs` walks a
 folder through a pile scanned in batches and its backs through the public API only, as an app's command does.

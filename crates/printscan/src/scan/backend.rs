@@ -166,7 +166,7 @@ pub struct Registry {
     backends: RwLock<Vec<Arc<dyn Backend>>>,
 }
 
-/// A registry name is valid when craft-job accepts it as a [`BackendName`]: one or more of `a-z`, `0-9`, `-`
+/// A registry name is valid when printscan::job accepts it as a [`BackendName`]: one or more of `a-z`, `0-9`, `-`
 /// and `_`. The empty name is refused by both.
 fn valid_name(name: &str) -> bool {
     BackendName::new(name).is_ok()

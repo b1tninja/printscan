@@ -1,6 +1,6 @@
 //! Optional JSONL phase trace for the scan backend's `acquire`.
 //!
-//! Set `CRAFT_SCAN_TRACE=1` (stderr) or to a file path to append one JSON object per line.
+//! Set `PRINTSCAN_TRACE=1` (stderr) or to a file path to append one JSON object per line.
 //! Events name phases only; no device ids, names, ports, or image bytes.
 
 use std::fs::{File, OpenOptions};
@@ -18,7 +18,7 @@ pub enum TraceDest {
     File(PathBuf),
 }
 
-/// Parse `CRAFT_SCAN_TRACE`. Empty and `0`/`false`/`off` disable tracing.
+/// Parse `PRINTSCAN_TRACE`. Empty and `0`/`false`/`off` disable tracing.
 pub fn trace_dest_from_str(value: &str) -> TraceDest {
     let trimmed = value.trim();
     if trimmed.is_empty() || matches!(trimmed.to_ascii_lowercase().as_str(), "0" | "false" | "no" | "off") {
@@ -31,12 +31,12 @@ pub fn trace_dest_from_str(value: &str) -> TraceDest {
 }
 
 /// Environment variable that turns the acquire trace on.
-pub const TRACE_ENV: &str = "CRAFT_SCAN_TRACE";
+pub const TRACE_ENV: &str = "PRINTSCAN_TRACE";
 
-/// The name [`TRACE_ENV`] had before this crate moved to craft-libs; read when it is not set.
-pub const LEGACY_TRACE_ENV: &str = "PDFCRAFT_SCAN_TRACE";
+/// The name [`TRACE_ENV`] had in the Craft apps; read when it is not set.
+pub const LEGACY_TRACE_ENV: &str = "CRAFT_SCAN_TRACE";
 
-/// Read `CRAFT_SCAN_TRACE` from the environment, or the older `PDFCRAFT_SCAN_TRACE` when it is not set.
+/// Read `PRINTSCAN_TRACE` from the environment, or the older `CRAFT_SCAN_TRACE` when it is not set.
 pub fn trace_dest_from_env() -> TraceDest {
     match std::env::var(TRACE_ENV).or_else(|_| std::env::var(LEGACY_TRACE_ENV)) {
         Ok(value) => trace_dest_from_str(&value),
