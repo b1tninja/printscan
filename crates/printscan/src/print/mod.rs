@@ -34,12 +34,12 @@ pub use crate::job::{
     TagSupport, Timestamp, advise, namespaced_id, split_id,
 };
 pub use backend::{
-    BackendClass, CancelToken, Document, DocumentFormat, ErrorKind, JobHint, NotFoundSubject, PrintError, PrinterDetails, PrinterRef, PrinterState,
-    PrinterStatus, ProgressCallback, Receipt, SubmitRequest, UserConfirmed,
+    BackendClass, CancelToken, Document, DocumentFormat, ErrorKind, IccProfile, JobHint, NotFoundSubject, PrintError, PrinterDetails, PrinterRef,
+    PrinterState, PrinterStatus, ProgressCallback, Receipt, SubmitRequest, UserConfirmed,
 };
 pub use convert::{Conversion, ConversionPolicy, ConvertContext, DocumentConverter, OwnedDocument, choose_raster_type, choose_resolution};
 pub use job::{ExpectedTotalsExt, JobStatus, Submitted, WatchSupport};
-pub use options::{ColourMode, JobOptions, Orientation, Quality, Resolution};
+pub use options::{ColourMode, JobOptions, Orientation, Quality, RenderingIntent, Resolution};
 pub use pwg::RasterType;
 pub use registry::{
     BackendError, BackendInfo, Listing, RegisterError, Registry, cancel_job, job_status, list_printers, printer_details, register, registry,

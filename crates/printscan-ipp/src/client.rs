@@ -104,6 +104,8 @@ pub const PRINTER_ATTRIBUTES: &[&str] = &[
     "copies-supported",
     "printer-resolution-supported",
     "print-quality-supported",
+    "print-rendering-intent-supported",
+    "printer-icc-profiles",
     "print-content-optimize-supported",
     "print-scaling-supported",
     "print-scaling-default",

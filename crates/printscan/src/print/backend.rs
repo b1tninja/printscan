@@ -597,6 +597,8 @@ pub enum JobHint {
     Quality,
     /// [`JobOptions::resolution`].
     Resolution,
+    /// [`JobOptions::rendering_intent`].
+    RenderingIntent,
 }
 
 /// The state a printer reports before a job.
@@ -644,6 +646,18 @@ pub struct PrinterDetails {
     /// Which [`Job`] settings this backend applies. `None`: not published, treat as unknown.
     pub honoured: Option<Vec<JobHint>>,
     pub status: Option<PrinterStatus>,
+    /// The ICC profiles the printer publishes for client-side soft-proofing and colour management
+    /// (IPP `printer-icc-profiles`); empty when it publishes none. Fetching one is the app's choice.
+    pub icc_profiles: Vec<IccProfile>,
+}
+
+/// One ICC profile a printer publishes: its name and where to fetch it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IccProfile {
+    /// The printer's name for it, such as `Glossy Paper, High Quality`.
+    pub name: String,
+    /// An `http:` or `https:` URI of the profile.
+    pub uri: String,
 }
 
 /// A message about an accepted job and the backend's own job id, if any. The older view of a

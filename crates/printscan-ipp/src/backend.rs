@@ -12,7 +12,9 @@ use super::model::{self, JobAttrs, PrinterAttrs};
 use super::plan::{self, Plan};
 use super::policy::{NetworkLimits, PrinterUri};
 use super::protocol::{Operation, StatusCode};
-use printscan::print::backends::{Backend, BackendClass, DocumentFormat, JobHint, PrinterDetails, PrinterRef, PrinterStatus, SubmitRequest};
+use printscan::print::backends::{
+    Backend, BackendClass, DocumentFormat, IccProfile, JobHint, PrinterDetails, PrinterRef, PrinterStatus, SubmitRequest,
+};
 use printscan::print::{
     ErrorKind, Fingerprint, FingerprintExt as _, JobFilter, JobId, JobQueryCaps, JobStatus, NativeCode, PrintError, Progress, Reconciled, RemoteJob,
     Resolution, RetrySafety, Submitted, TagExt as _, TagPlacement, TagSupport, TagSupportExt as _, WatchSupport, filter_jobs, reconcile_jobs,
@@ -437,6 +439,9 @@ fn honoured_for(attrs: &PrinterAttrs) -> Vec<JobHint> {
     if plan::scaling_advertised(attrs) {
         hints.push(JobHint::Scaling);
     }
+    if attrs.rendering_intents.as_ref().is_some_and(|i| !i.is_empty()) {
+        hints.push(JobHint::RenderingIntent);
+    }
     hints
 }
 
@@ -467,6 +472,13 @@ fn details_of(entry: &Entry, attrs: &PrinterAttrs) -> PrinterDetails {
     details.paper = media_names(attrs);
     details.max_copies = attrs.copies.and_then(|(_, max)| u32::try_from(max).ok());
     details.resolutions = attrs.resolutions.iter().flatten().map(|(x, y)| Resolution::new(*x, *y)).collect();
+    details.icc_profiles = attrs
+        .icc_profiles
+        .iter()
+        .flatten()
+        .filter(|(_, uri)| uri.starts_with("http://") || uri.starts_with("https://"))
+        .map(|(name, uri)| IccProfile { name: name.clone(), uri: uri.clone() })
+        .collect();
     details.status = model::neutral_printer_state(attrs).map(|state| {
         let mut reasons: Vec<String> = attrs.state_reasons.iter().filter(|r| r.as_str() != "none").cloned().collect();
         if attrs.accepting_jobs == Some(false) {

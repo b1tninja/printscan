@@ -187,6 +187,12 @@ pub fn plan(job_name: String, document_mime: &str, job: &Job, per_job: &JobOptio
             attributes.push(Attribute::keyword("print-content-optimize", "photo"));
         }
     }
+    if let Some(intent) = per_job.rendering_intent {
+        let keyword = intent.keyword();
+        if keep(strict, &format!("rendering intent {keyword}"), printer.supports_rendering_intent(keyword), &mut warnings)? {
+            attributes.push(Attribute::keyword("print-rendering-intent", keyword));
+        }
+    }
     if let Some((x, y)) = per_job.resolution.map(|r| (r.x_dpi, r.y_dpi)) {
         let ok = x > 0 && y > 0 && x <= 100_000 && y <= 100_000;
         if !ok {
@@ -246,7 +252,7 @@ pub fn plan(job_name: String, document_mime: &str, job: &Job, per_job: &JobOptio
 #[cfg(test)]
 mod tests {
     use super::*;
-    use printscan::print::Resolution;
+    use printscan::print::{RenderingIntent, Resolution};
 
     fn printer() -> PrinterAttrs {
         PrinterAttrs {
@@ -268,6 +274,22 @@ mod tests {
 
     fn names(plan: &Plan) -> Vec<&str> {
         plan.request.attributes.iter().map(|a| a.name.as_str()).collect()
+    }
+
+    #[test]
+    fn a_rendering_intent_is_sent_when_the_printer_lists_it() {
+        let options = JobOptions::new().with_rendering_intent(RenderingIntent::RelativeBpc);
+        let listing = PrinterAttrs { rendering_intents: Some(vec!["auto".into(), "relative".into(), "RELATIVE-BPC".into()]), ..printer() };
+        let planned = run(&Job::default(), &options, false, &listing).unwrap();
+        assert_eq!(names(&planned), ["print-rendering-intent"]);
+        assert_eq!(planned.request.attributes[0].values, [Value::Keyword("relative-bpc".into())]);
+        // A printer that does not list it: left out with a warning, or refused when strict.
+        let without = PrinterAttrs { rendering_intents: Some(vec!["auto".into()]), ..printer() };
+        let planned = run(&Job::default(), &options, false, &without).unwrap();
+        assert!(names(&planned).is_empty() && planned.warnings.iter().any(|w| w.contains("relative-bpc")), "{:?}", planned.warnings);
+        assert!(run(&Job::default(), &options, true, &without).is_err());
+        // A printer that does not publish the attribute gets it sent: it may still honour it.
+        assert_eq!(names(&run(&Job::default(), &options, false, &printer()).unwrap()), ["print-rendering-intent"]);
     }
 
     #[test]

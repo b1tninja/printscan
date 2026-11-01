@@ -742,6 +742,41 @@ fn the_printers_listed_raster_types_decide_the_pixel_format_the_converter_is_ask
 }
 
 #[test]
+fn a_printer_publishes_its_icc_profiles_and_rendering_intents_in_its_details() {
+    let script = Script::new();
+    let b = backend(&script);
+    let r = registry(&b);
+    let profile = |name: &str, uri: &str| {
+        Value::Collection(vec![("profile-name".into(), vec![Value::Name(name.into())]), ("profile-uri".into(), vec![Value::Uri(uri.into())])])
+    };
+    let group = printer_group()
+        .with(Attribute::set(
+            "printer-icc-profiles",
+            vec![
+                profile("Glossy Paper, High Quality", "http://192.0.2.7/icc/glossy-high.icc"),
+                profile("Plain Paper", "https://192.0.2.7/icc/plain.icc"),
+                // Not an http(s) URI: not offered to the app.
+                profile("Local", "file:///etc/printer.icc"),
+                // A member missing: skipped.
+                Value::Collection(vec![("profile-name".into(), vec![Value::Name("No URI".into())])]),
+            ],
+        ))
+        .with(Attribute::keywords("print-rendering-intent-supported", &["auto", "relative", "relative-bpc"]));
+    script.ok(vec![group]);
+    let details = r.printer_details(&id()).unwrap();
+    let profiles: Vec<(&str, &str)> = details.icc_profiles.iter().map(|p| (p.name.as_str(), p.uri.as_str())).collect();
+    assert_eq!(
+        profiles,
+        [("Glossy Paper, High Quality", "http://192.0.2.7/icc/glossy-high.icc"), ("Plain Paper", "https://192.0.2.7/icc/plain.icc")]
+    );
+    assert!(details.honoured.unwrap().contains(&printscan::print::JobHint::RenderingIntent));
+    // A printer that publishes neither has no profiles and does not claim the hint.
+    script.ok(vec![printer_group()]);
+    let plain = r.printer_details(&id()).unwrap();
+    assert!(plain.icc_profiles.is_empty() && !plain.honoured.unwrap().contains(&printscan::print::JobHint::RenderingIntent));
+}
+
+#[test]
 fn a_printer_that_lists_raster_types_has_them_in_its_details() {
     let script = Script::new();
     let b = backend(&script);

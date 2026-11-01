@@ -69,6 +69,49 @@ impl Quality {
     }
 }
 
+/// How colours outside the printer's gamut are mapped (IPP `print-rendering-intent`, PWG 5100.13).
+/// A hint: a backend sends it when the printer lists the intent and drops it (with a warning)
+/// otherwise. An application that has converted its colours with the printer's ICC profile asks
+/// for the intent it converted with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum RenderingIntent {
+    /// The printer chooses from the document and the job.
+    Auto,
+    /// Keep the relations between colours, moving in-gamut colours too.
+    Perceptual,
+    /// Keep in-gamut colours exactly, mapping the white point.
+    Relative,
+    /// [`Self::Relative`] with black point compensation.
+    RelativeBpc,
+    /// Keep colours vivid.
+    Saturation,
+    /// Keep in-gamut colours exactly, including the white point.
+    Absolute,
+}
+
+impl RenderingIntent {
+    /// Every intent.
+    pub const ALL: [RenderingIntent; 6] = [Self::Auto, Self::Perceptual, Self::Relative, Self::RelativeBpc, Self::Saturation, Self::Absolute];
+
+    /// The IPP keyword (`print-rendering-intent`).
+    pub const fn keyword(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Perceptual => "perceptual",
+            Self::Relative => "relative",
+            Self::RelativeBpc => "relative-bpc",
+            Self::Saturation => "saturation",
+            Self::Absolute => "absolute",
+        }
+    }
+
+    /// The intent an IPP keyword names (ASCII case does not matter).
+    pub fn from_keyword(keyword: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|i| i.keyword().eq_ignore_ascii_case(keyword.trim()))
+    }
+}
+
 /// Colour or monochrome output; [`Self::Auto`] leaves the choice to the printer and
 /// [`Job::grayscale`](crate::print::Job).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
@@ -135,6 +178,8 @@ pub struct JobOptions {
     pub quality: Option<Quality>,
     pub resolution: Option<Resolution>,
     pub colour: ColourMode,
+    /// How colours outside the printer's gamut are mapped.
+    pub rendering_intent: Option<RenderingIntent>,
     /// How many pages the document has, when the app knows. Not a hint to the printer: it is the
     /// total that progress and status use when the backend reports none (see
     /// [`ExpectedTotals`](crate::print::ExpectedTotals)). A total the backend reports wins.
@@ -166,6 +211,13 @@ impl JobOptions {
     #[must_use]
     pub fn with_quality(mut self, quality: Quality) -> Self {
         self.quality = Some(quality);
+        self
+    }
+
+    /// Ask for this rendering intent.
+    #[must_use]
+    pub fn with_rendering_intent(mut self, intent: RenderingIntent) -> Self {
+        self.rendering_intent = Some(intent);
         self
     }
 

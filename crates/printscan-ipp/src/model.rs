@@ -71,6 +71,10 @@ pub struct PrinterAttrs {
     pub resolutions: Option<Vec<(u32, u32)>>,
     /// `print-quality-supported`.
     pub qualities: Option<Vec<i32>>,
+    /// `print-rendering-intent-supported` (PWG 5100.13).
+    pub rendering_intents: Option<Vec<String>>,
+    /// `printer-icc-profiles` (PWG 5100.13): each `profile-name` and `profile-uri`.
+    pub icc_profiles: Option<Vec<(String, String)>>,
     pub content_optimize: Option<Vec<String>>,
     /// `print-scaling-supported` (PWG 5100.13): `None` when the printer does not publish it.
     pub scaling: Option<Vec<String>>,
@@ -149,6 +153,18 @@ impl PrinterAttrs {
                 .filter_map(|members| Some(MediaSize { width: dimension(members, "x-dimension")?, height: dimension(members, "y-dimension")? }))
                 .collect())
         });
+        let icc_profiles = listed(group, "printer-icc-profiles").map(|a| {
+            cap(a
+                .values
+                .iter()
+                .filter_map(Value::as_collection)
+                .filter_map(|members| {
+                    let text =
+                        |name: &str| members.iter().find(|(n, _)| n == name).and_then(|(_, v)| v.first()).and_then(Value::as_str).map(str::to_owned);
+                    Some((text("profile-name")?, text("profile-uri")?))
+                })
+                .collect())
+        });
         let resolutions = listed(group, "printer-resolution-supported").map(|a| cap(a.values.iter().filter_map(resolution_dpi).collect()));
         Self {
             name: group.first_str("printer-name").map(str::to_owned),
@@ -168,6 +184,8 @@ impl PrinterAttrs {
             copies,
             resolutions,
             qualities: integers("print-quality-supported"),
+            rendering_intents: strings(group, "print-rendering-intent-supported"),
+            icc_profiles,
             content_optimize: strings(group, "print-content-optimize-supported"),
             scaling: strings(group, "print-scaling-supported"),
             scaling_default: group.first_str("print-scaling-default").map(str::to_owned),
@@ -203,6 +221,11 @@ impl PrinterAttrs {
     /// Whether `print-quality-supported` lists the enum `value`; `None` when the printer did not say.
     pub fn supports_quality(&self, value: i32) -> Option<bool> {
         self.qualities.as_ref().map(|q| q.contains(&value))
+    }
+
+    /// Whether `print-rendering-intent-supported` lists `keyword`; `None` when the printer did not say.
+    pub fn supports_rendering_intent(&self, keyword: &str) -> Option<bool> {
+        self.rendering_intents.as_ref().map(|i| i.iter().any(|k| k.eq_ignore_ascii_case(keyword)))
     }
 
     /// Whether the printer lists the resolution (x, y) in dpi; `None` when it did not say.

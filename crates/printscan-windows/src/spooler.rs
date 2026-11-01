@@ -89,6 +89,7 @@ impl Backend for WindowsSpooler {
                 JobHint::Resolution,
             ]),
             status: None,
+            icc_profiles: Vec::new(),
         })
     }
 
@@ -236,6 +237,9 @@ fn ticket(
             Some(option) => merge(&mut builder, option.into())?,
             None => warnings.push(format!("the printer has no {}x{} dpi; it prints at its default resolution", wanted.0, wanted.1)),
         }
+    }
+    if options.rendering_intent.is_some() {
+        warnings.push("the rendering intent is left to the driver".to_owned());
     }
     let ticket = builder.build().map_err(|e| failed("building the print ticket", &e))?;
     Ok((ticket, warnings))
