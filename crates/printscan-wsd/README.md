@@ -24,7 +24,14 @@ testing    loopback HTTP server and an in-memory FakeDevice (cargo feature `test
 error      Error (policy, transport, http, too_large, xml, protocol, fault, invalid, cancelled,
            timeout, not_found), TransportKind, Stage
 retry      RetrySafety and parse_retry_after (delta-seconds and HTTP-date, capped at one hour)
+print      WS-Print backend for printscan::print (cargo feature `print`, default)
+scan       WS-Scan backend for printscan::scan (cargo feature `scan`, default): scanner elements,
+           the ScanTicket, CreateScanJob with the Windows driver's format fallback, RetrieveImage
+           over MTOM until the scanner has no more, CancelJob, faults as scan errors
 ```
+
+`cargo run -p printscan-wsd --example wsd_scan -- details <ScannerService url>` reads a scanner
+without scanning; `wsd_probe` does the same for a printer.
 
 ## Building a service client on it
 

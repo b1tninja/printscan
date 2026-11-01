@@ -8,11 +8,11 @@ backend registry, and the network and platform backends behind it.
 | [`printscan`](crates/printscan) | `printscan::job`: job and device vocabulary shared by print and scan (states, ids, retry advice). `printscan::scan` (feature `scan`, default): the scanner contract, backend registry, `ScanJob` and page handling. `printscan::print` (feature `print`, default): the print backend registry, tracked jobs, document conversion and job watching. `printscan::devices` (feature `devices`): the scan job journal for large piles and manual duplex. |
 | [`printscan-ipp`](crates/printscan-ipp) | An IPP (RFC 8010/8011) print backend: plain HTTP to numeric local addresses, no discovery, consent for every job. |
 | [`printscan-windows`](crates/printscan-windows) | WIA 2.0 scanners as a `printscan::scan` backend, and the Windows print spooler as a backend, on [`winprint`](https://github.com/ArcticLampyrid/winprint.rs). Colour on that path: [docs/colour.md](crates/printscan-windows/docs/colour.md). |
-| [`printscan-wsd`](crates/printscan-wsd) | Web Services for Devices, and with feature `print` (default) a WS-Print backend for `printscan::print`: bounded XML, SOAP 1.2 and WS-Addressing, MTOM, faults, a local-network-only URL policy, WS-Transfer, WS-Eventing and WS-Discovery messages, and a blocking HTTP transport. |
+| [`printscan-wsd`](crates/printscan-wsd) | Web Services for Devices, with feature `print` (default) a WS-Print backend for `printscan::print`, and with feature `scan` (default) a WS-Scan backend for `printscan::scan`: bounded XML, SOAP 1.2 and WS-Addressing, MTOM, faults, a local-network-only URL policy, WS-Transfer, WS-Eventing and WS-Discovery messages, and a blocking HTTP transport. |
 
 [tools/print-diag](tools/print-diag) prints diagnostic pages (colour, registration, tone ramps, geometry) and measures them from a scan.
 
-Planned: a WS-Scan backend and CUPS.
+Planned: CUPS.
 
 The test devices are separate projects, so a parser bug cannot pass on both sides:
 [fakescan](https://github.com/b1tninja/fakescan) (WSD and WIA scanner) and

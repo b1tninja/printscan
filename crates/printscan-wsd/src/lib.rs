@@ -34,6 +34,8 @@ pub mod policy;
 #[cfg(all(feature = "print", not(target_arch = "wasm32")))]
 pub mod print;
 pub mod retry;
+#[cfg(all(feature = "scan", not(target_arch = "wasm32")))]
+pub mod scan;
 pub mod service;
 pub mod soap;
 pub mod transport;
