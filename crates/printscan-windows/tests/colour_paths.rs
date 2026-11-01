@@ -1,12 +1,12 @@
-//! Does each Windows print path hand an image's RGB values to the driver unchanged? Prints one strip
-//! of colour patches to a temporary PWG raster printer (the in-box Microsoft PWG Raster Class Driver
-//! on a file port: a lossless raster) four ways, decodes the raster and compares the patches:
-//! winprint's `ImagePrinter` (XPS/Direct2D) with the default ticket, the same with a ticket asking
-//! for no colour management (`psk:PageColorManagement` = `psk:None`, which this driver drops), and
-//! `GdiPrinter` with the caller and with the driver managing the colours.
+//! Does the XPS/Direct2D print path hand an image's RGB values to the driver unchanged? Prints one
+//! strip of colour patches to a temporary PWG raster printer (the in-box Microsoft PWG Raster Class
+//! Driver on a file port: a lossless raster) with winprint's `ImagePrinter`, once with the default
+//! ticket and once with a ticket asking for no colour management (`psk:PageColorManagement` =
+//! `psk:None`, which this driver drops), decodes the raster and compares the patches.
 //!
-//! Measured 2026-11-01 on Windows 11: `ImagePrinter` exact (largest channel error 0), `GdiPrinter`
-//! within 2 (HALFTONE resampling). With `PRINTSCAN_COLOUR_OUT` set, the rasters are kept there.
+//! Measured 2026-11-01 on Windows 11: exact (largest channel error 0). A GDI printer with ICM off
+//! measured 2 on the same driver (HALFTONE resampling); see `docs/colour.md`. With
+//! `PRINTSCAN_COLOUR_OUT` set, the rasters are kept there.
 //! Run by hand: `cargo test -p printscan-windows --test colour_paths -- --ignored --nocapture`.
 
 #![cfg(windows)]
@@ -14,7 +14,6 @@
 use std::path::Path;
 use std::time::Duration;
 
-use printscan_windows::gdi::{ColorPolicy, GdiOptions, GdiPrinter, RgbImage, SheetRect};
 use winprint::printer::{FilePrinter as _, ImagePrinter, PrintOutcome};
 use winprint::test_utils::file_device::{FilePrinterDevice, PwgRaster};
 use winprint::ticket::{PrintTicket, PrintTicketBuilder};
@@ -190,19 +189,6 @@ fn colour_paths() {
     assert_eq!(ImagePrinter::new(device.device().clone()).print(&bmp, ticket).unwrap(), PrintOutcome::Completed);
     let image_no_cm = finish(device, keep, "image-no-cm");
 
-    let device = FilePrinterDevice::<PwgRaster>::new().unwrap();
-    let options = GdiOptions { color_policy: ColorPolicy::CallerManaged, ..Default::default() };
-    let area = SheetRect { x: 72.0, y: 72.0, width: f64::from(w) * 0.75, height: f64::from(h) * 0.75 };
-    let outcome = GdiPrinter::new(device.device().clone()).print_rgb(&RgbImage { width: w, height: h, data: &rgb }, area, &options).unwrap();
-    assert_eq!(outcome, PrintOutcome::Completed);
-    let gdi_caller = finish(device, keep, "gdi-caller-managed");
-
-    let device = FilePrinterDevice::<PwgRaster>::new().unwrap();
-    let options = GdiOptions { color_policy: ColorPolicy::DriverManaged, ..Default::default() };
-    GdiPrinter::new(device.device().clone()).print_rgb(&RgbImage { width: w, height: h, data: &rgb }, area, &options).unwrap();
-    let gdi_driver = finish(device, keep, "gdi-driver-managed");
-
-    // The XPS path hands the pixels over exactly; GDI's HALFTONE resampling moves them a little.
+    // The XPS path hands the pixels over exactly.
     assert_eq!((image_default, image_no_cm), (0, 0));
-    assert!(gdi_caller <= 3 && gdi_driver <= 3, "{gdi_caller} {gdi_driver}");
 }

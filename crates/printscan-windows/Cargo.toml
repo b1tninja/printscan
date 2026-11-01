@@ -5,28 +5,17 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Windows printing for printscan: the print spooler as a backend (on winprint) and an RGB image printed through GDI with the colour management under the caller's control"
-keywords = ["windows", "print", "printer", "printscan", "gdi"]
+description = "Windows printing for printscan: the print spooler as a backend, on winprint"
+keywords = ["windows", "print", "printer", "printscan", "spooler"]
 categories = ["hardware-support", "os::windows-apis"]
 
-# `unsafe` is allowed only in `gdi`, which calls GDI; everything else follows the workspace.
-[lints.rust]
-unsafe_code = "deny"
-
-[lints.clippy]
-cognitive_complexity = "deny"
-too_many_arguments = "deny"
-wildcard_imports = "deny"
-dbg_macro = "warn"
-todo = "warn"
+[lints]
+workspace = true
 
 [features]
-default = ["print", "gdi"]
+default = ["print"]
 # The Windows print spooler as a `printscan::print` backend (`printscan_windows::spooler`).
 print = ["dep:printscan", "dep:winprint", "dep:tempfile"]
-# An RGB image printed through GDI with the colour management under the caller's control
-# (`printscan_windows::gdi::GdiPrinter`).
-gdi = ["dep:winprint", "dep:windows", "dep:scopeguard", "dep:thiserror"]
 
 [target.'cfg(windows)'.dependencies]
 printscan = { path = "../printscan", version = "0.1.0", default-features = false, features = ["print"], optional = true }
@@ -34,11 +23,7 @@ printscan = { path = "../printscan", version = "0.1.0", default-features = false
 # `pdfium` feature downloads PDFium at build time and is off.
 winprint = { version = "0.3.1", default-features = false, optional = true }
 tempfile = { version = "3", optional = true }
-# The GDI calls, on the same `windows` crate winprint uses.
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Storage_Xps", "Win32_UI_ColorSystem"], optional = true }
-scopeguard = { version = "1", optional = true }
-thiserror = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dev-dependencies]
-# A temporary print-to-file printer for the tests (Microsoft Print To PDF on a file port).
+# A temporary print-to-file printer for the tests (Microsoft Print To PDF or PWG raster on a file port).
 winprint = { version = "0.3.1", default-features = false, features = ["test-utils"] }

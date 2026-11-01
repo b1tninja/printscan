@@ -442,10 +442,7 @@ name = "printscan-windows"
 version = "0.1.0"
 dependencies = [
  "printscan",
- "scopeguard",
  "tempfile",
- "thiserror",
- "windows",
  "winprint",
 ]
 
