@@ -469,8 +469,16 @@ mod tests {
         let outcome = GdiPrinter::new(device.device().clone()).print_rgb(&image, AREA, &options).unwrap();
         assert_eq!(outcome, PrintOutcome::Completed);
         device.wait_for_idle(Duration::from_secs(60)).unwrap();
-        let pdf = std::fs::read(device.file_path()).unwrap();
-        assert!(pdf.starts_with(b"%PDF"));
+        // The queue can be idle a moment before the driver has finished writing the file.
+        let started = Instant::now();
+        let pdf = loop {
+            let pdf = std::fs::read(device.file_path()).unwrap_or_default();
+            if pdf.trim_ascii_end().ends_with(b"%%EOF") || started.elapsed() > Duration::from_secs(60) {
+                break pdf;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        };
+        assert!(pdf.starts_with(b"%PDF"), "the driver wrote a PDF ({} bytes)", pdf.len());
         assert_eq!(page_count(&pdf), 3);
     }
 
