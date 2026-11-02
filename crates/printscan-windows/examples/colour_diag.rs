@@ -19,11 +19,10 @@
 //! circle and margin lines (see [`geometry_page`]). `--suite` is all four pages as one job: a
 //! multi-page TIFF, which winprint's `ImagePrinter` prints a page per frame.
 //!
-//! `print` sends it with winprint's `ImagePrinter` at 300 dpi. `driver` and `none` merge
+//! `render` works on any platform. `print` (Windows only) sends it with winprint's `ImagePrinter` at 300 dpi. `driver` and `none` merge
 //! `psk:PageColorManagement` (`Driver`: the driver converts the colours; `None`: the application
 //! already did) when the driver lists it; `default` sends the driver's default ticket.
 
-#[cfg(windows)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let kind = ["--regmap", "--ramps", "--geometry", "--suite"].into_iter().find(|k| args.iter().any(|a| a == k)).unwrap_or("--colour");
@@ -42,12 +41,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("wrote {out} ({} page(s))", sheets.len());
             Ok(())
         }
+        #[cfg(windows)]
         Some("print") => {
             let printer = args.get(1).ok_or("print needs a printer name")?;
             let mode = args.get(2).map_or("default", String::as_str);
             let label = args.get(3).cloned().unwrap_or_else(|| format!("CM {}", mode.to_uppercase()));
             print(printer, mode, &pages(kind, &label), &label)
         }
+        #[cfg(not(windows))]
+        Some("print") => Err("print needs Windows; render works everywhere".into()),
         _ => {
             eprintln!("usage: colour_diag render <out.bmp|out.tif> [label] [--regmap|--ramps|--geometry|--suite]");
             eprintln!("       colour_diag print <printer> <driver|none|default> [label] [--regmap|--ramps|--geometry|--suite]");
@@ -73,9 +75,6 @@ fn pages(kind: &str, label: &str) -> Vec<Image> {
         _ => vec![page(label)],
     }
 }
-
-#[cfg(not(windows))]
-fn main() {}
 
 /// An RGB image, rows top to bottom.
 struct Image {
