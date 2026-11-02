@@ -26,7 +26,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -59,7 +59,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       # The version is an input, not the action's ref, so Dependabot does not "update" it.
@@ -73,7 +73,7 @@ jobs:
     timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -92,7 +92,7 @@ jobs:
     timeout-minutes: 20
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -108,7 +108,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -124,16 +124,16 @@ jobs:
       FAKESCAN_REF: 819cc47c564679ce204fd5abb185ba33b1b543b9
       FAKEPRINT_REF: 5d8817a8b63b54a8ce20d96eb124aba26e664a67
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: b1tninja/fakescan
           ref: ${{ env.FAKESCAN_REF }}
           path: fakes/fakescan
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: b1tninja/fakeprint
           ref: ${{ env.FAKEPRINT_REF }}
