@@ -43,7 +43,7 @@ pub use backend::{
 };
 pub use contract::{
     Compression, ErrorContext, ImageFormat, InterruptAction, Interruption, ListDetails, NativeCodeExt, ParseWireError, Pass, Phase, Recovery, Remedy,
-    Resume, ScanErrorInfo, contract_json, recovery,
+    Resume, ScanErrorInfo, back_position, backs_to_request, contract_json, recovery,
 };
 pub use length::{
     InferOptions, Inference, Inferred, LengthRecord, LengthSource, PageLength, PageLengthSupport, Refusal, assess_sheet_end, infer_and_crop,

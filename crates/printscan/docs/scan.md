@@ -136,6 +136,12 @@ command-line run writes beside its pages, and the contract enums with their exis
 
 `contract_json()` lists the wire strings of `Pass`, `InterruptAction` and `Remedy` for the bindings.
 
+An app that puts a manual duplex straight into an open document asks the backs pass for
+`backs_to_request(fronts, backs)` pages (never zero), and inserts each reverse side at
+`back_position(first, fronts, back_index, reversed)`: right after its front, the backs of a flipped stack arriving
+last front first. The command-line journal numbers page files by the same rule
+(`devices::scan_jobs::duplex_page_number`).
+
 ## Page length
 
 A feeder often cannot tell how long the sheet it pulled is. `ScanSettings::page_length` says how the
