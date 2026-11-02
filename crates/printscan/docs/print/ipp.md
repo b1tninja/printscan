@@ -226,5 +226,5 @@ consent, format negotiation and conversion, tracked jobs, reconcile by tag and b
 
 The fake printer is fakeprint. There is deliberately no in-memory IPP printer in this crate: one strict
 implementation, shared by every client library and used for conformance against real clients, is better than
-one more fake per library. Protocol-level verification against fakeprint is done through the Python bindings
-in a separate harness (outside this repository).
+one more fake per library. `crates/printscan-ipp/tests/live_fakeprint.rs` prints to fakeprint when
+`PRINTSCAN_FAKEPRINT_URL` is set, as CI's `live` job does ([docs/testing.md](../../../../docs/testing.md)).

@@ -209,9 +209,10 @@ renewal, back-off and quiet-window behaviour are tested without sleeping.
   subscription manager against canned `printscan-wsd` WS-Eventing replies from a scripted transport,
   lease, renewal, expiry, back-off and `SubscriptionEnd` flows on the injected clock, `JobWatch` and
   `PrintJob` on the trait-level fake backend, and listener shutdown.
-* The fake printer is `fakeprint`. Eventing against it (the six events delivered to this listener,
-  a lost event caught by the safety poll, a forged event ignored, `SubscriptionEnd`) is verified through
-  the Python bindings in a separate harness, outside this repository.
+* The fake printer is `fakeprint`. The subscription life cycle against it (subscribe, renew, status,
+  unsubscribe) runs in `crates/printscan-wsd/tests/live_loopback.rs` (docs/testing.md). Delivery to this
+  listener (the six events, a lost event caught by the safety poll, a forged event ignored,
+  `SubscriptionEnd`) is verified through the Python bindings in a separate harness, outside this repository.
 
 ## 7. Not done
 

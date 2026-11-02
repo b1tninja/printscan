@@ -1,12 +1,13 @@
-//! The shared core against a separately started loopback fake device: metadata (WS-Transfer `Get` and
-//! WS-MetadataExchange `GetMetadata`) and the WS-Eventing client life cycle. Skipped unless
-//! `PRINTSCAN_WSD_LIVE_URL` names its WSD print service (for example
-//! `http://127.0.0.1:3921/WebServices/PrinterService`). The device endpoint defaults to
-//! `/WebServices/Device` on the same host and port; `PRINTSCAN_WSD_LIVE_DEVICE_URL` overrides it.
-//! Loopback only: the URLs go through the same policy as any device URL, and the test also insists
-//! on a loopback address. No discovery is attempted (that would be multicast).
+//! The shared core against fakeprint (<https://github.com/b1tninja/fakeprint>), a separately started
+//! loopback device: metadata (WS-Transfer `Get` and WS-MetadataExchange `GetMetadata`) and the
+//! WS-Eventing client life cycle. Skipped unless `PRINTSCAN_FAKEPRINT_URL` names fakeprint's base URL
+//! (`http://127.0.0.1:PORT`); the device is `/WebServices/Device` and the print service
+//! `/WebServices/PrinterService` on it. Loopback only: the URLs go through the same policy as any
+//! device URL, and the test also insists on a loopback address. No discovery is attempted (that would
+//! be multicast).
 //!
-//! Run: `PRINTSCAN_WSD_LIVE_URL=http://127.0.0.1:PORT/PATH cargo test -p printscan-wsd --test live_loopback`
+//! Run: `PRINTSCAN_FAKEPRINT_URL=http://127.0.0.1:PORT cargo test -p printscan-wsd --test live_loopback`
+//! (docs/testing.md).
 #![cfg(not(target_arch = "wasm32"))]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
@@ -17,17 +18,14 @@ use printscan_wsd::http::HttpTransport;
 use printscan_wsd::metadata::{self, DIALECT_RELATIONSHIP};
 use printscan_wsd::{DeviceUrl, EndpointRef, ServiceKind, SoapClient};
 
-/// The device and print-service URLs from `PRINTSCAN_WSD_LIVE_URL` (and optionally
-/// `PRINTSCAN_WSD_LIVE_DEVICE_URL`), or `None` to skip the live tests. Panics unless both are loopback.
+/// The device and print-service URLs on `PRINTSCAN_FAKEPRINT_URL`, or `None` to skip the live
+/// tests. Panics unless it is loopback.
 fn urls() -> Option<(DeviceUrl, DeviceUrl)> {
-    let service = std::env::var("PRINTSCAN_WSD_LIVE_URL").ok().filter(|u| !u.is_empty())?;
-    let service = DeviceUrl::parse(&service).expect("PRINTSCAN_WSD_LIVE_URL must be a numeric loopback/private http URL");
+    let base = std::env::var("PRINTSCAN_FAKEPRINT_URL").ok().filter(|u| !u.is_empty())?;
+    let base = base.trim_end_matches('/');
+    let at = |path: &str| DeviceUrl::parse(&format!("{base}{path}")).expect("PRINTSCAN_FAKEPRINT_URL must be a numeric loopback http URL");
+    let (device, service) = (at("/WebServices/Device"), at("/WebServices/PrinterService"));
     assert!(service.host().is_loopback(), "the live test only talks to loopback");
-    let device = match std::env::var("PRINTSCAN_WSD_LIVE_DEVICE_URL").ok().filter(|u| !u.is_empty()) {
-        Some(u) => DeviceUrl::parse(&u).expect("PRINTSCAN_WSD_LIVE_DEVICE_URL must be a numeric loopback/private http URL"),
-        None => DeviceUrl::parse(&format!("http://{}:{}/WebServices/Device", service.host(), service.port())).unwrap(),
-    };
-    assert!(device.host().is_loopback());
     Some((device, service))
 }
 

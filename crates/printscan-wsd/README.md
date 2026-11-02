@@ -140,7 +140,9 @@ device; `tests/http_transport.rs` runs the real transport against loopback
 servers (refused redirects, capped replies, timeouts, early close, refused connections, `Retry-After`
 headers); `tests/live_loopback.rs`
 checks metadata and eventing against a loopback fake device you start yourself,
-and is skipped unless `PRINTSCAN_WSD_LIVE_URL` is set. No test contacts anything but loopback.
+and `tests/wsd_live.rs` print to fakeprint and `tests/live_fakescan.rs` scans from fakescan; each is
+skipped unless its variable (`PRINTSCAN_FAKEPRINT_URL`, `PRINTSCAN_FAKESCAN_URL`) is set
+([docs/testing.md](https://github.com/b1tninja/printscan/blob/main/docs/testing.md)). No test contacts anything but loopback.
 
 ```text
 cargo test -p printscan-wsd

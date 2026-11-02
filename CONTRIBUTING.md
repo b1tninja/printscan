@@ -10,7 +10,9 @@ cargo test --workspace --all-features --locked
 
 CI runs the same on Linux, Windows and macOS, and also checks the minimum Rust version (1.95), the
 `wasm32` builds, the published packages (`cargo package --workspace`) and every dependency's
-licence and advisories (`cargo deny check`, configured in `deny.toml`).
+licence and advisories (`cargo deny check`, configured in `deny.toml`). Its `live` job runs every test
+against fakescan and fakeprint built from their repositories; [docs/testing.md](docs/testing.md) says
+how to do the same locally.
 
 ## Rules the code keeps
 

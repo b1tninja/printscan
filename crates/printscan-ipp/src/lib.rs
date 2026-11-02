@@ -41,8 +41,8 @@
 //! # Tests
 //!
 //! There is no fake printer in this crate. The unit tests here use static byte vectors and a scripted
-//! transport; the integration suite runs against a real IPP server,
-//! [fakeprint](https://github.com/b1tninja/fakeprint), outside this repository.
+//! transport. `tests/live_fakeprint.rs` prints to [fakeprint](https://github.com/b1tninja/fakeprint),
+//! a separate program, when `PRINTSCAN_FAKEPRINT_URL` names it (docs/testing.md).
 
 #![cfg(not(target_arch = "wasm32"))]
 

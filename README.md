@@ -15,8 +15,8 @@ backend registry, and the network and platform backends behind it.
 Planned: CUPS.
 
 The test devices are separate projects, so a parser bug cannot pass on both sides:
-[fakescan](https://github.com/b1tninja/fakescan) (WSD and WIA scanner) and
-[fakeprint](https://github.com/b1tninja/fakeprint) (WSD printer).
+[fakescan](https://github.com/b1tninja/fakescan) (a WSD scanner, which Windows can also use through WIA) and
+[fakeprint](https://github.com/b1tninja/fakeprint) (a WSD and IPP printer).
 
 ## Using it
 
@@ -24,7 +24,8 @@ Requires Rust 1.95. Each crate's README lists its features; with default feature
 `printscan` is the job vocabulary alone and builds for `wasm32`. Changes are in each crate's
 `CHANGELOG.md`.
 
-[CONTRIBUTING.md](CONTRIBUTING.md) has the checks a change must pass and the rules the code keeps,
+[docs/testing.md](docs/testing.md) says which fake device covers which backend and how to run the live
+tests. [CONTRIBUTING.md](CONTRIBUTING.md) has the checks a change must pass and the rules the code keeps,
 [RELEASING.md](RELEASING.md) how a version reaches crates.io, and [SECURITY.md](SECURITY.md) how to
 report a vulnerability.
 
