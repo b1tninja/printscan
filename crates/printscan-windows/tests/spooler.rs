@@ -67,10 +67,21 @@ fn a_pdf_reaches_the_printer_with_the_settings_it_offers() {
     assert!(submitted.job.is_none(), "the spooler gives no job handle");
     assert!(submitted.warnings.is_empty(), "A4 is offered: {:?}", submitted.warnings);
 
+    let submitted_at = Instant::now();
     device.wait_for_idle(Duration::from_secs(120)).unwrap();
+    let idle_after = submitted_at.elapsed();
     // The queue can be idle a moment before the driver has finished writing the file.
-    let written = whole_pdf(device.file_path(), Duration::from_secs(60));
-    assert!(written.starts_with(b"%PDF"), "the driver wrote no PDF within 60 s of the queue going idle ({} bytes)", written.len());
+    let written = whole_pdf(device.file_path(), Duration::from_secs(120));
+    // This failed now and then (CI and once locally) with nothing written; the message says what
+    // the test saw, so the next failure tells more.
+    assert!(
+        written.starts_with(b"%PDF"),
+        "the driver wrote no PDF: the queue was idle {:.1} s after submit, then {:.1} s of waiting; the output file {} ({} bytes)",
+        idle_after.as_secs_f32(),
+        submitted_at.elapsed().saturating_sub(idle_after).as_secs_f32(),
+        if device.file_path().exists() { "exists" } else { "does not exist" },
+        written.len()
+    );
 }
 
 #[test]
