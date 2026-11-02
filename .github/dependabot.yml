@@ -7,6 +7,10 @@ updates:
     groups:
       cargo:
         patterns: ["*"]
+    ignore:
+      # windows and windows-core share types with winprint, so they move when winprint does.
+      - dependency-name: "windows*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
