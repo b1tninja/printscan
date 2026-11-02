@@ -11,6 +11,7 @@
 //! is in the queue ([`WatchSupport::None`]).
 
 use std::ops::ControlFlow;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use printscan::print::backends::{Backend, BackendClass, DocumentFormat, ErrorKind, JobHint, PrintError, PrinterDetails, PrinterRef, SubmitRequest};
 use printscan::print::{ColourMode, Duplex, Job, JobOptions, Orientation, Progress, Resolution, RetrySafety, Submitted, WatchSupport};
@@ -26,6 +27,18 @@ pub const NAME: &str = "spooler";
 
 /// How far a paper size may differ from the one asked for, in micrometres (drivers round).
 const PAPER_TOLERANCE: u32 = 1_000;
+
+/// Keeps two threads of this process out of the Windows PrintTicket provider (`PTOpenProvider` and
+/// the calls on its handle) at the same time. The process's first calls create a cache in winspool
+/// without a lock, and two threads making them together can leave winspool holding freed memory: a
+/// later call crashes or misbehaves. Every call here that reaches the provider holds it.
+static PRINT_TICKET_PROVIDER: Mutex<()> = Mutex::new(());
+
+/// Holds [`PRINT_TICKET_PROVIDER`] until the guard is dropped. A lock a panicking thread held is
+/// taken like any other.
+fn print_ticket_provider() -> MutexGuard<'static, ()> {
+    PRINT_TICKET_PROVIDER.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// The Windows print spooler. Register it with a [`printscan::print::Registry`].
 #[derive(Clone, Copy, Debug, Default)]
@@ -106,8 +119,12 @@ impl Backend for WindowsSpooler {
 
         let cancel = request.cancel.clone();
         let mut report = request.progress;
+        // winprint turns the ticket into a DEVMODE through the provider before the first progress
+        // report, which releases the guard; a job that fails before it releases it on return.
+        let mut provider = Some(print_ticket_provider());
         let outcome = WinPdfPrinter::new(device.clone())
             .print_with_progress(&path, ticket, &mut |progress| {
+                drop(provider.take());
                 if let Some(report) = report.as_mut() {
                     report(Progress::new(progress.current(), Some(progress.total())));
                 }
@@ -148,6 +165,7 @@ fn device(name: Option<&str>) -> Result<PrinterDevice, PrintError> {
 }
 
 fn capabilities(device: &PrinterDevice) -> Result<PrintCapabilities, PrintError> {
+    let _provider = print_ticket_provider();
     PrintCapabilities::fetch(device).map_err(|e| failed("reading the printer's capabilities", &e))
 }
 
@@ -171,6 +189,8 @@ fn ticket(
     job: &Job,
     options: &JobOptions,
 ) -> Result<(PrintTicket, Vec<String>), PrintError> {
+    // Declared before the builder, so the builder closes its provider handle before it is released.
+    let _provider = print_ticket_provider();
     let mut builder = PrintTicketBuilder::new(device).map_err(|e| failed("building the print ticket", &e))?;
     let mut warnings = Vec::new();
     let merge = |builder: &mut PrintTicketBuilder, ticket: PrintTicket| builder.merge(ticket).map_err(|e| failed("building the print ticket", &e));
@@ -281,6 +301,41 @@ mod tests {
         assert_eq!(pwg_size("na_letter_8.5x11pt"), None);
         assert_eq!(pwg_size("x_0x10mm"), None);
         assert_eq!(pwg_size("x_NaNx10mm"), None);
+    }
+
+    #[test]
+    fn one_thread_at_a_time_is_in_the_print_ticket_provider() {
+        use std::sync::Barrier;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        const THREADS: usize = 12;
+        let inside = AtomicUsize::new(0);
+        let most = AtomicUsize::new(0);
+        let start = Barrier::new(THREADS);
+        std::thread::scope(|s| {
+            for _ in 0..THREADS {
+                s.spawn(|| {
+                    start.wait();
+                    for _ in 0..20 {
+                        let _provider = print_ticket_provider();
+                        most.fetch_max(inside.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                        inside.fetch_sub(1, Ordering::SeqCst);
+                    }
+                });
+            }
+        });
+        assert_eq!(most.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_panic_inside_the_print_ticket_provider_does_not_lock_it_out() {
+        let panicked = std::thread::spawn(|| {
+            let _provider = print_ticket_provider();
+            panic!("a driver call panicked");
+        })
+        .join();
+        assert!(panicked.is_err());
+        drop(print_ticket_provider());
     }
 
     /// The backend lists this machine's printers and reads one's capabilities (needs a printer

@@ -4,7 +4,8 @@
 
 #![cfg(all(windows, feature = "print"))]
 
-use std::time::Duration;
+use std::path::Path;
+use std::time::{Duration, Instant};
 
 use printscan::print::backends::{Backend, Document, ErrorKind, SubmitRequest};
 use printscan::print::{CancelToken, Job, JobOptions};
@@ -34,6 +35,20 @@ fn one_page_pdf() -> Vec<u8> {
     pdf
 }
 
+/// The file at `path` once it is a whole PDF (it ends with `%%EOF` and an optional line end), or
+/// what it holds when `limit` runs out.
+fn whole_pdf(path: &Path, limit: Duration) -> Vec<u8> {
+    let started = Instant::now();
+    loop {
+        let written = std::fs::read(path).unwrap_or_default();
+        let whole = [&b"%%EOF"[..], b"%%EOF\n", b"%%EOF\r\n"].iter().any(|end| written.ends_with(end));
+        if whole || started.elapsed() > limit {
+            return written;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
 fn job_for(device: &FilePrinterDevice<Pdf>) -> Job {
     Job { printer: Some(device.device().name().to_owned()), title: "printscan spooler test".into(), ..Job::default() }
 }
@@ -54,25 +69,8 @@ fn a_pdf_reaches_the_printer_with_the_settings_it_offers() {
 
     device.wait_for_idle(Duration::from_secs(120)).unwrap();
     // The queue can be idle a moment before the driver has finished writing the file.
-    let started = std::time::Instant::now();
-    let written = loop {
-        let written = std::fs::read(device.file_path()).unwrap_or_default();
-        if written.ends_with(b"%%EOF")
-            || written.ends_with(
-                b"%%EOF
-",
-            )
-            || written.ends_with(
-                b"%%EOF
-",
-            )
-            || started.elapsed() > Duration::from_secs(60)
-        {
-            break written;
-        }
-        std::thread::sleep(Duration::from_millis(200));
-    };
-    assert!(written.starts_with(b"%PDF"), "the driver wrote a PDF ({} bytes)", written.len());
+    let written = whole_pdf(device.file_path(), Duration::from_secs(60));
+    assert!(written.starts_with(b"%PDF"), "the driver wrote no PDF within 60 s of the queue going idle ({} bytes)", written.len());
 }
 
 #[test]
