@@ -4,8 +4,8 @@ use std::fmt;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use printscan::scan::{
-    self, Acquired, Backend, Connection, HandlingStatus, ImageChoices, InterruptKind, Page, ScanError, ScanSettings, Scanner, ScannerRef, Source,
-    ValueSpan, bw,
+    self, Acquired, Area, Backend, Connection, HandlingStatus, ImageChoices, InterruptKind, Page, ScanError, ScanSettings, Scanner, ScannerRef,
+    Source, ValueSpan, bw,
 };
 
 use super::client::{self, Client, Section};
@@ -229,8 +229,8 @@ fn scanner(entry: &Entry, elements: &ScannerElements) -> Scanner {
     scanner.port = Some(url);
     scanner.optical_x = optical.map(|o| o.0);
     scanner.optical_y = optical.map(|o| o.1);
-    scanner.bed = platen.and_then(|p| p.maximum);
-    scanner.sheet = feeder.and_then(|f| f.front.maximum);
+    scanner.bed = platen.and_then(|p| p.maximum).map(Area::from);
+    scanner.sheet = feeder.and_then(|f| f.front.maximum).map(Area::from);
     scanner.glass = platen.map(|p| choices(p, &config));
     scanner.feeder_choices = feeder.map(|f| choices(&f.front, &config));
     scanner

@@ -469,7 +469,7 @@ impl ErrorContext {
 /// `ScanError`'s `Display` text is unchanged; this sits beside it. The kind, phase, recovery flags
 /// and message are neutral; `native` carries the backend's own code for logs and diagnostics.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct ScanErrorInfo {
     /// The backend's own error code, when the error carried one. A sentence an app decided on from

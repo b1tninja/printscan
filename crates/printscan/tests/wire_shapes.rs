@@ -1,10 +1,11 @@
-//! The `serde` shapes of the scanner description and the page and error records are the ones the apps' CLI and
-//! bindings printed with hand-written JSON. The functions below are that JSON, kept as the reference: what
-//! `serde_json::to_value` gives must equal it, value for value.
+//! The derived `serde` shapes of the scanner description and the page and error records carry everything the
+//! apps' CLI and bindings printed with hand-written JSON. The `*_json` functions below are that JSON, kept as the
+//! reference; the `cli_*` functions are what an app adds to the derived value (computed fields, flags instead of
+//! the tri-state, no `reported`) to print exactly that, the way it decorates any library value it embeds.
 
 use printscan::scan::{
-    Color, Connection, HandlingStatus, ImageChoices, Intent, InterruptKind, LengthRecord, LengthSource, NativeCode, PageLengthSupport, PageSize,
-    Presence, Rotation, ScanError, ScanErrorInfo, Scanner, Source, ValueSpan,
+    Area, Color, Connection, HandlingStatus, ImageChoices, Intent, InterruptKind, LengthRecord, LengthSource, NativeCode, PageLengthSupport,
+    PageSize, Presence, Rotation, ScanError, ScanErrorInfo, Scanner, Source, ValueSpan,
 };
 use serde_json::{Value, json};
 
@@ -12,8 +13,8 @@ fn span_json(span: Option<ValueSpan>) -> Value {
     span.map(|span| json!({ "min": span.min, "max": span.max, "step": span.step })).unwrap_or(Value::Null)
 }
 
-fn area_json(area: Option<(u32, u32)>) -> Value {
-    area.map(|(width, height)| json!({ "width": width, "height": height })).unwrap_or(Value::Null)
+fn area_json(area: Option<Area>) -> Value {
+    area.map(|area| json!({ "width": area.width, "height": area.height })).unwrap_or(Value::Null)
 }
 
 fn status_json(status: &HandlingStatus) -> Value {
@@ -135,8 +136,8 @@ fn full_scanner() -> Scanner {
     scanner.optical_x = Some(600);
     scanner.optical_y = Some(1200);
     scanner.pages = Some(ValueSpan::new(0, 50, 1));
-    scanner.bed = Some((8500, 11690));
-    scanner.sheet = Some((8500, 14000));
+    scanner.bed = Some(Area::new(8500, 11690));
+    scanner.sheet = Some(Area::new(8500, 14000));
     scanner.glass = Some(full_choices());
     scanner.feeder_choices = Some(ImageChoices::default());
     scanner.reported.units = true;
@@ -145,15 +146,41 @@ fn full_scanner() -> Scanner {
     scanner
 }
 
-#[test]
-fn a_scanner_serializes_as_the_cli_and_bindings_print_it() {
-    for scanner in [full_scanner(), Scanner::new("wsd:http://192.0.2.10/scan", "Network scanner"), Scanner::default()] {
-        assert_eq!(serde_json::to_value(&scanner).unwrap(), scanner_json(&scanner), "{}", scanner.name);
-    }
+/// The derived scanner, as the CLI prints it: the handling flags as plain booleans, the conditions and the page
+/// length support of each source added, and `reported` left out.
+fn cli_scanner(scanner: &Scanner) -> Value {
+    let mut v = serde_json::to_value(scanner).unwrap();
+    v["handling_status"] = status_json(&scanner.handling_status);
+    v["conditions"] = json!(scanner.handling_status.conditions());
+    v["page_length"] = json!({ "glass": scanner.length_support(Source::Glass), "feeder": scanner.length_support(Source::Feeder) });
+    v.as_object_mut().unwrap().remove("reported");
+    v
 }
 
 #[test]
-fn a_length_record_serializes_with_its_lengths_and_reads_back() {
+fn a_scanner_derives_what_the_cli_and_bindings_print() {
+    for scanner in [full_scanner(), Scanner::new("wsd:http://192.0.2.10/scan", "Network scanner"), Scanner::default()] {
+        assert_eq!(cli_scanner(&scanner), scanner_json(&scanner), "{}", scanner.name);
+    }
+    // What the derive writes on its own: the fields by their Rust names, the tri-state, what was reported.
+    let v = serde_json::to_value(full_scanner()).unwrap();
+    assert_eq!(v["bed"], json!({ "width": 8500, "height": 11690 }));
+    assert_eq!(v["handling_status"]["feeder_ready"], json!(true));
+    assert_eq!(v["reported"]["glass_length"], json!({ "device_detect": "absent", "max_length_mils": 11690 }));
+    assert_eq!(v["glass"]["rotation"], json!(["portrait", "landscape", "180", "270"]));
+    assert_eq!(serde_json::to_value(Scanner::default()).unwrap()["handling_status"]["feeder_ready"], Value::Null);
+}
+
+/// The derived length record with the lengths in inches and millimetres the CLI adds.
+fn cli_length(record: &LengthRecord) -> Value {
+    let mut v = serde_json::to_value(record).unwrap();
+    v["length_inches"] = json!(record.length_inches().map(|inches| (inches * 1000.0).round() / 1000.0));
+    v["length_mm"] = json!(record.length_mm().map(|mm| (mm * 10.0).round() / 10.0));
+    v
+}
+
+#[test]
+fn a_length_record_derives_what_the_cli_prints_and_reads_back() {
     let records = [
         LengthRecord::from_delivered(3300, 300),
         LengthRecord::with_source(4321, 300, LengthSource::Inferred),
@@ -161,14 +188,23 @@ fn a_length_record_serializes_with_its_lengths_and_reads_back() {
         LengthRecord::default(),
     ];
     for record in records {
-        let value = serde_json::to_value(record).unwrap();
-        assert_eq!(value, scan_length_json(&record), "{record:?}");
-        assert_eq!(serde_json::from_value::<LengthRecord>(value).unwrap(), record);
+        assert_eq!(cli_length(&record), scan_length_json(&record), "{record:?}");
+        // The printed record reads back too: what the CLI added is ignored.
+        assert_eq!(serde_json::from_value::<LengthRecord>(cli_length(&record)).unwrap(), record);
     }
 }
 
+/// The derived error record as the CLI prints it: the HRESULT in hex and its name, without the native code.
+fn cli_error(info: &ScanErrorInfo) -> Value {
+    let mut v = serde_json::to_value(info).unwrap();
+    v["hresult"] = json!(info.hresult_hex());
+    v["code_name"] = json!(info.code_name());
+    v.as_object_mut().unwrap().remove("native");
+    v
+}
+
 #[test]
-fn an_error_record_carries_the_fields_the_cli_printed_and_reads_back() {
+fn an_error_record_derives_what_the_cli_prints_and_reads_back() {
     let jam = ScanError::Native {
         kind: InterruptKind::Jam,
         native: Some(NativeCode::hresult(0x8021_0002, Some("WIA_ERROR_PAPER_JAM"))),
@@ -177,11 +213,7 @@ fn an_error_record_carries_the_fields_the_cli_printed_and_reads_back() {
     let http = ScanError::Native { kind: InterruptKind::Other, native: Some(NativeCode::new("http", 503, None)), message: "busy".into() };
     for error in [jam, http, ScanError::Failed("no".into()), ScanError::Unsupported] {
         let info = ScanErrorInfo::new(&error, Default::default());
-        let value = serde_json::to_value(&info).unwrap();
-        let mut want = scan_error_info_json(&info);
-        // The record also keeps the backend's own code, as it always has.
-        want["native"] = serde_json::to_value(info.native).unwrap();
-        assert_eq!(value, want, "{error}");
-        assert_eq!(serde_json::from_value::<ScanErrorInfo>(value).unwrap(), info);
+        assert_eq!(cli_error(&info), scan_error_info_json(&info), "{error}");
+        assert_eq!(serde_json::from_value::<ScanErrorInfo>(serde_json::to_value(&info).unwrap()).unwrap(), info);
     }
 }

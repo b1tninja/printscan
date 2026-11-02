@@ -33,8 +33,6 @@ pub mod density;
 pub mod job;
 pub mod length;
 pub mod trace;
-#[cfg(feature = "serde")]
-mod wire;
 
 /// The vocabulary shared with the print side lives in printscan::job; these are the same names and wire formats this
 /// crate has always exported (`"<backend>:<native id>"`, the native error code).
@@ -172,12 +170,16 @@ impl Color {
 
 /// How the page is turned. The values are the driver's rotation codes, not degrees.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
 #[non_exhaustive]
 pub enum Rotation {
     #[default]
     Portrait,
     Landscape,
+    #[cfg_attr(feature = "serde", serde(rename = "180"))]
     UpsideDown,
+    #[cfg_attr(feature = "serde", serde(rename = "270"))]
     Left,
 }
 
@@ -227,6 +229,7 @@ impl Rotation {
 
 /// A WIA range: `min`, `max`, and `step`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct ValueSpan {
     pub min: i32,
@@ -442,6 +445,7 @@ impl Connection {
 /// `None` it cannot tell. A backend whose conditions are only known after the fact (SANE) reports
 /// them as errors instead ([`ScanError::Native`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct HandlingStatus {
     /// Paper is loaded in the feeder; `None` when not reported.
@@ -831,6 +835,7 @@ impl ProgressToken {
 
 /// What one source (the bed or the feeder) offers. Empty means the driver did not publish a list.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct ImageChoices {
     pub dpi: Vec<u32>,
@@ -881,6 +886,7 @@ pub fn spanned_values(raw: &[i32]) -> Option<ValueSpan> {
 ///
 /// A backend starts from [`Self::new`] and sets what the device published.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct Scanner {
     pub id: String,
@@ -905,9 +911,9 @@ pub struct Scanner {
     /// when the driver does not publish a range.
     pub pages: Option<ValueSpan>,
     /// Bed width and height in thousandths of an inch, when the driver publishes them.
-    pub bed: Option<(u32, u32)>,
+    pub bed: Option<Area>,
     /// Sheet-feeder width and height in thousandths of an inch.
-    pub sheet: Option<(u32, u32)>,
+    pub sheet: Option<Area>,
     pub glass: Option<ImageChoices>,
     pub feeder_choices: Option<ImageChoices>,
     /// What the driver actually answered. `Reported::default()` (nothing answered) makes every plain
@@ -915,8 +921,32 @@ pub struct Scanner {
     pub reported: Reported,
 }
 
+/// A width and height in thousandths of an inch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[non_exhaustive]
+pub struct Area {
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Area {
+    /// `width` by `height`, in thousandths of an inch.
+    pub const fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
+    }
+}
+
+impl From<(u32, u32)> for Area {
+    fn from((width, height): (u32, u32)) -> Self {
+        Self::new(width, height)
+    }
+}
+
 /// Whether a device has something. A plain `false` or empty list cannot say which of the last two.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 #[non_exhaustive]
 pub enum Presence {
     /// The driver did not say (or the read failed).
@@ -944,6 +974,8 @@ impl Presence {
 
 /// One list or range option of an item ([`ImageChoices`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 #[non_exhaustive]
 pub enum ChoiceField {
     Dpi,
@@ -961,6 +993,7 @@ pub enum ChoiceField {
 /// What a backend could actually read, so a consumer can tell "the driver published nothing for
 /// this" from "the driver was not asked or the read failed". All defaults mean "unknown".
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct Reported {
     /// The document-handling capability bits were read, so `feeder`, `flatbed` and `duplex` being

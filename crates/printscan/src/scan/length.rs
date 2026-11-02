@@ -142,7 +142,7 @@ impl LengthSource {
 
 /// The length of one delivered page and where it came from ([`Page::length`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(default))]
 #[non_exhaustive]
 pub struct LengthRecord {
@@ -193,6 +193,7 @@ pub fn rows_for_mils(mils: u32, dpi: u32) -> u32 {
 /// What a device publishes about the length of a page, per item (glass or feeder). Every default means
 /// "unknown".
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct PageLengthSupport {
     /// The device can detect the sheet length itself. [`Presence::Present`] only when the property or

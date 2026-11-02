@@ -194,8 +194,7 @@ fn the_page_length_wire_strings_and_the_per_page_record_survive_the_journal() {
         built
     };
     let text = round(&record);
-    // The lengths in inches and millimetres are written for readers; reading back ignores them.
-    assert_eq!(text, r#"{"source":"inferred","length_mils":10730,"length_inches":10.73,"length_mm":272.5,"approximate":true}"#);
+    assert_eq!(text, r#"{"source":"inferred","length_mils":10730,"approximate":true}"#);
     let info = {
         let mut built = PageInfo::default();
         built.number = 1;
