@@ -142,7 +142,7 @@ impl LengthSource {
 
 /// The length of one delivered page and where it came from ([`Page::length`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(default))]
 #[non_exhaustive]
 pub struct LengthRecord {

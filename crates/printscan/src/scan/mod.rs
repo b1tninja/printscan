@@ -33,6 +33,8 @@ pub mod density;
 pub mod job;
 pub mod length;
 pub mod trace;
+#[cfg(feature = "serde")]
+mod wire;
 
 /// The vocabulary shared with the print side lives in printscan::job; these are the same names and wire formats this
 /// crate has always exported (`"<backend>:<native id>"`, the native error code).

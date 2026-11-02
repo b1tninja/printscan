@@ -121,6 +121,12 @@ is off by default and changes nothing in a default build. The crate itself never
   `JobKind`, `Severity`, `RetrySafety`, `RetryAdvice`, `TagSupport` and `PaperSource` have no such fallback and
   fail on an unknown value: a retry rule is not guessed.
 * Round-trip tests live in `tests/serde_roundtrip.rs` (`serde_json` is a dev-dependency only).
+* **Scanner descriptions and scan records** are in the shapes the apps' CLI and bindings printed by hand, so
+  an app serializes them and writes no JSON of its own (`tests/wire_shapes.rs` keeps that JSON as the
+  reference). `Scanner` is written only: its fields plus `conditions` and `page_length` (`{glass, feeder}`),
+  `handling_status` as the nine flags, `bed` and `sheet` as `{width, height}`, ranges as `{min, max, step}`.
+  `LengthRecord` adds `length_inches` and `length_mm`, `ScanErrorInfo` adds `hresult` (`"0x80210006"`) and
+  `code_name`; both read back, ignoring what was added.
 
 ## Migration
 
