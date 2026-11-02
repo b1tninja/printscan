@@ -47,7 +47,7 @@ log = { version = "0.4", optional = true }
 winprint = { version = "0.3.1", default-features = false, optional = true }
 tempfile = { version = "3", optional = true }
 # The implement macro names windows-core; it is the same one the windows crate (and winprint) use.
-windows-core = { version = "0.62", optional = true }
+windows-core = { version = "0.100", optional = true }
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Devices_ImageAcquisition",
