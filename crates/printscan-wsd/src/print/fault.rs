@@ -14,6 +14,7 @@ use super::ns;
 
 /// The sub-code of a fault.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FaultCode {
     /// `wsa:ActionNotSupported`: the endpoint does not know the action.
     ActionNotSupported,
@@ -104,6 +105,7 @@ pub use super::adapter::Role;
 
 /// A parsed fault.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Fault {
     pub role: Role,
     pub code: FaultCode,

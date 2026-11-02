@@ -10,6 +10,7 @@ use crate::xml::QName;
 
 /// A kind of WSD service this core can find and address.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ServiceKind {
     Print,
     Scan,
@@ -17,6 +18,7 @@ pub enum ServiceKind {
 
 /// The identifying facts of one service kind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ServiceDescriptor {
     pub kind: ServiceKind,
     /// Lowercase name, stable for logs and tool output.

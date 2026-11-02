@@ -9,6 +9,7 @@ use printscan::print::{ErrorKind, NativeCode, Phase, PrintError, RetrySafety};
 
 /// Everything that can go wrong, as values an interface can show and an agent can act on.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum WsdError {
     /// The network policy refused (see `policy`): the URL, or a missing confirmation.
     Policy(String),
@@ -246,7 +247,7 @@ impl WsdError {
         }
         if let Self::Fault(f) = self {
             let (code, name) = f.code.native();
-            error = error.with_native(NativeCode { domain: "wsd-fault", code, name });
+            error = error.with_native(NativeCode::new("wsd-fault", code, name));
             // The printer answered and named the job as unknown: the printer is fine, the job is gone.
             if f.code == FaultCode::ClientErrorJobIdNotFound {
                 error = error.with_subject(printscan::print::NotFoundSubject::Job);
@@ -260,6 +261,7 @@ impl WsdError {
 /// the request is safe: a query or a cancel may be repeated, a create or a send may not (the first
 /// one may have arrived).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Op {
     /// `GetPrinterElements`, `GetActiveJobs`, `GetJobHistory`: reads.
     Query,
@@ -284,6 +286,7 @@ impl Op {
 
 /// How an error reads to a caller; see [`WsdError::classify`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Class {
     pub kind: ErrorKind,
     pub phase: Phase,

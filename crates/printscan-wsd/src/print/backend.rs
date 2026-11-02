@@ -325,10 +325,12 @@ impl WsdBackend {
     fn options(&self, job: &Job, per_job: &JobOptions, tag: Option<&Tag>) -> (PrintOptions, Vec<String>) {
         let mut notes = Vec::new();
         let config = &*self.config;
-        let sides = job.duplex.map(|d| match d {
-            Duplex::Off => Sides::OneSided,
-            Duplex::LongEdge => Sides::TwoSidedLongEdge,
-            Duplex::ShortEdge => Sides::TwoSidedShortEdge,
+        let sides = job.duplex.and_then(|d| match d {
+            Duplex::Off => Some(Sides::OneSided),
+            Duplex::LongEdge => Some(Sides::TwoSidedLongEdge),
+            Duplex::ShortEdge => Some(Sides::TwoSidedShortEdge),
+            // A mode this backend does not know: the printer's default.
+            _ => None,
         });
         if job.scaling == Scaling::ShrinkToFit {
             notes.push("scaling is not applied: the document is sent as it is".to_owned());
@@ -405,6 +407,7 @@ impl WsdBackend {
 
 /// The printer and job number a `wsd` job id names; see [`WsdBackend::parse_native`].
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct WsdJob {
     /// The canonical printer URL, the native id of the printer.
     pub printer_url: String,
@@ -459,14 +462,11 @@ fn details_of(entry: &Entry, elements: PrinterElements) -> PrinterDetails {
     let id = entry.url.as_url();
     let description = elements.description.unwrap_or_default();
     let name = [Some(description.name.as_str()), entry.name.as_deref()].into_iter().flatten().find(|n| !n.is_empty()).unwrap_or(&id).to_owned();
-    let mut details = PrinterDetails {
-        id: id.clone(),
-        name,
-        default: false,
-        colour: description.color_supported,
-        honoured: Some(HONOURED.to_vec()),
-        ..PrinterDetails::default()
-    };
+    let mut details = PrinterDetails::default();
+    details.id = id.clone();
+    details.name = name;
+    details.colour = description.color_supported;
+    details.honoured = Some(HONOURED.to_vec());
     if let Some(caps) = elements.capabilities {
         for format in caps.formats.iter().filter_map(|f| document_format(f)) {
             if !details.formats.contains(&format) {
@@ -478,7 +478,7 @@ fn details_of(entry: &Entry, elements: PrinterElements) -> PrinterDetails {
         details.max_copies = caps.copies.map(|(_, max)| max);
         details.resolutions = caps.resolutions.iter().map(|(x, y)| Resolution::new(*x, *y)).collect();
     }
-    details.status = elements.status.and_then(|s| printer_state(&s.state).map(|state| PrinterStatus { state, reasons: printer_reasons(s.reasons) }));
+    details.status = elements.status.and_then(|s| printer_state(&s.state).map(|state| PrinterStatus::new(state, printer_reasons(s.reasons))));
     details
 }
 
@@ -509,7 +509,7 @@ impl Backend for WsdBackend {
             .into_iter()
             .map(|e| {
                 let id = e.url.as_url();
-                PrinterRef { name: e.name.unwrap_or_else(|| id.clone()), id, default: false, two_sided: None }
+                PrinterRef::new(id.clone(), e.name.unwrap_or(id))
             })
             .collect())
     }
@@ -535,7 +535,7 @@ impl Backend for WsdBackend {
     /// written is [`printscan::print::RetrySafety::OutcomeUnknown`] (the job may exist) and the backend then
     /// leaves any created job alone; call [`WsdBackend::reconcile`] before submitting again.
     fn submit(&self, request: SubmitRequest<'_>) -> Result<Submitted, PrintError> {
-        let SubmitRequest { document, job, options: per_job, consent, cancel, progress, tag } = request;
+        let SubmitRequest { document, job, options: per_job, consent, cancel, progress, tag, .. } = request;
         // The registry checks this too; a caller that holds the backend directly gets the same answer.
         let Some(consent) = consent else {
             return Err(PrintError::new(
@@ -647,7 +647,12 @@ impl Backend for WsdBackend {
 
     /// Active jobs and history, with the user; no creation time (job summaries do not carry one).
     fn job_query_caps(&self) -> JobQueryCaps {
-        JobQueryCaps { list: true, created_time: false, user: true, tag: self.config.ticket_shape.carries_name(), history: true }
+        let mut caps = JobQueryCaps::default();
+        caps.list = true;
+        caps.user = true;
+        caps.tag = self.config.ticket_shape.carries_name();
+        caps.history = true;
+        caps
     }
 
     /// `GetActiveJobs` and `GetJobHistory` (two idempotent reads; a service without
@@ -726,6 +731,7 @@ fn neutral_status(status: &model::JobStatus) -> JobStatus {
 
 /// The result of [`WsdBackend::reconcile`].
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Reconciled {
     /// The printer lists no job with this name from this backend's user: as far as it can tell, the
     /// document did not arrive, and submitting again will not duplicate it.
@@ -739,6 +745,7 @@ pub enum Reconciled {
 
 /// A job found by [`WsdBackend::reconcile`].
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct JobMatch {
     /// The registry's id for the job (`wsd:<printer url>#<id>`), usable with `job_status` and
     /// `cancel_job` of a [`printscan::print::Registry`] that holds this backend.

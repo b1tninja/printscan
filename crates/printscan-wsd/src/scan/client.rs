@@ -12,6 +12,7 @@ use crate::{CancelToken, DeviceUrl, Error, NetworkLimits, Result, SoapClient, Tr
 
 /// A section of `GetScannerElements`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Section {
     Description,
     Configuration,

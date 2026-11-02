@@ -125,8 +125,11 @@ fn a_large_document_gets_upload_time_on_top_of_the_limit() {
     // Get-Printer-Attributes with the plain one.
     let script = Script::new();
     script.ok(vec![printer_group()]).ok(accepted(7));
-    let client = Client::new(script.clone(), PrinterUri::parse(URI).unwrap())
-        .with_limits(super::NetworkLimits { timeout: base, ..super::NetworkLimits::default() });
+    let client = Client::new(script.clone(), PrinterUri::parse(URI).unwrap()).with_limits({
+        let mut built = super::NetworkLimits::default();
+        built.timeout = base;
+        built
+    });
     client.get_printer_attributes(&[]).unwrap();
     let document = vec![0u8; 6_553_600];
     client.print_job(&super::client::JobRequest::default(), &document).unwrap();
@@ -226,7 +229,7 @@ fn id() -> String {
 
 /// A job titled "Report" for the test printer.
 fn job() -> Job {
-    Job { printer: Some(id()), title: "Report".into(), ..Job::default() }
+    Job::default().with_printer(id()).with_title("Report")
 }
 
 /// A submit request for `job` with a small PDF and interactive consent.
@@ -288,17 +291,14 @@ fn only_added_printers_can_be_reached_and_nothing_is_sent_for_the_others() {
     let r = registry(&b);
     let other = "ipp:ipp://127.0.0.1:9999/ipp/print";
     assert_eq!(r.printer_details(other).unwrap_err().kind(), ErrorKind::NotFound);
-    assert_eq!(r.submit_job(request(Job { printer: Some(other.into()), ..Job::default() })).unwrap_err().kind(), ErrorKind::NotFound);
-    assert_eq!(r.submit_job(request(Job { printer: None, ..Job::default() })).unwrap_err().kind(), ErrorKind::NotFound);
-    assert_eq!(
-        r.submit_job(request(Job { printer: Some("127.0.0.1:631/x".into()), ..Job::default() })).unwrap_err().kind(),
-        ErrorKind::UnknownBackend
-    );
+    assert_eq!(r.submit_job(request(Job::default().with_printer(other))).unwrap_err().kind(), ErrorKind::NotFound);
+    assert_eq!(r.submit_job(request(Job::default())).unwrap_err().kind(), ErrorKind::NotFound);
+    assert_eq!(r.submit_job(request(Job::default().with_printer("127.0.0.1:631/x"))).unwrap_err().kind(), ErrorKind::UnknownBackend);
     let no_consent = SubmitRequest::new(Document::pdf(PDF), job());
     assert_eq!(r.submit_job(no_consent).unwrap_err().kind(), ErrorKind::ConsentRequired);
     assert!(script.requests().is_empty());
     // The backend itself checks consent too.
-    let direct = SubmitRequest::new(Document::pdf(PDF), Job { printer: Some(URI.into()), ..Job::default() });
+    let direct = SubmitRequest::new(Document::pdf(PDF), Job::default().with_printer(URI));
     assert_eq!(b.submit(direct).unwrap_err().kind(), ErrorKind::ConsentRequired);
 }
 
@@ -439,7 +439,7 @@ fn a_document_is_submitted_with_print_job_and_the_job_is_named() {
     let tag = Tag::random();
     let events = Mutex::new(Vec::new());
     let mut record = |p: printscan::print::Progress| events.lock().unwrap().push(p);
-    let job = Job { copies: 2, duplex: Some(Duplex::LongEdge), ..job() };
+    let job = job().with_copies(2).with_duplex(Duplex::LongEdge);
     let req = SubmitRequest::new(Document::pdf(PDF), job)
         .with_consent(UserConfirmed::interactive())
         .with_options(JobOptions::new().with_quality(Quality::High).with_media("iso_a4_210x297mm"))
@@ -485,7 +485,7 @@ fn ignored_attributes_become_warnings_and_strict_mode_asks_for_fidelity() {
     // A setting the printer lists as unsupported is refused before the job goes out.
     script.ok(vec![printer_group()]);
     let before = script.requests().len();
-    let e = registry(&strict).submit_job(request(Job { copies: 500, ..job() })).unwrap_err();
+    let e = registry(&strict).submit_job(request(job().with_copies(500))).unwrap_err();
     assert_eq!((e.kind(), e.retry_safety()), (ErrorKind::InvalidRequest, RetrySafety::Safe));
     assert_eq!(script.requests().len(), before + 1, "only the attributes were read");
 }
@@ -495,7 +495,7 @@ fn unlisted_settings_are_dropped_with_a_warning_in_lenient_mode() {
     let script = Script::new();
     let b = backend(&script);
     script.ok(vec![printer_group()]).ok(accepted(2));
-    let submitted = registry(&b).submit_job(request(Job { copies: 500, ..job() })).unwrap();
+    let submitted = registry(&b).submit_job(request(job().with_copies(500))).unwrap();
     assert!(submitted.warnings.iter().any(|w| w.contains("lowered to 99")), "{:?}", submitted.warnings);
     assert_eq!(script.last().group(GroupTag::Job).unwrap().first_i32("copies"), Some(99));
 }
@@ -511,7 +511,7 @@ fn scaling_printer() -> Group {
 fn shrink_to_fit_travels_as_print_scaling_to_a_printer_that_lists_it() {
     let script = Script::new();
     let b = backend(&script);
-    let shrink = Job { scaling: printscan::print::Scaling::ShrinkToFit, ..job() };
+    let shrink = job().with_scaling(printscan::print::Scaling::ShrinkToFit);
     script.ok(vec![scaling_printer()]).ok(accepted(21));
     let submitted = registry(&b).submit_job(request(shrink.clone())).unwrap();
     assert!(submitted.warnings.is_empty(), "{:?}", submitted.warnings);
@@ -620,9 +620,7 @@ fn a_format_the_printer_does_not_list_is_refused_before_the_job_is_sent() {
     let b = backend(&script);
     script.ok(vec![printer_group()]);
     let doc = Document::new(DocumentFormat::Png, b"\x89PNG\r\n\x1a\n");
-    let e = b
-        .submit(SubmitRequest::new(doc, Job { printer: Some(URI.into()), ..Job::default() }).with_consent(UserConfirmed::interactive()))
-        .unwrap_err();
+    let e = b.submit(SubmitRequest::new(doc, Job::default().with_printer(URI)).with_consent(UserConfirmed::interactive())).unwrap_err();
     assert_eq!((e.kind(), e.retry_safety(), e.phase()), (ErrorKind::UnsupportedFormat, RetrySafety::Safe, Some(Phase::Prepare)));
     assert_eq!(script.ops(), [0x000B]);
 }
@@ -633,7 +631,7 @@ fn a_cancelled_token_stops_before_anything_is_sent() {
     let b = backend(&script);
     let token = CancelToken::new();
     token.cancel();
-    let e = b.submit(request(Job { printer: Some(URI.into()), ..job() }).with_cancel(token)).unwrap_err();
+    let e = b.submit(request(job().with_printer(URI)).with_cancel(token)).unwrap_err();
     assert_eq!(e.kind(), ErrorKind::Cancelled);
     assert!(script.requests().is_empty());
 }
@@ -1252,7 +1250,11 @@ fn hostile_replies_are_failures_not_panics() {
 #[test]
 fn a_reply_over_the_size_limit_is_refused() {
     let script = Script::new();
-    let b = backend(&script).with_limits(super::NetworkLimits { max_response: 200, ..super::NetworkLimits::default() });
+    let b = backend(&script).with_limits({
+        let mut built = super::NetworkLimits::default();
+        built.max_response = 200;
+        built
+    });
     let bytes = reply_bytes(vec![printer_group()]);
     assert!(bytes.len() > 200);
     script.push(Step::Raw(bytes));
@@ -1545,7 +1547,7 @@ fn control_characters_in_the_title_never_reach_the_job_name_and_the_tag_is_added
         let script = Script::new();
         let b = backend(&script);
         script.ok(vec![printer_group()]).ok(accepted(1));
-        let mut req = request(Job { title: title.into(), ..job() });
+        let mut req = request(job().with_title(title));
         if let Some(tag) = tag {
             req = req.with_tag(tag);
         }

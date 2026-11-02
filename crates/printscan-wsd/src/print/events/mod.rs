@@ -44,6 +44,7 @@ pub const MAX_CONNECTION_DEADLINE: Duration = Duration::from_secs(300);
 /// The numbers the listener and the manager run on. The defaults are what the design note says;
 /// tests (and apps with a reason) change them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EventTuning {
     /// The lease asked for in `Subscribe` and `Renew`. Default 10 minutes.
     pub lease: Duration,
@@ -183,6 +184,7 @@ fn check_addresses(bind: SocketAddr, advertise: &PrinterUrl) -> Result<(), Print
 
 /// One printer's subscription, as plain data.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SubscriptionInfo {
     /// The printer's native id (its canonical URL).
     pub printer: String,
@@ -200,6 +202,7 @@ pub struct SubscriptionInfo {
 
 /// The listener and its subscriptions as plain data (for a UI, a log or a language binding).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EventsStatus {
     /// Where the listener is bound.
     pub listen: String,
@@ -211,6 +214,7 @@ pub struct EventsStatus {
 
 /// What a verified event turns into: whose watch to bring forward. It carries no status.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Wake {
     /// The printer's native id (its canonical URL).
     pub printer: String,

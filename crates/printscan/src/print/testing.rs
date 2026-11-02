@@ -45,6 +45,7 @@ use crate::print::{Job, PrinterOption};
 
 /// What a [`FakeBackend`] was asked to print.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Submission {
     /// The native printer id the backend received (`None`: the default printer).
     pub printer: Option<String>,
@@ -67,6 +68,7 @@ pub struct Submission {
 /// [`FakeBackend::with_submit_script`] (one step per call; when the script is used up, `submit`
 /// accepts).
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum SubmitStep {
     /// Accept the document.
     Accept,

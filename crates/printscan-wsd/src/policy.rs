@@ -165,6 +165,7 @@ fn split_authority<'a>(authority: &'a str, noun: &str) -> Result<(&'a str, Optio
 
 /// Numbers every transport honours.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct NetworkLimits {
     /// Connect plus the whole exchange, per request.
     pub timeout: Duration,

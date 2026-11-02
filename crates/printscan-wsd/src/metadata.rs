@@ -44,6 +44,7 @@ const MAX_FIELD: usize = 256;
 
 /// `wsdp:ThisModel`: the product.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ThisModel {
     pub manufacturer: String,
     pub manufacturer_url: Option<String>,
@@ -57,6 +58,7 @@ pub struct ThisModel {
 
 /// `wsdp:ThisDevice`: this unit.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ThisDevice {
     pub friendly_name: String,
     pub firmware_version: Option<String>,
@@ -65,6 +67,7 @@ pub struct ThisDevice {
 
 /// A `Host` or `Hosted` entry: endpoint references, types and a service id.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ServiceEntry {
     pub endpoints: Vec<EndpointRef>,
     pub types: Vec<QName>,
@@ -98,6 +101,7 @@ impl ServiceEntry {
 
 /// The typed form of a `wsx:Metadata` document.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DeviceMetadata {
     pub model: Option<ThisModel>,
     pub device: Option<ThisDevice>,

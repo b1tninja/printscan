@@ -12,6 +12,7 @@ const PREFERRED: &[&str] = &["png", "tiff-single-uncompressed", "dib", "exif", "
 
 /// Where the paper is (`InputSource`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum InputSource {
     Platen,
     Adf,
@@ -30,6 +31,7 @@ impl InputSource {
 
 /// One scan job's ticket. Sizes and offsets are in thousandths of an inch.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Ticket {
     pub job_name: String,
     pub user_name: String,
@@ -132,6 +134,8 @@ pub fn color_mode(color: Color) -> ColorMode {
         Color::Rgb => ColorMode::Rgb24,
         Color::Gray => ColorMode::Grayscale8,
         Color::BlackAndWhite => ColorMode::BlackAndWhite1,
+        // A mode this backend does not know yet: colour, which every scanner offers.
+        _ => ColorMode::Rgb24,
     }
 }
 
@@ -158,7 +162,7 @@ fn page_size(size: PageSize) -> Option<(u32, u32)> {
         PageSize::Letter => Some((8500, 11000)),
         PageSize::Legal => Some((8500, 14000)),
         PageSize::BusinessCard => Some((3500, 2000)),
-        PageSize::Auto | PageSize::Custom => None,
+        _ => None,
     }
 }
 
@@ -174,6 +178,7 @@ fn rotation_degrees(rotation: Rotation) -> u32 {
         Rotation::Landscape => 90,
         Rotation::UpsideDown => 180,
         Rotation::Left => 270,
+        _ => 0,
     }
 }
 
@@ -212,7 +217,7 @@ pub fn plan(settings: &ScanSettings, config: &Configuration, source: Source, job
     let (max_w, max_h) = side.maximum.unwrap_or((8500, 11000));
     let media = settings.page_size.and_then(page_size).map_or((max_w, max_h), |(w, h)| (w.min(max_w), h.min(max_h)));
     let region = match settings.region {
-        Some(Region { left, top, width, height }) => {
+        Some(Region { left, top, width, height, .. }) => {
             if width == 0 || height == 0 || left.saturating_add(width) > max_w || top.saturating_add(height) > max_h {
                 return Err(ScanError::Failed(format!("the region does not fit the scanner's {max_w} x {max_h} area (thousandths of an inch)")));
             }
@@ -266,7 +271,7 @@ mod tests {
 
     #[test]
     fn a_glass_scan_takes_one_lossless_image_of_the_whole_bed() {
-        let s = ScanSettings { dpi: 250, color: Color::Rgb, pages: 5, brightness: Some(5000), contrast: Some(10), ..ScanSettings::default() };
+        let s = ScanSettings::default().with_dpi(250).with_color(Color::Rgb).with_pages(5).with_brightness(5000).with_contrast(10);
         let t = plan(&s, &config(), Source::Glass, "job", "me").unwrap();
         assert_eq!((t.format.as_str(), t.images, t.input, t.dpi), ("png", 1, InputSource::Platen, (300, 300)));
         assert_eq!(t.region, (0, 0, 8500, 11690));
@@ -283,31 +288,25 @@ mod tests {
 
     #[test]
     fn a_two_sided_feeder_scan_counts_images_and_has_a_back() {
-        let s = ScanSettings {
-            source: Source::Feeder,
-            duplex: true,
-            pages: 3,
-            page_size: Some(PageSize::Legal),
-            format: Some("bmp".into()),
-            ..ScanSettings::default()
-        };
+        let s =
+            ScanSettings::default().with_source(Source::Feeder).with_duplex(true).with_pages(3).with_page_size(PageSize::Legal).with_format("bmp");
         let t = plan(&s, &config(), Source::Feeder, "job", "me").unwrap();
         assert_eq!((t.format.as_str(), t.images, t.input, t.region), ("dib", 6, InputSource::AdfDuplex, (0, 0, 8500, 14000)));
         assert!(t.xml().contains("<wscn:MediaBack>"));
-        let all = ScanSettings { pages: 0, ..s };
+        let all = s.with_pages(0);
         assert_eq!(plan(&all, &config(), Source::Feeder, "j", "u").unwrap().images, 0);
     }
 
     #[test]
     fn what_the_scanner_does_not_offer_is_refused_before_anything_is_sent() {
         let mut c = config();
-        assert!(plan(&ScanSettings { format: Some("tiff".into()), ..ScanSettings::default() }, &c, Source::Glass, "j", "u").is_err());
-        let off = ScanSettings { region: Some(Region { left: 8000, top: 0, width: 1000, height: 1000 }), ..ScanSettings::default() };
+        assert!(plan(&ScanSettings::default().with_format("tiff"), &c, Source::Glass, "j", "u").is_err());
+        let off = ScanSettings::default().with_region(Region::new(8000, 0, 1000, 1000));
         assert!(plan(&off, &c, Source::Glass, "j", "u").is_err());
         c.feeder = None;
         assert!(plan(&ScanSettings::default(), &c, Source::Feeder, "j", "u").is_err());
         c.platen.as_mut().unwrap().colors = vec![ColorMode::Rgb24];
-        assert!(plan(&ScanSettings { color: Color::Gray, ..ScanSettings::default() }, &c, Source::Glass, "j", "u").is_err());
+        assert!(plan(&ScanSettings::default().with_color(Color::Gray), &c, Source::Glass, "j", "u").is_err());
     }
 
     #[test]

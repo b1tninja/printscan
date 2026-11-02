@@ -14,6 +14,7 @@ use crate::xml;
 
 /// A resolved sub-code QName: the namespace (if the prefix was declared) and the local name.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct SubCode {
     pub ns: Option<String>,
     pub local: String,
@@ -41,6 +42,7 @@ impl SubCode {
 
 /// Who the fault blames.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Role {
     /// `soap:Sender`: the request was wrong.
     Sender,

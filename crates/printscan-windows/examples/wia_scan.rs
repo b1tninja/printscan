@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Some("bw") => Color::BlackAndWhite,
                 _ => Color::Rgb,
             };
-            let settings = ScanSettings { device: id.clone(), source: Source::Glass, dpi, color, pages: 1, ..ScanSettings::default() };
+            let settings = ScanSettings::default().with_device(id.clone()).with_source(Source::Glass).with_dpi(dpi).with_color(color).with_pages(1);
             let acquired = scan::acquire(&settings)?;
             let page = acquired.pages.first().ok_or("no page")?;
             std::fs::write(out, &page.bytes)?;

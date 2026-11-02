@@ -71,6 +71,7 @@ impl Jitter {
 /// How often and how long to retry. Attempts count tries, the first one included:
 /// `max_attempts: 1` never retries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct RetryPolicy {
     pub max_attempts: u32,
     /// The wait after the first failure; it doubles per failure up to `max_delay`.

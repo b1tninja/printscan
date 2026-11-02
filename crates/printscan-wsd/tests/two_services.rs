@@ -15,12 +15,14 @@ use printscan_wsd::{EndpointRef, Error, QName, ReferenceParameter, ServiceKind, 
 
 /// A discovery target of `kind` that advertises `device`'s URL and one public address the policy drops.
 fn target_for(kind: ServiceKind, device: &FakeDevice) -> Target {
-    Target {
-        address: "urn:uuid:00000000-0000-4000-8000-000000000001".into(),
-        types: vec![QName::new(ns::WSDP, "Device"), kind.descriptor().device_type_qname()],
-        scopes: vec![],
-        xaddrs: vec![device.device_url().as_url(), "http://8.8.8.8/not-allowed".into()],
-        metadata_version: Some(1),
+    {
+        let mut built = Target::default();
+        built.address = "urn:uuid:00000000-0000-4000-8000-000000000001".into();
+        built.types = vec![QName::new(ns::WSDP, "Device"), kind.descriptor().device_type_qname()];
+        built.scopes = vec![];
+        built.xaddrs = vec![device.device_url().as_url(), "http://8.8.8.8/not-allowed".into()];
+        built.metadata_version = Some(1);
+        built
     }
 }
 
@@ -36,11 +38,21 @@ fn exercise(kind: ServiceKind, other: ServiceKind) {
     // 1. Find the device by its service kind; only the policy-allowed address survives.
     let socket = FakeSocket::new();
     socket.add_device(FakeResponder::new(target_for(kind, &device), SocketAddr::from(([127, 0, 0, 1], 3702))));
-    let report = discover(&socket, &DiscoverOptions { window: Duration::from_secs(1), ..DiscoverOptions::for_service(kind) }).unwrap();
+    let report = discover(&socket, &{
+        let mut built = DiscoverOptions::for_service(kind);
+        built.window = Duration::from_secs(1);
+        built
+    })
+    .unwrap();
     assert_eq!(report.devices.len(), 1);
     assert_eq!((report.devices[0].urls.len(), report.devices[0].dropped_xaddrs), (1, 1));
     // A probe for the other kind finds nothing on the same network.
-    let none = discover(&socket, &DiscoverOptions { window: Duration::from_secs(1), ..DiscoverOptions::for_service(other) }).unwrap();
+    let none = discover(&socket, &{
+        let mut built = DiscoverOptions::for_service(other);
+        built.window = Duration::from_secs(1);
+        built
+    })
+    .unwrap();
     assert!(none.devices.is_empty());
 
     // 2. Read its metadata from the discovered address and pick this kind's endpoint.
@@ -120,7 +132,7 @@ fn exercise(kind: ServiceKind, other: ServiceKind) {
     // An allowed sink is not enough: where the device sends the end-of-subscription message is checked too.
     public.end_to = Some(EndpointRef::new("http://8.8.8.8/end"));
     assert!(matches!(eventing::subscribe(&svc, &public), Err(Error::Invalid(_))));
-    let hijacked = eventing::Subscription { manager: EndpointRef::new("http://8.8.8.8/mgr"), expires: None };
+    let hijacked = eventing::Subscription::new(EndpointRef::new("http://8.8.8.8/mgr"), None);
     assert!(matches!(eventing::renew(&svc, &hijacked, None), Err(Error::Policy(_))));
     assert_eq!(device.log().len(), before);
 }

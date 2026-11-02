@@ -19,6 +19,7 @@ pub fn xop_include_ref(cid: &str) -> String {
 }
 
 /// A multipart body and the HTTP `Content-Type` that goes with it.
+#[non_exhaustive]
 pub struct Package {
     pub content_type: String,
     pub body: Vec<u8>,
@@ -131,6 +132,7 @@ pub fn is_multipart(content_type: &str) -> bool {
 
 /// One part of a multipart reply.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Part<'a> {
     /// `Content-ID`, without the angle brackets.
     pub content_id: Option<String>,

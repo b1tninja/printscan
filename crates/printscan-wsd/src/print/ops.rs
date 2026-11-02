@@ -21,6 +21,7 @@ const MAX_VALUE: usize = 255;
 
 /// The sections GetJobElements can return.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum JobSection {
     Status,
     Ticket,

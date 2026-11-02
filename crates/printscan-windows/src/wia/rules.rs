@@ -196,17 +196,17 @@ pub fn status_from_bits(bits: i32) -> HandlingStatus {
     // The property is a LONG of flags: read its bits as they are. A converting cast would turn a word with the top
     // bit set into 0 and lose a jam or a cover with it.
     let bits = u32::from_ne_bytes(bits.to_ne_bytes());
-    HandlingStatus {
-        feeder_ready: Some(bits & 0x1 != 0),
-        flat_ready: bits & 0x2 != 0,
-        duplex_ready: bits & 0x4 != 0,
-        cover_open: bits & 0x8 != 0,
-        path_cover_open: bits & 0x10 != 0,
-        jam: bits & 0x20 != 0,
-        multiple_feed: bits & 0x200 != 0,
-        attention: bits & 0x400 != 0,
-        lamp_error: bits & 0x800 != 0,
-    }
+    let mut status = HandlingStatus::default();
+    status.feeder_ready = Some(bits & 0x1 != 0);
+    status.flat_ready = bits & 0x2 != 0;
+    status.duplex_ready = bits & 0x4 != 0;
+    status.cover_open = bits & 0x8 != 0;
+    status.path_cover_open = bits & 0x10 != 0;
+    status.jam = bits & 0x20 != 0;
+    status.multiple_feed = bits & 0x200 != 0;
+    status.attention = bits & 0x400 != 0;
+    status.lamp_error = bits & 0x800 != 0;
+    status
 }
 
 /// The status of a read that may have failed. A failed read is not "all clear": it leaves everything unknown
@@ -222,7 +222,11 @@ pub fn status_from_read(bits: Option<i32>) -> HandlingStatus {
 pub fn status_for_inference(bits: Option<i32>) -> HandlingStatus {
     match bits {
         Some(bits) => status_from_bits(bits),
-        None => HandlingStatus { feeder_ready: Some(true), ..HandlingStatus::default() },
+        None => {
+            let mut status = HandlingStatus::default();
+            status.feeder_ready = Some(true);
+            status
+        }
     }
 }
 
@@ -350,6 +354,7 @@ pub fn explain_transfer_failure(
 /// What the feeder item publishes for its own document handling select (WIA 2.0 item property 3088). The inbox WSD
 /// driver keeps duplex here, on the feeder item, not on the device root (where the property does not exist).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum HandlingChoices {
     /// The item has no such property: the device-level select is the only one.
     NotPublished,
@@ -489,6 +494,7 @@ pub fn page_size_dims(size: PageSize) -> Option<(u32, u32)> {
 
 /// Why no page size is written at all.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PageSizeOmit {
     /// The item has no page-size property (the glass of the inbox WSD driver). Unsupported: nothing is written.
     NotPublished,
@@ -500,6 +506,7 @@ pub enum PageSizeOmit {
 
 /// What to do with a requested page size on one item.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PageSizePlan {
     /// Write nothing; the item scans its default (full) area.
     Omit(PageSizeOmit),

@@ -23,11 +23,16 @@ fn client(p: &std::sync::Arc<FakePrinter>) -> Client<MemTransport> {
 }
 
 fn quick() -> PollPolicy {
-    PollPolicy { interval: Duration::from_millis(1), max_wait: Duration::from_secs(5) }
+    {
+        let mut built = PollPolicy::default();
+        built.interval = Duration::from_millis(1);
+        built.max_wait = Duration::from_secs(5);
+        built
+    }
 }
 
 fn opts() -> PrintOptions {
-    PrintOptions { poll: quick(), ..Default::default() }
+    PrintOptions::default().with_poll(quick())
 }
 
 fn yes() -> UserConfirmed {
@@ -55,14 +60,8 @@ fn discovery_reports_the_printer_its_status_and_what_it_accepts() {
 #[test]
 fn a_pdf_is_sent_as_mtom_and_the_job_is_watched_to_completion() {
     let p = FakePrinter::new(FakeConfig::default());
-    let r = print_document(
-        &client(&p),
-        &PassThrough::pdf(PDF.to_vec()),
-        &PrintOptions { copies: Some(2), job_name: "Report".into(), ..opts() },
-        yes(),
-        &CancelToken::new(),
-    )
-    .unwrap();
+    let r = print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &opts().with_copies(2).with_job_name("Report"), yes(), &CancelToken::new())
+        .unwrap();
     assert_eq!(r.outcome, JobOutcome::Completed);
     assert_eq!((r.format.as_str(), r.bytes_sent, r.printer_name.as_str()), ("application/pdf", PDF.len(), "Fake Printer"));
     assert_eq!(r.state, Some(JobState::Completed));
@@ -80,14 +79,8 @@ fn a_pdf_is_sent_as_mtom_and_the_job_is_watched_to_completion() {
 #[test]
 fn inline_base64_transfer_delivers_the_same_bytes() {
     let p = FakePrinter::new(FakeConfig::default());
-    let r = print_document(
-        &client(&p),
-        &PassThrough::pdf(PDF.to_vec()),
-        &PrintOptions { transfer: Transfer::InlineBase64, ..opts() },
-        yes(),
-        &CancelToken::new(),
-    )
-    .unwrap();
+    let r = print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &opts().with_transfer(Transfer::InlineBase64), yes(), &CancelToken::new())
+        .unwrap();
     assert!(r.outcome.is_success());
     assert_eq!(p.job(r.job_id).unwrap().document.as_deref(), Some(PDF));
     assert!(p.log().iter().any(|l| l.action.ends_with("SendDocument") && l.content_type.starts_with("application/soap+xml")));
@@ -114,15 +107,15 @@ impl PageSource for Blank {
     }
     fn render(&self, _i: usize, dpi: (u32, u32), gray: bool) -> printscan_wsd::print::error::Result<RasterPage> {
         let (w, h) = (dpi.0 / 20, dpi.1 / 20);
-        Ok(RasterPage { width: w, height: h, gray, pixels: vec![200; (w * h) as usize * if gray { 1 } else { 3 }] })
+        Ok(RasterPage::new(w, h, gray, vec![200; (w * h) as usize * if gray { 1 } else { 3 }]))
     }
 }
 
 #[test]
 fn a_printer_without_pdf_gets_pwg_raster_from_the_chain() {
-    let p = FakePrinter::new(FakeConfig { formats: vec!["image/pwg-raster"], ..Default::default() });
+    let p = FakePrinter::new(FakeConfig::default().with_formats(vec!["image/pwg-raster"]));
     let enc = Chain(vec![Box::new(PassThrough::pdf(PDF.to_vec())), Box::new(RasterEncoder::new(Blank))]);
-    let r = print_document(&client(&p), &enc, &PrintOptions { color: ColorMode::Mono, ..opts() }, yes(), &CancelToken::new()).unwrap();
+    let r = print_document(&client(&p), &enc, &opts().with_color(ColorMode::Mono), yes(), &CancelToken::new()).unwrap();
     assert_eq!(r.format, "image/pwg-raster");
     let doc = p.job(r.job_id).unwrap().document.unwrap();
     assert_eq!(&doc[..4], b"RaS2");
@@ -133,9 +126,8 @@ fn a_printer_without_pdf_gets_pwg_raster_from_the_chain() {
 
 #[test]
 fn colour_follows_the_printers_description() {
-    let p = FakePrinter::new(FakeConfig { formats: vec!["image/pwg-raster"], color: false, ..Default::default() });
-    let r = print_document(&client(&p), &RasterEncoder::new(Blank), &PrintOptions { color: ColorMode::Color, ..opts() }, yes(), &CancelToken::new())
-        .unwrap();
+    let p = FakePrinter::new(FakeConfig::default().with_formats(vec!["image/pwg-raster"]).with_color(false));
+    let r = print_document(&client(&p), &RasterEncoder::new(Blank), &opts().with_color(ColorMode::Color), yes(), &CancelToken::new()).unwrap();
     assert!(r.warnings.iter().any(|w| w.contains("monochrome")), "{:?}", r.warnings);
     let doc = p.job(r.job_id).unwrap().document.unwrap();
     assert_eq!(u32::from_be_bytes([doc[4 + 388], doc[4 + 389], doc[4 + 390], doc[4 + 391]]), 8);
@@ -144,13 +136,13 @@ fn colour_follows_the_printers_description() {
 #[test]
 fn settings_the_printer_does_not_list_are_dropped_or_refused() {
     let p = FakePrinter::new(FakeConfig::default());
-    let soft = PrintOptions { copies: Some(50), sides: Some(printscan_wsd::print::ticket::Sides::TwoSidedShortEdge), ..opts() };
+    let soft = opts().with_copies(50).with_sides(printscan_wsd::print::ticket::Sides::TwoSidedShortEdge);
     let r = print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &soft, yes(), &CancelToken::new()).unwrap();
     assert_eq!(r.warnings.len(), 2, "{:?}", r.warnings);
     let t = p.job(r.job_id).unwrap().ticket;
     assert!(t.contains(">10</") && !t.contains("TwoSidedShortEdge"), "{t}");
     let before = p.jobs();
-    let strict = PrintOptions { strict: true, copies: Some(50), ..opts() };
+    let strict = opts().with_strict(true).with_copies(50);
     assert!(matches!(
         print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &strict, yes(), &CancelToken::new()),
         Err(WsdError::Unsupported(_))
@@ -162,13 +154,13 @@ fn settings_the_printer_does_not_list_are_dropped_or_refused() {
 fn a_minimal_ticket_sends_only_the_job_name_and_reports_what_it_left_out() {
     use printscan_wsd::print::ticket::TicketShape;
     let p = FakePrinter::new(FakeConfig::default());
-    let o = PrintOptions { ticket_shape: TicketShape::JobNameOnly, copies: Some(2), job_name: "Minimal".into(), ..opts() };
+    let o = opts().with_ticket_shape(TicketShape::JobNameOnly).with_copies(2).with_job_name("Minimal");
     // Settings the reduced ticket cannot carry are refused before anything is sent...
     let before = p.jobs();
     assert!(matches!(print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &o, yes(), &CancelToken::new()), Err(WsdError::Unsupported(_))));
     assert_eq!(p.jobs(), before);
     // ...unless the caller opts into dropping them.
-    let o = PrintOptions { drop_ticket_settings: true, ..o };
+    let o = o.with_drop_ticket_settings(true);
     let r = print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &o, yes(), &CancelToken::new()).unwrap();
     assert_eq!(r.outcome, JobOutcome::Completed);
     assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
@@ -180,34 +172,22 @@ fn a_minimal_ticket_sends_only_the_job_name_and_reports_what_it_left_out() {
     // The default stays the full ticket.
     let r = print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &opts(), yes(), &CancelToken::new()).unwrap();
     assert!(p.job(r.job_id).unwrap().ticket.contains("JobOriginatingUserName"));
-    let r = print_document(
-        &client(&p),
-        &PassThrough::pdf(PDF.to_vec()),
-        &PrintOptions { ticket_shape: TicketShape::Empty, ..opts() },
-        yes(),
-        &CancelToken::new(),
-    )
-    .unwrap();
+    let r = print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &opts().with_ticket_shape(TicketShape::Empty), yes(), &CancelToken::new())
+        .unwrap();
     assert!(!p.job(r.job_id).unwrap().ticket.contains("JobDescription"));
 }
 
 #[test]
 fn must_honor_reaches_the_printer_in_strict_mode() {
     let p = FakePrinter::new(FakeConfig::default());
-    let r = print_document(
-        &client(&p),
-        &PassThrough::pdf(PDF.to_vec()),
-        &PrintOptions { strict: true, copies: Some(3), ..opts() },
-        yes(),
-        &CancelToken::new(),
-    )
-    .unwrap();
+    let r =
+        print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &opts().with_strict(true).with_copies(3), yes(), &CancelToken::new()).unwrap();
     assert!(p.job(r.job_id).unwrap().ticket.contains("MustHonor=\"true\""));
 }
 
 #[test]
 fn an_aborted_job_is_a_typed_outcome_with_the_reason() {
-    let p = FakePrinter::new(FakeConfig { ending: Ending::Aborts("DocumentFormatError"), ..Default::default() });
+    let p = FakePrinter::new(FakeConfig::default().with_ending(Ending::Aborts("DocumentFormatError")));
     let r = print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &opts(), yes(), &CancelToken::new()).unwrap();
     assert_eq!(r.outcome, JobOutcome::Aborted { reason: Some(printscan_wsd::print::model::JobReason::DocumentFormatError) });
     assert!(!r.outcome.is_success());
@@ -215,7 +195,7 @@ fn an_aborted_job_is_a_typed_outcome_with_the_reason() {
 
 #[test]
 fn completion_with_warnings_is_still_a_success() {
-    let p = FakePrinter::new(FakeConfig { ending: Ending::Completes("JobCompletedWithWarnings"), ..Default::default() });
+    let p = FakePrinter::new(FakeConfig::default().with_ending(Ending::Completes("JobCompletedWithWarnings")));
     let r = print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &opts(), yes(), &CancelToken::new()).unwrap();
     assert_eq!(r.outcome, JobOutcome::CompletedWithWarnings);
     assert!(r.outcome.is_success());
@@ -223,7 +203,7 @@ fn completion_with_warnings_is_still_a_success() {
 
 #[test]
 fn faults_surface_typed() {
-    let p = FakePrinter::new(FakeConfig { accept_jobs: false, ..Default::default() });
+    let p = FakePrinter::new(FakeConfig::default().with_accept_jobs(false));
     let e = print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &opts(), yes(), &CancelToken::new()).unwrap_err();
     let f = e.fault().expect("a fault");
     assert_eq!(f.code, FaultCode::ServerErrorNotAcceptingJobs);
@@ -238,19 +218,26 @@ fn faults_surface_typed() {
 fn send_document_faults_are_typed() {
     let p = FakePrinter::new(FakeConfig::default());
     let c = client(&p);
-    let ticket = printscan_wsd::print::ticket::PrintTicket { job_name: "j".into(), user_name: "u".into(), ..Default::default() };
+    let ticket = {
+        let mut built = printscan_wsd::print::ticket::PrintTicket::default();
+        built.job_name = "j".into();
+        built.user_name = "u".into();
+        built
+    };
     let id = c.create_print_job(&ticket).unwrap();
-    let bad = printscan_wsd::print::ticket::DocumentDescription {
-        id: 1,
-        compression: printscan_wsd::print::ticket::Compression::Gzip,
-        format: "application/pdf".into(),
-        name: None,
-        must_honor_format: false,
+    let bad = {
+        let mut built = printscan_wsd::print::ticket::DocumentDescription::new(1, "application/pdf");
+        built.compression = printscan_wsd::print::ticket::Compression::Gzip;
+        built
     };
     let e = c.send_document(id, &bad, &ticket, true, PDF, Transfer::Mtom).unwrap_err();
     assert_eq!(e.fault().map(|f| f.code.clone()), Some(FaultCode::ClientErrorCompressionNotSupported));
     // And a second document after the last one is a typed fault.
-    let good = printscan_wsd::print::ticket::DocumentDescription { compression: printscan_wsd::print::ticket::Compression::None, ..bad };
+    let good = {
+        let mut built = bad;
+        built.compression = printscan_wsd::print::ticket::Compression::None;
+        built
+    };
     c.send_document(id, &good, &ticket, true, PDF, Transfer::Mtom).unwrap();
     let e = c.send_document(id, &good, &ticket, true, PDF, Transfer::Mtom).unwrap_err();
     assert_eq!(e.fault().map(|f| f.code.clone()), Some(FaultCode::ClientErrorLastDocumentAlreadySent));
@@ -258,15 +245,20 @@ fn send_document_faults_are_typed() {
 
 #[test]
 fn a_job_the_printer_forgets_is_reported_as_forgotten() {
-    let p = FakePrinter::new(FakeConfig { ending: Ending::Vanishes, ..Default::default() });
+    let p = FakePrinter::new(FakeConfig::default().with_ending(Ending::Vanishes));
     let r = print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &opts(), yes(), &CancelToken::new()).unwrap();
     assert_eq!(r.outcome, JobOutcome::Forgotten);
 }
 
 #[test]
 fn a_slow_job_times_out_the_wait_not_the_job() {
-    let p = FakePrinter::new(FakeConfig { ending: Ending::Hangs, ..Default::default() });
-    let o = PrintOptions { poll: PollPolicy { interval: Duration::from_millis(2), max_wait: Duration::from_millis(30) }, ..Default::default() };
+    let p = FakePrinter::new(FakeConfig::default().with_ending(Ending::Hangs));
+    let o = PrintOptions::default().with_poll({
+        let mut built = PollPolicy::default();
+        built.interval = Duration::from_millis(2);
+        built.max_wait = Duration::from_millis(30);
+        built
+    });
     let r = print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &o, yes(), &CancelToken::new()).unwrap();
     assert_eq!(r.outcome, JobOutcome::StillRunning);
     assert!(!p.job(r.job_id).unwrap().state.is_empty());
@@ -277,9 +269,14 @@ fn a_slow_job_times_out_the_wait_not_the_job() {
 
 #[test]
 fn cancelling_while_watching_sends_cancel_job_and_reports_canceled() {
-    let p = FakePrinter::new(FakeConfig { ending: Ending::Hangs, ..Default::default() });
+    let p = FakePrinter::new(FakeConfig::default().with_ending(Ending::Hangs));
     let c = client(&p);
-    let ticket = printscan_wsd::print::ticket::PrintTicket { job_name: "j".into(), user_name: "u".into(), ..Default::default() };
+    let ticket = {
+        let mut built = printscan_wsd::print::ticket::PrintTicket::default();
+        built.job_name = "j".into();
+        built.user_name = "u".into();
+        built
+    };
     let id = c.create_print_job(&ticket).unwrap();
     let token = CancelToken::new();
     token.cancel();
@@ -295,7 +292,7 @@ fn cancelling_while_watching_sends_cancel_job_and_reports_canceled() {
 
 #[test]
 fn a_cancel_that_loses_the_race_with_the_end_of_the_job_reports_the_real_outcome() {
-    let cfg = FakeConfig { cancel_ended_is_operation_failed: true, ..Default::default() };
+    let cfg = FakeConfig::default().with_cancel_ended_is_operation_failed(true);
     let p = FakePrinter::new(cfg);
     let c = client(&p);
     let id = print_document(&c, &PassThrough::pdf(PDF.to_vec()), &opts(), yes(), &CancelToken::new()).unwrap().job_id;
@@ -330,9 +327,14 @@ fn a_cancel_that_loses_the_race_with_the_end_of_the_job_reports_the_real_outcome
 
 #[test]
 fn job_lists_split_active_from_history() {
-    let p = FakePrinter::new(FakeConfig { ending: Ending::Hangs, ..Default::default() });
+    let p = FakePrinter::new(FakeConfig::default().with_ending(Ending::Hangs));
     let c = client(&p);
-    let ticket = printscan_wsd::print::ticket::PrintTicket { job_name: "j".into(), user_name: "u".into(), ..Default::default() };
+    let ticket = {
+        let mut built = printscan_wsd::print::ticket::PrintTicket::default();
+        built.job_name = "j".into();
+        built.user_name = "u".into();
+        built
+    };
     let a = c.create_print_job(&ticket).unwrap();
     let b = c.create_print_job(&ticket).unwrap();
     c.cancel_job(b).unwrap();
@@ -345,7 +347,7 @@ fn job_lists_split_active_from_history() {
 
 #[test]
 fn a_device_that_answers_http_errors_gives_a_typed_error() {
-    let p = FakePrinter::new(FakeConfig { http_error: Some(503), ..Default::default() });
+    let p = FakePrinter::new(FakeConfig::default().with_http_error(503));
     assert_eq!(printer_info(&client(&p)).unwrap_err(), WsdError::Http { status: 503, retry_after: None });
 }
 
@@ -363,21 +365,14 @@ fn encoders_see_the_resolved_settings() {
     }
     let p = FakePrinter::new(FakeConfig::default());
     let spy = Spy(Default::default());
-    print_document(
-        &client(&p),
-        &spy,
-        &PrintOptions { sides: Some(printscan_wsd::print::ticket::Sides::TwoSidedLongEdge), ..opts() },
-        yes(),
-        &CancelToken::new(),
-    )
-    .unwrap();
+    print_document(&client(&p), &spy, &opts().with_sides(printscan_wsd::print::ticket::Sides::TwoSidedLongEdge), yes(), &CancelToken::new()).unwrap();
     let ctx = spy.0.lock().unwrap().clone().unwrap();
     assert_eq!((ctx.color, ctx.dpi, ctx.sides), (true, (300, 300), Some(printscan_wsd::print::ticket::Sides::TwoSidedLongEdge)));
 }
 
 #[test]
 fn a_failed_send_cancels_the_orphan_job_and_keeps_the_real_error() {
-    let p = FakePrinter::new(FakeConfig { fail_send: true, ..Default::default() });
+    let p = FakePrinter::new(FakeConfig::default().with_fail_send(true));
     let e = print_document(&client(&p), &PassThrough::pdf(PDF.to_vec()), &opts(), yes(), &CancelToken::new()).unwrap_err();
     assert_eq!(e.fault().map(|f| f.code.clone()), Some(FaultCode::ServerErrorInternalError));
     assert_eq!(p.jobs(), 1);
@@ -405,7 +400,14 @@ fn progress_is_reported_per_phase_and_a_pre_cancelled_job_sends_nothing() {
 #[test]
 fn borrowed_documents_are_not_copied_by_the_pass_through() {
     use printscan_wsd::print::encoder::DocumentEncoder;
-    let ctx = EncodeContext { color: true, dpi: (300, 300), sides: None, media_size: None };
+    let ctx = {
+        let mut built = EncodeContext::default();
+        built.color = true;
+        built.dpi = (300, 300);
+        built.sides = None;
+        built.media_size = None;
+        built
+    };
     let enc = PassThrough::pdf(PDF);
     assert!(matches!(enc.encode("application/pdf", &ctx).unwrap(), std::borrow::Cow::Borrowed(_)));
 }
@@ -427,7 +429,7 @@ fn a_dropped_connection_while_watching_is_retried_a_few_times() {
             Ok(Response::new(status, Some(content_type), body))
         }
     }
-    let p = FakePrinter::new(FakeConfig { polls_to_finish: 5, ..FakeConfig::default() });
+    let p = FakePrinter::new(FakeConfig::default().with_polls_to_finish(5));
     let c = Client::new(Flaky(p.clone(), AtomicU32::new(0)), PrinterUrl::parse("http://127.0.0.1:5357/print").unwrap());
     let r = print_document(&c, &PassThrough::pdf(PDF.to_vec()), &opts(), yes(), &CancelToken::new()).unwrap();
     assert_eq!(r.outcome, JobOutcome::Completed);

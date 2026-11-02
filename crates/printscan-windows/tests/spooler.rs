@@ -50,7 +50,7 @@ fn whole_pdf(path: &Path, limit: Duration) -> Vec<u8> {
 }
 
 fn job_for(device: &FilePrinterDevice<Pdf>) -> Job {
-    Job { printer: Some(device.device().name().to_owned()), title: "printscan spooler test".into(), ..Job::default() }
+    Job::default().with_printer(device.device().name().to_owned()).with_title("printscan spooler test")
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn a_cancelled_request_ends_cancelled() {
 #[test]
 fn an_unknown_printer_is_not_found() {
     let pdf = one_page_pdf();
-    let job = Job { printer: Some("printscan: no such printer".into()), ..Job::default() };
+    let job = Job::default().with_printer("printscan: no such printer");
     let error = WindowsSpooler.submit(SubmitRequest::new(Document::pdf(&pdf), job)).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::NotFound, "{error}");
 }

@@ -55,7 +55,7 @@ fn job_state_names_are_stable() {
 
 /// A request for `pages` pages from the feeder of the SANE-like device.
 fn feeder(pages: u32) -> ScanSettings {
-    ScanSettings { device: "sane:x".into(), source: Source::Feeder, pages, ..ScanSettings::default() }
+    ScanSettings::default().with_device("sane:x").with_source(Source::Feeder).with_pages(pages)
 }
 
 /// A 40-page job that was interrupted after the SANE-like device ran out of paper.
@@ -107,17 +107,7 @@ fn an_unknown_outcome_survives_the_journal() {
     let mut job = ScanJob::new(feeder(10), ScanJobConfig::default());
     let plan = job.begin_attempt(t(1)).expect("attempt");
     for _ in 0..3 {
-        plan.progress.push_page(printscan::scan::Page {
-            bytes: vec![0; 8],
-            format: "jpeg",
-            width: 16,
-            height: 8,
-            dpi: 200,
-            dpi_y: 200,
-            requested_dpi: 200,
-            thresholded: false,
-            length: Default::default(),
-        });
+        plan.progress.push_page(printscan::scan::Page::new(vec![0; 8], "jpeg", 16, 8, 200));
     }
     let offline = ScanError::native_error(InterruptKind::Offline, NativeCode::new("http", 503, None), InterruptKind::Offline.sentence());
     job.finish_attempt(Err(offline), t(2)).expect("finish");
@@ -131,17 +121,7 @@ fn an_unknown_outcome_survives_the_journal() {
 
 /// A 16 by 8 JPEG page with 8 bytes of data.
 fn page() -> printscan::scan::Page {
-    printscan::scan::Page {
-        bytes: vec![0; 8],
-        format: "jpeg",
-        width: 16,
-        height: 8,
-        dpi: 200,
-        dpi_y: 200,
-        requested_dpi: 200,
-        thresholded: false,
-        length: Default::default(),
-    }
+    printscan::scan::Page::new(vec![0; 8], "jpeg", 16, 8, 200)
 }
 
 #[test]
@@ -206,11 +186,28 @@ fn the_page_length_wire_strings_and_the_per_page_record_survive_the_journal() {
     assert_eq!(round(&PageLength::AutoInfer), "\"infer\"");
     assert_eq!(round(&PageLength::Driver), "\"driver\"");
     assert_eq!(round(&LengthSource::Inferred), "\"inferred\"");
-    let record = LengthRecord { source: LengthSource::Inferred, length_mils: Some(10_730), approximate: true };
+    let record = {
+        let mut built = LengthRecord::default();
+        built.source = LengthSource::Inferred;
+        built.length_mils = Some(10_730);
+        built.approximate = true;
+        built
+    };
     let text = round(&record);
     assert_eq!(text, r#"{"source":"inferred","length_mils":10730,"approximate":true}"#);
-    let info =
-        PageInfo { number: 1, attempt: 1, source: Some(Source::Feeder), format: "bmp", width: 10, height: 20, dpi: 200, bytes: 5, length: record };
+    let info = {
+        let mut built = PageInfo::default();
+        built.number = 1;
+        built.attempt = 1;
+        built.source = Some(Source::Feeder);
+        built.format = "bmp";
+        built.width = 10;
+        built.height = 20;
+        built.dpi = 200;
+        built.bytes = 5;
+        built.length = record;
+        built
+    };
     let again: PageInfo = serde_json::from_str(&serde_json::to_string(&info).expect("page")).expect("read");
     assert_eq!(again, info);
     // A journal written before the field existed reads as a driver length.
@@ -222,7 +219,7 @@ fn the_page_length_wire_strings_and_the_per_page_record_survive_the_journal() {
 #[test]
 fn a_job_plan_carries_the_page_length_request_unchanged() {
     use printscan::scan::PageLength;
-    let request = ScanSettings { page_length: PageLength::AutoInfer, ..feeder(3) };
+    let request = feeder(3).with_page_length(PageLength::AutoInfer);
     let mut job = ScanJob::new(request, ScanJobConfig::default());
     let plan = job.begin_attempt(t(1)).expect("attempt");
     assert_eq!(plan.settings.page_length, PageLength::AutoInfer);

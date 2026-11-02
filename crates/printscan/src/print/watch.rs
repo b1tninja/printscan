@@ -51,6 +51,7 @@ impl JobSource for Registry {
 
 /// How a job is followed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct WaitPolicy {
     /// The gap between polls. `None`: the backend's recommended interval, else two seconds.
     pub interval: Option<Duration>,

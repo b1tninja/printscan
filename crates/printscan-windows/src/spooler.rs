@@ -62,11 +62,10 @@ impl Backend for WindowsSpooler {
         let devices = PrinterDevice::all().map_err(|e| failed("listing printers", &e))?;
         Ok(devices
             .iter()
-            .map(|device| PrinterRef {
-                id: device.name().to_owned(),
-                name: device.name().to_owned(),
-                default: default.as_deref() == Some(device.name()),
-                two_sided: None,
+            .map(|device| {
+                let mut printer = PrinterRef::new(device.name(), device.name());
+                printer.default = default.as_deref() == Some(device.name());
+                printer
             })
             .collect())
     }
@@ -80,30 +79,26 @@ impl Backend for WindowsSpooler {
         let paper = capabilities.page_media_sizes().filter_map(|m| m.option().name.as_ref().map(|n| n.local_name.clone())).collect();
         let resolutions =
             capabilities.page_resolutions().map(|r| r.dpi()).filter(|&(x, y)| x > 0 && y > 0).map(|(x, y)| Resolution::new(x, y)).collect();
-        Ok(PrinterDetails {
-            id: device.name().to_owned(),
-            name: device.name().to_owned(),
-            default: default_name().as_deref() == Some(device.name()),
-            formats: vec![DocumentFormat::Pdf],
-            raster_types: Vec::new(),
-            options: Vec::new(),
-            two_sided: Some(two_sided),
-            colour: Some(colour),
-            paper,
-            max_copies: Some(u32::from(u16::MAX)),
-            resolutions,
-            honoured: Some(vec![
-                JobHint::Copies,
-                JobHint::Collate,
-                JobHint::Duplex,
-                JobHint::Colour,
-                JobHint::Media,
-                JobHint::Orientation,
-                JobHint::Resolution,
-            ]),
-            status: None,
-            icc_profiles: Vec::new(),
-        })
+        let mut details = PrinterDetails::default();
+        details.id = device.name().to_owned();
+        details.name = device.name().to_owned();
+        details.default = default_name().as_deref() == Some(device.name());
+        details.formats = vec![DocumentFormat::Pdf];
+        details.two_sided = Some(two_sided);
+        details.colour = Some(colour);
+        details.paper = paper;
+        details.max_copies = Some(u32::from(u16::MAX));
+        details.resolutions = resolutions;
+        details.honoured = Some(vec![
+            JobHint::Copies,
+            JobHint::Collate,
+            JobHint::Duplex,
+            JobHint::Colour,
+            JobHint::Media,
+            JobHint::Orientation,
+            JobHint::Resolution,
+        ]);
+        Ok(details)
     }
 
     fn submit(&self, request: SubmitRequest<'_>) -> Result<Submitted, PrintError> {
@@ -205,13 +200,14 @@ fn ticket(
     }
     if let Some(duplex) = job.duplex {
         let wanted = match duplex {
-            Duplex::Off => PredefinedDuplexType::OneSided,
-            Duplex::LongEdge => PredefinedDuplexType::TwoSidedLongEdge,
-            Duplex::ShortEdge => PredefinedDuplexType::TwoSidedShortEdge,
+            Duplex::Off => Some(PredefinedDuplexType::OneSided),
+            Duplex::LongEdge => Some(PredefinedDuplexType::TwoSidedLongEdge),
+            Duplex::ShortEdge => Some(PredefinedDuplexType::TwoSidedShortEdge),
+            _ => None,
         };
-        match JobDuplex::list(capabilities).find(|d| d.as_predefined_name() == Some(wanted)) {
+        match wanted.and_then(|wanted| JobDuplex::list(capabilities).find(|d| d.as_predefined_name() == Some(wanted))) {
             Some(option) => merge(&mut builder, option.into())?,
-            None => warnings.push(format!("the printer does not offer {wanted:?}; it prints with its default")),
+            None => warnings.push(format!("the printer does not offer {duplex:?}; it prints with its default")),
         }
     }
     let grey = job.grayscale || options.colour == ColourMode::Mono;

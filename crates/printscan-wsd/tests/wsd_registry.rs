@@ -44,7 +44,7 @@ fn id(url: &str) -> String {
 }
 
 fn job(url: &str) -> Job {
-    Job { printer: Some(id(url)), title: "Report".into(), ..Job::default() }
+    Job::default().with_printer(id(url)).with_title("Report")
 }
 
 fn request<'a>(job: Job) -> SubmitRequest<'a> {
@@ -132,27 +132,25 @@ fn only_added_printers_can_be_reached() {
     let e = r.submit(request(job("http://printer.example/print"))).unwrap_err();
     assert_eq!(e.kind(), ErrorKind::InvalidRequest);
     // There is no default printer.
-    let e = r.submit(request(Job { printer: None, ..Job::default() })).unwrap_err();
+    let e = r.submit(request(Job::default())).unwrap_err();
     assert_eq!(e.kind(), ErrorKind::NotFound);
     assert!(p.log().is_empty());
     // A backend without the wsd prefix id is not guessed.
-    assert_eq!(r.submit(request(Job { printer: Some(URL.into()), ..Job::default() })).unwrap_err().kind(), ErrorKind::UnknownBackend);
+    assert_eq!(r.submit(request(Job::default().with_printer(URL))).unwrap_err().kind(), ErrorKind::UnknownBackend);
 }
 
 // ---- details ----
 
 #[test]
 fn details_map_the_printers_capabilities_and_status() {
-    let config = FakeConfig {
-        formats: vec!["application/pdf", "image/pwg-raster", "application/vnd.vendor-pcl", "APPLICATION/POSTSCRIPT", "application/pdf"],
-        sides: vec!["OneSided", "TwoSidedLongEdge"],
-        max_copies: 25,
-        color: true,
-        state: "Stopped",
-        state_reasons: vec!["MediaEmpty", "DoorOpen"],
-        media: vec!["iso_a4_210x297mm", "na_letter_8.5x11in"],
-        ..FakeConfig::default()
-    };
+    let config = FakeConfig::default()
+        .with_formats(vec!["application/pdf", "image/pwg-raster", "application/vnd.vendor-pcl", "APPLICATION/POSTSCRIPT", "application/pdf"])
+        .with_sides(vec!["OneSided", "TwoSidedLongEdge"])
+        .with_max_copies(25)
+        .with_color(true)
+        .with_state("Stopped")
+        .with_state_reasons(vec!["MediaEmpty", "DoorOpen"])
+        .with_media(vec!["iso_a4_210x297mm", "na_letter_8.5x11in"]);
     let (p, _b, r) = setup(config);
     let d = r.printer_details(&id(URL)).unwrap();
     assert_eq!(d.id, "wsd:http://127.0.0.1:5357/print");
@@ -179,11 +177,11 @@ fn details_map_the_printers_capabilities_and_status() {
 
 #[test]
 fn details_say_unknown_when_the_printer_does_not() {
-    let (_p, _b, r) = setup(FakeConfig { sides: vec!["OneSided"], color: false, state: "VendorBusy", ..FakeConfig::default() });
+    let (_p, _b, r) = setup(FakeConfig::default().with_sides(vec!["OneSided"]).with_color(false).with_state("VendorBusy"));
     let d = r.printer_details(&id(URL)).unwrap();
     assert_eq!((d.two_sided, d.colour), (Some(false), Some(false)));
     assert!(d.status.is_none(), "a vendor state is not guessed");
-    let (_p, _b, r) = setup(FakeConfig { sides: vec![], ..FakeConfig::default() });
+    let (_p, _b, r) = setup(FakeConfig::default().with_sides(vec![]));
     assert_eq!(r.printer_details(&id(URL)).unwrap().two_sided, None);
 }
 
@@ -191,11 +189,11 @@ fn details_say_unknown_when_the_printer_does_not() {
 
 #[test]
 fn a_job_is_accepted_through_the_registry_and_named_without_waiting_for_the_print() {
-    let (p, _b, r) = setup(FakeConfig { ending: Ending::Hangs, ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_ending(Ending::Hangs));
     let phases = Mutex::new(Vec::new());
     let mut record = |event: Progress| phases.lock().unwrap().push((event.done, event.total));
     let started = std::time::Instant::now();
-    let submitted = r.submit_job(request(Job { copies: 2, ..job(URL) }).with_progress(&mut record)).unwrap();
+    let submitted = r.submit_job(request(job(URL).with_copies(2)).with_progress(&mut record)).unwrap();
     assert!(started.elapsed() < Duration::from_secs(5), "submit returns when the printer has accepted the document, not when it prints");
     assert_eq!(submitted.backend, "wsd");
     let job_ref = submitted.job.clone().unwrap();
@@ -229,18 +227,18 @@ fn an_accepted_job_is_followed_to_completion_with_the_blocking_convenience() {
 #[test]
 fn zero_or_too_few_copies_are_refused_before_anything_is_sent_and_never_become_the_maximum() {
     // The fake lists copies 1..=99.
-    let (p, _b, r) = setup(FakeConfig { max_copies: 99, ..FakeConfig::default() });
-    let e = r.submit(request(Job { copies: 0, ..job(URL) })).unwrap_err();
+    let (p, _b, r) = setup(FakeConfig::default().with_max_copies(99));
+    let e = r.submit(request(job(URL).with_copies(0))).unwrap_err();
     assert_eq!((e.kind(), e.phase(), e.retry_safety()), (ErrorKind::InvalidRequest, Some(Phase::Prepare), RetrySafety::Safe));
     assert!(!e.is_retryable());
     assert_eq!(p.jobs(), 0, "no job was created");
     assert!(!p.actions().iter().any(|a| a == "CreatePrintJob" || a == "SendDocument"), "{:?}", p.actions());
     // Above the maximum keeps the lowering, with the warning.
-    let receipt = r.submit(request(Job { copies: 120, ..job(URL) })).unwrap();
+    let receipt = r.submit(request(job(URL).with_copies(120))).unwrap();
     assert!(p.job(1).unwrap().ticket.contains(">99</"));
     assert!(receipt.message.contains("warnings"), "{}", receipt.message);
     // One copy and an in-range count are accepted.
-    assert!(r.submit(request(Job { copies: 1, ..job(URL) })).is_ok());
+    assert!(r.submit(request(job(URL).with_copies(1))).is_ok());
 }
 
 #[test]
@@ -253,7 +251,7 @@ fn network_jobs_need_consent_and_nothing_is_sent_without_it() {
     // A caller holding the backend directly gets the same answer.
     let direct = backend(&p);
     direct.add(URL).unwrap();
-    let e = direct.submit(SubmitRequest::new(Document::pdf(PDF), Job { printer: Some(URL.into()), ..Job::default() })).unwrap_err();
+    let e = direct.submit(SubmitRequest::new(Document::pdf(PDF), Job::default().with_printer(URL))).unwrap_err();
     assert_eq!(e.kind(), ErrorKind::ConsentRequired);
     assert!(p.log().is_empty());
     // The attested path works.
@@ -278,7 +276,7 @@ fn a_format_the_printer_does_not_list_is_refused_before_a_job_exists() {
 
 #[test]
 fn the_printers_own_spelling_of_the_format_is_used() {
-    let (p, _b, r) = setup(FakeConfig { formats: vec!["Application/PDF"], ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_formats(vec!["Application/PDF"]));
     r.submit(request(job(URL))).unwrap();
     assert_eq!(p.job(1).unwrap().format.as_deref(), Some("Application/PDF"));
 }
@@ -293,7 +291,7 @@ fn a_token_cancelled_before_the_job_starts_sends_nothing() {
     // The backend checks too, for callers that hold it directly.
     let direct = backend(&p);
     direct.add(URL).unwrap();
-    let e = direct.submit(request(Job { printer: Some(URL.into()), ..Job::default() }).with_cancel(token)).unwrap_err();
+    let e = direct.submit(request(Job::default().with_printer(URL)).with_cancel(token)).unwrap_err();
     assert_eq!(e.kind(), ErrorKind::Cancelled);
     assert!(p.log().is_empty());
 }
@@ -303,20 +301,18 @@ fn a_token_cancelled_before_the_job_starts_sends_nothing() {
 #[test]
 fn copies_duplex_and_colour_reach_the_ticket_and_the_rest_is_reported() {
     let (p, _b, r) = setup(FakeConfig::default());
-    let j = Job {
-        copies: 3,
-        duplex: Some(Duplex::LongEdge),
-        grayscale: true,
-        scaling: Scaling::ShrinkToFit,
-        options: vec![("Tray".into(), "2".into())],
-        ..job(URL)
-    };
+    let j = job(URL)
+        .with_copies(3)
+        .with_duplex(Duplex::LongEdge)
+        .with_grayscale(true)
+        .with_scaling(Scaling::ShrinkToFit)
+        .with_options(vec![("Tray".into(), "2".into())]);
     let receipt = r.submit(request(j)).unwrap();
     let t = p.job(1).unwrap().ticket;
     assert!(t.contains(">3</") && t.contains("TwoSidedLongEdge"), "{t}");
     assert!(receipt.message.contains("scaling") && receipt.message.contains("driver options"), "{}", receipt.message);
     // Simplex is forced with `Some(Off)`, and the defaults write neither copies nor sides.
-    r.submit(request(Job { duplex: Some(Duplex::Off), ..job(URL) })).unwrap();
+    r.submit(request(job(URL).with_duplex(Duplex::Off))).unwrap();
     let t2 = p.job(2).unwrap().ticket;
     assert!(t2.contains("OneSided") && !t2.contains("Copies"), "{t2}");
     r.submit(request(job(URL))).unwrap();
@@ -326,18 +322,18 @@ fn copies_duplex_and_colour_reach_the_ticket_and_the_rest_is_reported() {
 
 #[test]
 fn settings_the_printer_does_not_list_are_lowered_with_a_warning_or_refused_in_strict_mode() {
-    let (p, _b, r) = setup(FakeConfig { max_copies: 10, ..FakeConfig::default() });
-    let receipt = r.submit(request(Job { copies: 50, duplex: Some(Duplex::ShortEdge), ..job(URL) })).unwrap();
+    let (p, _b, r) = setup(FakeConfig::default().with_max_copies(10));
+    let receipt = r.submit(request(job(URL).with_copies(50).with_duplex(Duplex::ShortEdge))).unwrap();
     let t = p.job(1).unwrap().ticket;
     assert!(t.contains(">10</") && !t.contains("TwoSidedShortEdge"), "{t}");
     assert!(receipt.message.contains("warnings"), "{}", receipt.message);
     let p2 = FakePrinter::new(FakeConfig::default());
     let strict = backend(&p2).with_strict(true);
     strict.add(URL).unwrap();
-    let e = registry(&strict).submit(request(Job { copies: 50, ..job(URL) })).unwrap_err();
+    let e = registry(&strict).submit(request(job(URL).with_copies(50))).unwrap_err();
     assert_eq!(e.kind(), ErrorKind::InvalidRequest);
     assert_eq!(p2.jobs(), 0, "refused before CreatePrintJob");
-    let ok = registry(&strict).submit(request(Job { copies: 3, ..job(URL) }));
+    let ok = registry(&strict).submit(request(job(URL).with_copies(3)));
     assert!(ok.is_ok());
     assert!(p2.job(1).unwrap().ticket.contains("MustHonor=\"true\""));
 }
@@ -349,10 +345,10 @@ fn a_reduced_ticket_refuses_settings_it_cannot_carry_by_default() {
         let b = backend(&p).with_ticket_shape(shape);
         b.add(URL).unwrap();
         let r = registry(&b);
-        let e = r.submit(request(Job { copies: 2, ..job(URL) })).unwrap_err();
+        let e = r.submit(request(job(URL).with_copies(2))).unwrap_err();
         assert_eq!(e.kind(), ErrorKind::InvalidRequest, "{shape:?}");
         assert!(e.message().contains("copies"), "{}", e.message());
-        let e = r.submit(request(Job { duplex: Some(Duplex::LongEdge), ..job(URL) })).unwrap_err();
+        let e = r.submit(request(job(URL).with_duplex(Duplex::LongEdge))).unwrap_err();
         assert_eq!(e.kind(), ErrorKind::InvalidRequest, "{shape:?}");
         assert_eq!(p.jobs(), 0, "{shape:?}: refused before anything is created");
         // A plain job needs no settings and goes through.
@@ -366,7 +362,7 @@ fn a_reduced_ticket_can_drop_settings_with_a_warning() {
     let p = FakePrinter::new(FakeConfig::default());
     let b = backend(&p).with_ticket_shape(TicketShape::JobNameOnly).with_drop_ticket_settings(true);
     b.add(URL).unwrap();
-    let receipt = registry(&b).submit(request(Job { copies: 2, duplex: Some(Duplex::LongEdge), ..job(URL) })).unwrap();
+    let receipt = registry(&b).submit(request(job(URL).with_copies(2).with_duplex(Duplex::LongEdge))).unwrap();
     assert!(receipt.message.contains("leaves out copies") && receipt.message.contains("leaves out sides"), "{}", receipt.message);
     let t = p.job(1).unwrap().ticket;
     assert!(
@@ -408,7 +404,7 @@ fn the_default_ticket_is_the_full_one_and_the_shapes_differ() {
 
 #[test]
 fn cancelling_after_the_job_is_created_cancels_it_on_the_printer_and_sends_no_document() {
-    let (p, _b, r) = setup(FakeConfig { ending: Ending::Hangs, ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_ending(Ending::Hangs));
     let token = CancelToken::new();
     let t = token.clone();
     let mut progress = move |event: Progress| {
@@ -424,7 +420,7 @@ fn cancelling_after_the_job_is_created_cancels_it_on_the_printer_and_sends_no_do
 
 #[test]
 fn cancelling_a_running_job_sends_cancel_job_once_and_reports_cancelled() {
-    let (p, _b, r) = setup(FakeConfig { ending: Ending::Hangs, ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_ending(Ending::Hangs));
     let submitted = r.submit_job(request(job(URL))).unwrap();
     assert_eq!(p.job(1).unwrap().state, "Pending");
     // A caller that wants it stopped: its token goes to the watch, which sends the cancel.
@@ -447,7 +443,7 @@ fn cancelling_a_running_job_sends_cancel_job_once_and_reports_cancelled() {
 
 #[test]
 fn a_slow_job_is_accepted_and_the_watch_gives_up_without_touching_it() {
-    let (p, _b, r) = setup(FakeConfig { ending: Ending::Hangs, ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_ending(Ending::Hangs));
     let submitted = r.submit_job(request(job(URL))).unwrap();
     let job_ref = submitted.job.unwrap();
     let log_after_submit = p.log().len();
@@ -460,7 +456,7 @@ fn a_slow_job_is_accepted_and_the_watch_gives_up_without_touching_it() {
 
 #[test]
 fn the_status_of_a_job_maps_state_reasons_and_counters() {
-    let (p, _b, r) = setup(FakeConfig { ending: Ending::Completes("JobCompletedWithWarnings"), polls_to_finish: 3, ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_ending(Ending::Completes("JobCompletedWithWarnings")).with_polls_to_finish(3));
     let id = r.submit_job(request(job(URL))).unwrap().job.unwrap();
     let first = r.job_status(&id).unwrap();
     assert_eq!((first.state, first.reasons.as_slice(), first.sheets_done), (JobState::Processing, ["JobPrinting".to_owned()].as_slice(), Some(0)));
@@ -474,7 +470,7 @@ fn the_status_of_a_job_maps_state_reasons_and_counters() {
     drop(p);
     // The other end states.
     let state_of = |ending| {
-        let (_p, _b, r) = setup(FakeConfig { ending, ..FakeConfig::default() });
+        let (_p, _b, r) = setup(FakeConfig::default().with_ending(ending));
         let id = r.submit_job(request(job(URL))).unwrap().job.unwrap();
         r.job_status(&id).unwrap()
     };
@@ -484,7 +480,7 @@ fn the_status_of_a_job_maps_state_reasons_and_counters() {
 
 #[test]
 fn the_status_of_a_forgotten_job_is_not_found_and_says_what_that_means() {
-    let (_p, _b, r) = setup(FakeConfig { ending: Ending::Vanishes, ..FakeConfig::default() });
+    let (_p, _b, r) = setup(FakeConfig::default().with_ending(Ending::Vanishes));
     let job_ref = r.submit_job(request(job(URL))).unwrap().job.unwrap();
     r.job_status(&job_ref).unwrap();
     r.job_status(&job_ref).unwrap();
@@ -495,7 +491,7 @@ fn the_status_of_a_forgotten_job_is_not_found_and_says_what_that_means() {
     assert!(!e.is_retryable());
     assert_eq!(e.phase(), Some(Phase::Poll));
     // A watch reports it as forgotten (success: it most likely finished), with the last status it saw.
-    let (_p, _b, r) = setup(FakeConfig { ending: Ending::Vanishes, ..FakeConfig::default() });
+    let (_p, _b, r) = setup(FakeConfig::default().with_ending(Ending::Vanishes));
     let job_ref = r.submit_job(request(job(URL))).unwrap().job.unwrap();
     let outcome = wait_for_job(&r, &job_ref, fast()).unwrap();
     assert!(matches!(outcome, WatchOutcome::Forgotten { last: Some(_) }), "{outcome:?}");
@@ -529,7 +525,7 @@ fn job_handles_that_are_not_ours_are_invalid_requests_not_forgotten_jobs() {
 #[test]
 fn job_end_states_map_to_outcomes_and_errors() {
     let run = |ending| {
-        let (_p, _b, r) = setup(FakeConfig { ending, ..FakeConfig::default() });
+        let (_p, _b, r) = setup(FakeConfig::default().with_ending(ending));
         let job_ref = r.submit_job(request(job(URL))).unwrap().job.unwrap();
         wait_for_job(&r, &job_ref, fast()).unwrap()
     };
@@ -551,7 +547,7 @@ fn job_end_states_map_to_outcomes_and_errors() {
 
 #[test]
 fn faults_map_to_neutral_kinds_and_keep_their_code() {
-    let (_p, _b, r) = setup(FakeConfig { accept_jobs: false, ..FakeConfig::default() });
+    let (_p, _b, r) = setup(FakeConfig::default().with_accept_jobs(false));
     let e = r.submit(request(job(URL))).unwrap_err();
     assert_eq!(e.kind(), ErrorKind::Busy);
     assert!(e.is_retryable());
@@ -560,13 +556,13 @@ fn faults_map_to_neutral_kinds_and_keep_their_code() {
     assert_eq!(n.code, 5);
     // The printer declined to create the job: nothing was accepted, and it says how long to wait.
     assert_eq!((e.retry_safety(), e.phase(), e.retry_after()), (RetrySafety::Safe, Some(Phase::Reply), Some(Duration::from_secs(15))));
-    let (p, _b, r) = setup(FakeConfig { fail_send: true, ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_fail_send(true));
     let e = r.submit(request(job(URL))).unwrap_err();
     assert_eq!((e.kind(), e.is_retryable()), (ErrorKind::Failed, false));
     assert_eq!(e.native().unwrap().name, Some("ServerErrorInternalError"));
     assert_eq!(p.job(1).unwrap().state, "Canceled", "a failed send cancels the orphan job");
     // A fault on details too, and a details failure is an idempotent query.
-    let (_p, _b, r) = setup(FakeConfig { http_error: Some(503), ..FakeConfig::default() });
+    let (_p, _b, r) = setup(FakeConfig::default().with_http_error(503));
     let e = r.printer_details(&id(URL)).unwrap_err();
     assert_eq!((e.kind(), e.is_retryable(), e.retry_safety()), (ErrorKind::Unavailable, true, RetrySafety::Safe));
     assert_eq!(e.retry_after(), Some(Duration::from_secs(5)));
@@ -659,7 +655,11 @@ fn a_connection_closed_with_no_reply_is_retryable() {
 #[test]
 fn a_huge_reply_is_cut_off() {
     let server = wsd_support::Server::start(|_| raw_response(200, "application/soap+xml", &vec![b'<'; 3 << 20]));
-    let b = WsdBackend::new().with_limits(printscan_wsd::print::NetworkLimits { max_response: 64 << 10, ..Default::default() });
+    let b = WsdBackend::new().with_limits({
+        let mut built = printscan_wsd::print::NetworkLimits::default();
+        built.max_response = 64 << 10;
+        built
+    });
     b.add(&server.url("/print")).unwrap();
     let e = registry(&b).printer_details(&id(&server.url("/print"))).unwrap_err();
     assert_eq!(e.kind(), ErrorKind::Failed);
@@ -688,7 +688,11 @@ fn a_silent_printer_times_out_and_a_query_may_be_repeated() {
         std::thread::sleep(Duration::from_millis(1500));
         Vec::new()
     });
-    let b = WsdBackend::new().with_limits(printscan_wsd::print::NetworkLimits { timeout: Duration::from_millis(300), ..Default::default() });
+    let b = WsdBackend::new().with_limits({
+        let mut built = printscan_wsd::print::NetworkLimits::default();
+        built.timeout = Duration::from_millis(300);
+        built
+    });
     b.add(&server.url("/print")).unwrap();
     let started = std::time::Instant::now();
     let e = registry(&b).printer_details(&id(&server.url("/print"))).unwrap_err();
@@ -703,7 +707,11 @@ fn a_connection_that_cannot_be_made_is_safe_to_retry() {
     // A port that was open a moment ago and is not any more.
     let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     let url = format!("http://127.0.0.1:{port}/print");
-    let b = WsdBackend::new().with_limits(printscan_wsd::print::NetworkLimits { timeout: Duration::from_secs(5), ..Default::default() });
+    let b = WsdBackend::new().with_limits({
+        let mut built = printscan_wsd::print::NetworkLimits::default();
+        built.timeout = Duration::from_secs(5);
+        built
+    });
     b.add(&url).unwrap();
     let r = registry(&b);
     let e = r.submit(request(job(&url))).unwrap_err();
@@ -797,10 +805,15 @@ fn count(p: &FakePrinter, action: &str) -> usize {
 
 #[test]
 fn a_watch_on_an_injected_clock_follows_the_job_to_a_terminal_state() {
-    let (p, _b, r) = setup(FakeConfig { polls_to_finish: 3, ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_polls_to_finish(3));
     let submitted = r.submit_job(request(job(URL))).unwrap();
     let clock = ManualClock::new();
-    let policy = WaitPolicy { interval: Some(Duration::from_secs(2)), growth_percent: 100, ..WaitPolicy::default() };
+    let policy = {
+        let mut built = WaitPolicy::default();
+        built.interval = Some(Duration::from_secs(2));
+        built.growth_percent = 100;
+        built
+    };
     let mut watch = JobWatch::for_submitted(&submitted, policy).unwrap().with_clock(Arc::new(clock.clone()));
     let started = std::time::Instant::now();
     let mut states = Vec::new();
@@ -818,7 +831,7 @@ fn a_watch_on_an_injected_clock_follows_the_job_to_a_terminal_state() {
 
 #[test]
 fn a_dropped_connection_while_following_is_retried_because_a_status_read_is_idempotent() {
-    let (p, _b, r) = lossy(FakeConfig { polls_to_finish: 2, ..FakeConfig::default() }, "GetJobElements", 2);
+    let (p, _b, r) = lossy(FakeConfig::default().with_polls_to_finish(2), "GetJobElements", 2);
     let submitted = r.submit_job(request(job(URL))).unwrap();
     let mut watch = JobWatch::for_submitted(&submitted, fast()).unwrap().with_clock(Arc::new(ManualClock::new()));
     let mut retries = Vec::new();
@@ -872,9 +885,9 @@ fn a_lost_reply_to_create_print_job_leaves_an_orphan_that_reconcile_shows_as_pen
 
 #[test]
 fn reconcile_reports_not_found_and_ambiguity_and_only_matches_this_backends_user() {
-    let (p, b, r) = setup(FakeConfig { ending: Ending::Hangs, ..FakeConfig::default() });
+    let (p, b, r) = setup(FakeConfig::default().with_ending(Ending::Hangs));
     assert_eq!(b.reconcile(URL, "Report").unwrap(), Reconciled::NotFound, "an empty printer");
-    r.submit_job(request(Job { title: "Other".into(), ..job(URL) })).unwrap();
+    r.submit_job(request(job(URL).with_title("Other"))).unwrap();
     assert_eq!(b.reconcile(URL, "Report").unwrap(), Reconciled::NotFound, "other titles do not match");
     r.submit_job(request(job(URL))).unwrap();
     r.submit_job(request(job(URL))).unwrap();
@@ -887,7 +900,7 @@ fn reconcile_reports_not_found_and_ambiguity_and_only_matches_this_backends_user
     assert_eq!(other.reconcile(URL, "Report").unwrap(), Reconciled::NotFound);
     // The title is compared as the backend sent it (cut to 255 characters).
     let long: String = "x".repeat(300);
-    r.submit_job(request(Job { title: long.clone(), ..job(URL) })).unwrap();
+    r.submit_job(request(job(URL).with_title(long.clone()))).unwrap();
     assert!(matches!(b.reconcile(URL, &long).unwrap(), Reconciled::Found(_)));
     // Only added printers can be asked.
     assert_eq!(b.reconcile("http://127.0.0.1:5999/print", "Report").unwrap_err().kind(), ErrorKind::NotFound);
@@ -896,7 +909,7 @@ fn reconcile_reports_not_found_and_ambiguity_and_only_matches_this_backends_user
 #[test]
 fn reconcile_matches_what_each_ticket_shape_sends() {
     // A name-only ticket sends no user, so the printer's own user name cannot rule the job out.
-    let p = FakePrinter::new(FakeConfig { ending: Ending::Hangs, ..FakeConfig::default() });
+    let p = FakePrinter::new(FakeConfig::default().with_ending(Ending::Hangs));
     let b = backend(&p).with_ticket_shape(TicketShape::JobNameOnly);
     b.add(URL).unwrap();
     let r = registry(&b);
@@ -906,13 +919,13 @@ fn reconcile_matches_what_each_ticket_shape_sends() {
     assert!(matches!(r.find_job(&id(URL), &fingerprint).unwrap(), printscan::print::Reconciled::Found(_)), "through the registry too");
 
     // A title XML cannot carry as it is comes back without the control characters.
-    let (_p, b, r) = setup(FakeConfig { ending: Ending::Hangs, ..FakeConfig::default() });
+    let (_p, b, r) = setup(FakeConfig::default().with_ending(Ending::Hangs));
     let odd = "Re\u{1}port\r\n";
-    r.submit_job(request(Job { title: odd.into(), ..job(URL) })).unwrap();
+    r.submit_job(request(job(URL).with_title(odd))).unwrap();
     assert!(matches!(b.reconcile(URL, odd).unwrap(), Reconciled::Found(_)), "matched as the printer stored it");
 
     // An empty ticket names no job: matching is refused rather than reported as nothing found.
-    let p = FakePrinter::new(FakeConfig { ending: Ending::Hangs, ..FakeConfig::default() });
+    let p = FakePrinter::new(FakeConfig::default().with_ending(Ending::Hangs));
     let b = backend(&p).with_ticket_shape(TicketShape::Empty);
     b.add(URL).unwrap();
     let r = registry(&b);
@@ -927,14 +940,14 @@ fn a_history_the_printer_cannot_give_right_now_is_an_error_not_an_empty_history(
     // A finished job is only in the history. If a busy printer's fault there read as "no history",
     // reconcile would call the job unknown and a caller would print it again.
     for busy in ["wprt:ServerErrorTemporaryError", "wprt:ServerErrorInternalError", "wprt:OperationFailed"] {
-        let (_p, b, r) = setup(FakeConfig { history_fault: Some(busy), ..FakeConfig::default() });
+        let (_p, b, r) = setup(FakeConfig::default().with_history_fault(busy));
         let submitted = r.submit_job(request(job(URL))).unwrap();
         let outcome = wait_for_job(&r, &submitted.job.unwrap(), fast()).unwrap();
         assert!(matches!(outcome, WatchOutcome::Terminal(ref s) if s.state == JobState::Completed), "{outcome:?}");
         assert!(b.reconcile(URL, "Report").is_err(), "{busy}: an error, not NotFound");
     }
     // A service with no GetJobHistory at all: the active jobs are all there is to look at.
-    let (_p, b, r) = setup(FakeConfig { history_fault: Some("wsa:ActionNotSupported"), ending: Ending::Hangs, ..FakeConfig::default() });
+    let (_p, b, r) = setup(FakeConfig::default().with_history_fault("wsa:ActionNotSupported").with_ending(Ending::Hangs));
     r.submit_job(request(job(URL))).unwrap();
     assert!(matches!(b.reconcile(URL, "Report").unwrap(), Reconciled::Found(_)), "the active job is still found");
     assert_eq!(b.reconcile(URL, "Other").unwrap(), Reconciled::NotFound);
@@ -944,7 +957,7 @@ fn a_history_the_printer_cannot_give_right_now_is_an_error_not_an_empty_history(
 fn a_history_longer_than_the_cap_still_finds_the_job_just_sent() {
     // A busy printer lists far more finished jobs than the backend will hold. The reply to
     // SendDocument is lost, so the job can only be found by listing; the list must not be an error.
-    let cfg = FakeConfig { history_filler: 300, first_job_id: 1000, ending: Ending::Hangs, ..FakeConfig::default() };
+    let cfg = FakeConfig::default().with_history_filler(300).with_first_job_id(1000).with_ending(Ending::Hangs);
     let (_p, b, r) = setup(cfg.clone());
     let submitted = r.submit_job(request(job(URL))).unwrap();
     // Finish the job so that it is in the history, behind 300 older rows.
@@ -970,7 +983,7 @@ fn an_unknown_outcome_submit_is_never_retried_automatically_but_a_safe_refusal_i
     assert!(clock.sleeps().is_empty(), "no waiting, no second try");
     // A printer that is not taking jobs refuses before accepting anything: safe, so it is retried,
     // waiting at least as long as the printer's hint, until it takes the job.
-    let (p, _b, r) = setup(FakeConfig { accept_jobs: false, ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_accept_jobs(false));
     let clock = ManualClock::new();
     let got = retry(&policy, &clock, &cancel, &mut jitter, |attempt| {
         if attempt == 3 {
@@ -987,7 +1000,7 @@ fn an_unknown_outcome_submit_is_never_retried_automatically_but_a_safe_refusal_i
         clock.sleeps()
     );
     // And the number of tries is bounded.
-    let (p, _b, r) = setup(FakeConfig { accept_jobs: false, ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_accept_jobs(false));
     let clock = ManualClock::new();
     assert!(retry(&policy, &clock, &cancel, &mut jitter, |_| r.submit_job(request(job(URL)))).is_err());
     assert_eq!(count(&p, "CreatePrintJob"), policy.max_attempts as usize);
@@ -1036,8 +1049,8 @@ fn an_explicit_colour_choice_overrides_the_grey_flag_and_strict_mode_refuses_wha
     use printscan::print::{ColourMode, JobOptions};
     // The fake is a colour printer; colour is chosen when the picture is made, so the bytes are the
     // pass-through PDF either way. What reaches the backend is observable through the plan.
-    let (_p, b, r) = setup(FakeConfig { color: false, ..FakeConfig::default() });
-    let ok = r.submit_job(request(Job { grayscale: true, ..job(URL) }).with_options(JobOptions::new().with_colour(ColourMode::Mono)));
+    let (_p, b, r) = setup(FakeConfig::default().with_color(false));
+    let ok = r.submit_job(request(job(URL).with_grayscale(true)).with_options(JobOptions::new().with_colour(ColourMode::Mono)));
     assert!(ok.is_ok());
     let strict = b.clone().with_strict(true);
     let e = registry(&strict).submit_job(request(job(URL)).with_options(JobOptions::new().with_colour(ColourMode::Colour))).unwrap_err();
@@ -1099,7 +1112,7 @@ fn wsd_job_ids_are_built_and_taken_apart_without_string_handling() {
 
 #[test]
 fn a_typed_wsd_job_id_is_accepted_by_status_cancel_and_watch() {
-    let (_p, _b, r) = setup(FakeConfig { ending: Ending::Hangs, ..FakeConfig::default() });
+    let (_p, _b, r) = setup(FakeConfig::default().with_ending(Ending::Hangs));
     r.submit_job(request(job(URL))).unwrap();
     let id = WsdBackend::job_id(URL, 1).unwrap();
     assert_eq!(r.job_status(&id).unwrap().state, JobState::Pending);
@@ -1129,8 +1142,8 @@ fn expected_pages_give_the_sheet_counter_a_total_that_the_printer_does_not() {
 
 #[test]
 fn details_name_the_newer_formats_and_list_the_resolutions() {
-    let config = FakeConfig {
-        formats: vec![
+    let config = FakeConfig::default()
+        .with_formats(vec![
             "image/jpeg",
             "IMAGE/PNG",
             "image/tiff",
@@ -1139,10 +1152,8 @@ fn details_name_the_newer_formats_and_list_the_resolutions() {
             "application/oxps",
             "application/vnd.vendor-pcl",
             "image/pwg-raster",
-        ],
-        resolutions: vec![(300, 300), (600, 600), (1200, 600)],
-        ..FakeConfig::default()
-    };
+        ])
+        .with_resolutions(vec![(300, 300), (600, 600), (1200, 600)]);
     let (_p, _b, r) = setup(config);
     let d = r.printer_details(&id(URL)).unwrap();
     use DocumentFormat::*;
@@ -1155,7 +1166,7 @@ fn details_name_the_newer_formats_and_list_the_resolutions() {
 
 #[test]
 fn photo_quality_reaches_the_ticket_when_the_printer_lists_it() {
-    let (p, _b, r) = setup(FakeConfig { qualities: vec!["Normal", "High", "Photo"], ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_qualities(vec!["Normal", "High", "Photo"]));
     let submitted = r.submit_job(request(job(URL)).with_options(JobOptions::new().with_quality(Quality::Photo))).unwrap();
     assert!(p.job(1).unwrap().ticket.contains(">Photo<"), "{}", p.job(1).unwrap().ticket);
     assert!(submitted.warnings.is_empty(), "{:?}", submitted.warnings);
@@ -1167,7 +1178,7 @@ fn photo_quality_reaches_the_ticket_when_the_printer_lists_it() {
 
 #[test]
 fn photo_quality_is_dropped_with_a_warning_when_unlisted_and_refused_in_strict_mode() {
-    let (p, b, r) = setup(FakeConfig { qualities: vec!["Draft", "Normal", "High"], ..FakeConfig::default() });
+    let (p, b, r) = setup(FakeConfig::default().with_qualities(vec!["Draft", "Normal", "High"]));
     let submitted = r.submit_job(request(job(URL)).with_options(JobOptions::new().with_quality(Quality::Photo))).unwrap();
     assert!(!p.job(1).unwrap().ticket.contains("Photo"), "{}", p.job(1).unwrap().ticket);
     assert!(submitted.warnings.iter().any(|w| w.contains("Photo")), "{:?}", submitted.warnings);
@@ -1185,7 +1196,7 @@ fn photo_quality_is_dropped_with_a_warning_when_unlisted_and_refused_in_strict_m
 fn a_document_in_a_listed_format_goes_to_the_printer_unchanged() {
     let formats =
         vec!["image/jpeg", "image/png", "image/tiff", "text/plain", "application/vnd.ms-xpsdocument", "application/oxps", "application/postscript"];
-    let (p, _b, r) = setup(FakeConfig { formats, ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_formats(formats));
     let samples = [
         (DocumentFormat::Jpeg, &b"\xff\xd8\xff\xe0jpeg"[..]),
         (DocumentFormat::Png, b"\x89PNG\r\n\x1a\npng"),
@@ -1223,11 +1234,9 @@ impl printscan::print::DocumentConverter for Blank {
     ) -> Result<printscan::print::OwnedDocument, printscan::print::PrintError> {
         let (w, h) = (context.resolution.x_dpi / 10, context.resolution.y_dpi / 10);
         let channels = if context.colour { 3 } else { 1 };
-        let page = printscan::print::pwg::RasterPage { width: w, height: h, gray: !context.colour, pixels: vec![255; (w * h * channels) as usize] };
-        let options = printscan::print::pwg::PwgOptions {
-            dpi: (context.resolution.x_dpi, context.resolution.y_dpi),
-            duplex: printscan::print::pwg::Duplex::Off,
-        };
+        let page = printscan::print::pwg::RasterPage::new(w, h, !context.colour, vec![255; (w * h * channels) as usize]);
+        let options =
+            printscan::print::pwg::PwgOptions::new((context.resolution.x_dpi, context.resolution.y_dpi), printscan::print::pwg::Duplex::Off);
         let bytes =
             printscan::print::pwg::encode(&[page], &options).map_err(|e| printscan::print::PrintError::new(ErrorKind::Failed, e.to_string()))?;
         Ok(printscan::print::OwnedDocument::new(target, bytes))
@@ -1236,7 +1245,7 @@ impl printscan::print::DocumentConverter for Blank {
 
 #[test]
 fn the_registry_converts_for_a_wsd_printer_that_lists_only_raster_and_picks_its_resolution() {
-    let config = FakeConfig { formats: vec!["image/pwg-raster"], resolutions: vec![(150, 150), (600, 600), (1200, 1200)], ..FakeConfig::default() };
+    let config = FakeConfig::default().with_formats(vec!["image/pwg-raster"]).with_resolutions(vec![(150, 150), (600, 600), (1200, 1200)]);
     let (p, _b, r) = setup(config);
     r.set_converter(Arc::new(Blank));
     let submitted = r.submit_job(request(job(URL))).unwrap();
@@ -1252,7 +1261,7 @@ fn the_registry_converts_for_a_wsd_printer_that_lists_only_raster_and_picks_its_
 
 #[test]
 fn details_the_caller_already_has_save_the_registrys_request() {
-    let config = FakeConfig { formats: vec!["image/pwg-raster"], resolutions: vec![(300, 300)], ..FakeConfig::default() };
+    let config = FakeConfig::default().with_formats(vec!["image/pwg-raster"]).with_resolutions(vec![(300, 300)]);
     let (p, _b, r) = setup(config);
     r.set_converter(Arc::new(Blank));
     let details = r.printer_details(&id(URL)).unwrap();
@@ -1273,7 +1282,7 @@ fn a_printer_that_lists_pdf_is_sent_pdf_even_with_a_converter_registered() {
 
 #[test]
 fn without_a_common_format_or_a_converter_nothing_is_sent_to_the_printer() {
-    let (p, _b, r) = setup(FakeConfig { formats: vec!["image/tiff"], ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_formats(vec!["image/tiff"]));
     let error = r.submit_job(request(job(URL))).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::UnsupportedFormat);
     r.set_converter(Arc::new(Blank));
@@ -1285,7 +1294,7 @@ fn without_a_common_format_or_a_converter_nothing_is_sent_to_the_printer() {
 
 #[test]
 fn a_network_printer_is_not_asked_for_a_conversion_without_consent() {
-    let (p, _b, r) = setup(FakeConfig { formats: vec!["image/pwg-raster"], ..FakeConfig::default() });
+    let (p, _b, r) = setup(FakeConfig::default().with_formats(vec!["image/pwg-raster"]));
     r.set_converter(Arc::new(Blank));
     let error = r.submit_job(SubmitRequest::new(Document::pdf(PDF), job(URL))).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::ConsentRequired);
@@ -1295,7 +1304,7 @@ fn a_network_printer_is_not_asked_for_a_conversion_without_consent() {
 #[test]
 fn the_old_wsd_encoder_paths_still_work_and_share_the_neutral_encoder() {
     use printscan_wsd::print::pwg;
-    let page = printscan::print::pwg::RasterPage { width: 3, height: 2, gray: true, pixels: vec![9; 6] };
-    let options = printscan::print::pwg::PwgOptions { dpi: (300, 300), duplex: printscan::print::pwg::Duplex::Off };
+    let page = printscan::print::pwg::RasterPage::new(3, 2, true, vec![9; 6]);
+    let options = printscan::print::pwg::PwgOptions::new((300, 300), printscan::print::pwg::Duplex::Off);
     assert_eq!(pwg::encode(std::slice::from_ref(&page), &options).unwrap(), printscan::print::pwg::encode(&[page], &options).unwrap());
 }

@@ -65,7 +65,7 @@ fn a_document_prints_to_completed_and_reaches_the_printer() {
         if details.formats.contains(&DocumentFormat::Pdf) { DocumentFormat::Pdf } else { *details.formats.first().expect("a listed format") };
     let before = captured(&addr);
     let bytes: &[u8] = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n";
-    let job = Job { printer: Some(id), title: "printscan live WS-Print test".into(), ..Job::default() };
+    let job = Job::default().with_printer(id).with_title("printscan live WS-Print test");
     let request = SubmitRequest::new(Document::new(format, bytes), job).with_consent(UserConfirmed::attest(Some(true)).unwrap());
     let submitted = registry.submit_job(request).expect("CreatePrintJob and SendDocument");
     assert_eq!(submitted.backend, "wsd");

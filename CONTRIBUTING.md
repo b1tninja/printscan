@@ -29,6 +29,11 @@ how to do the same locally.
   opt-in mode named for what it does, not for the vendor or model that needs it.
 * **No specification files in the repository.** Schemas and WSDLs whose licences do not allow
   redistribution stay on the developer's machine.
+* **Every public struct and enum is `#[non_exhaustive]`**, so a field or variant can be added in a
+  minor release. A struct comes with a way to build it outside the crate: `new` with what it cannot
+  do without, `Default` when every field has a sensible default, and `with_*` setters (the
+  crate-private `setters!` macro) on the types callers configure. A `match` on another crate's enum
+  says what an unknown variant means (a warning, `None`, the device's default), never `unreachable!`.
 
 ## Commits and changelogs
 

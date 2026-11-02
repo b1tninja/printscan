@@ -199,16 +199,15 @@ fn choices(input: &Input, config: &Configuration) -> ImageChoices {
             ColorMode::Other(_) => None,
         })
         .collect();
-    let span = |on: bool| on.then_some(ValueSpan { min: -1000, max: 1000, step: 1 });
-    ImageChoices {
-        dpi: input.widths.clone(),
-        dpi_y: input.heights.clone(),
-        colors,
-        brightness: span(config.brightness),
-        contrast: span(config.contrast),
-        formats: config.formats.clone(),
-        ..ImageChoices::default()
-    }
+    let span = |on: bool| on.then_some(ValueSpan::new(-1000, 1000, 1));
+    let mut choices = ImageChoices::default();
+    choices.dpi = input.widths.clone();
+    choices.dpi_y = input.heights.clone();
+    choices.colors = colors;
+    choices.brightness = span(config.brightness);
+    choices.contrast = span(config.contrast);
+    choices.formats = config.formats.clone();
+    choices
 }
 
 /// A scanner's details from what it reported.
@@ -220,26 +219,21 @@ fn scanner(entry: &Entry, elements: &ScannerElements) -> Scanner {
     let feeder = config.feeder.as_ref();
     let platen = config.platen.as_ref();
     let optical = platen.or(feeder.map(|f| &f.front)).and_then(|i| i.optical);
-    Scanner {
-        id: url.clone(),
-        name,
-        feeder: feeder.is_some(),
-        flatbed: platen.is_some(),
-        duplex: feeder.is_some_and(|f| f.duplex),
-        feeder_ready: status.feeder_ready,
-        handling_status: status,
-        feeder_capacity: None,
-        connection: Connection::Wsd,
-        port: Some(url),
-        optical_x: optical.map(|o| o.0),
-        optical_y: optical.map(|o| o.1),
-        pages: None,
-        bed: platen.and_then(|p| p.maximum),
-        sheet: feeder.and_then(|f| f.front.maximum),
-        glass: platen.map(|p| choices(p, &config)),
-        feeder_choices: feeder.map(|f| choices(&f.front, &config)),
-        reported: scan::Reported::default(),
-    }
+    let mut scanner = Scanner::new(url.clone(), name);
+    scanner.feeder = feeder.is_some();
+    scanner.flatbed = platen.is_some();
+    scanner.duplex = feeder.is_some_and(|f| f.duplex);
+    scanner.feeder_ready = status.feeder_ready;
+    scanner.handling_status = status;
+    scanner.connection = Connection::Wsd;
+    scanner.port = Some(url);
+    scanner.optical_x = optical.map(|o| o.0);
+    scanner.optical_y = optical.map(|o| o.1);
+    scanner.bed = platen.and_then(|p| p.maximum);
+    scanner.sheet = feeder.and_then(|f| f.front.maximum);
+    scanner.glass = platen.map(|p| choices(p, &config));
+    scanner.feeder_choices = feeder.map(|f| choices(&f.front, &config));
+    scanner
 }
 
 /// The source a request means: `Auto` is the glass when there is one (WS-Scan never says that
@@ -415,9 +409,9 @@ impl WsdScanBackend {
             if pages.is_empty() {
                 return Err(error);
             }
-            return Err(ScanError::Incomplete { message: error.to_string(), cause: error.cause(), acquired: Acquired { source, pages } });
+            return Err(ScanError::Incomplete { message: error.to_string(), cause: error.cause(), acquired: Acquired::new(source, pages) });
         }
-        Ok(Acquired { source, pages })
+        Ok(Acquired::new(source, pages))
     }
 }
 

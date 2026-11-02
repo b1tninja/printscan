@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Some("bw") => Color::BlackAndWhite,
                 _ => Color::Rgb,
             };
-            let settings = ScanSettings { device: id, source, pages, dpi, color, ..ScanSettings::default() };
+            let settings = ScanSettings::default().with_device(id).with_source(source).with_pages(pages).with_dpi(dpi).with_color(color);
             let acquired = backend.acquire(&settings)?;
             for (n, page) in acquired.pages.iter().enumerate() {
                 let path = format!("{out}-{}.{}", n + 1, page.format);

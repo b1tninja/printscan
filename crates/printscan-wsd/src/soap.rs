@@ -50,6 +50,7 @@ pub type IdSource = Arc<dyn Fn() -> String + Send + Sync>;
 /// A binary payload sent as an MTOM part; the call's body must hold the `xop:Include` for `cid`
 /// ([`mtom::xop_include_ref`]).
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct Attachment<'a> {
     pub cid: &'a str,
     pub data: &'a [u8],

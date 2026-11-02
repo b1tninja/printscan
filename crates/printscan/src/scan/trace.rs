@@ -12,6 +12,7 @@ use crate::scan::HandlingStatus;
 
 /// Where acquire trace lines go.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TraceDest {
     Off,
     Stderr,

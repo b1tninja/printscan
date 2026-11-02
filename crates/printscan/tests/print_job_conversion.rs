@@ -72,7 +72,7 @@ fn a_tracked_print_is_converted_for_the_printer_and_the_tag_travels_once() {
     let converter = Arc::new(ToRaster::default());
     let (registry, clock) = rig(&backend, &converter);
     let reads = Arc::new(AtomicU32::new(0));
-    let mut job = PrintJob::new(Job { printer: Some("net:p1".into()), title: "Report".into(), ..Job::default() }, counting_source(&reads))
+    let mut job = PrintJob::new(Job::default().with_printer("net:p1").with_title("Report"), counting_source(&reads))
         .with_options(JobOptions::new().with_expected_pages(3))
         .with_clock(Arc::new(clock.clone()))
         .with_consent(UserConfirmed::interactive());
@@ -112,7 +112,7 @@ fn a_retry_after_a_safe_failure_reads_the_source_and_converts_again() {
     let converter = Arc::new(ToRaster::default());
     let (registry, clock) = rig(&backend, &converter);
     let reads = Arc::new(AtomicU32::new(0));
-    let mut job = PrintJob::new(Job { printer: Some("net:p1".into()), title: "Report".into(), ..Job::default() }, counting_source(&reads))
+    let mut job = PrintJob::new(Job::default().with_printer("net:p1").with_title("Report"), counting_source(&reads))
         .with_clock(Arc::new(clock.clone()))
         .with_consent(UserConfirmed::interactive());
     let tag = *job.tag();
@@ -158,21 +158,18 @@ mod wsd {
     }
 
     fn print(title: &str) -> PrintJob {
-        PrintJob::new(
-            Job { printer: Some(format!("wsd:{URL}")), title: title.into(), ..Job::default() },
-            BytesSource::new(DocumentFormat::Pdf, PDF.to_vec()),
-        )
-        .with_consent(UserConfirmed::interactive())
+        PrintJob::new(Job::default().with_printer(format!("wsd:{URL}")).with_title(title), BytesSource::new(DocumentFormat::Pdf, PDF.to_vec()))
+            .with_consent(UserConfirmed::interactive())
     }
 
     #[test]
     fn photo_on_a_raster_only_printer_is_negotiated_converted_and_tracked() {
-        let printer = FakePrinter::new(FakeConfig {
-            formats: vec!["image/pwg-raster"],
-            resolutions: vec![(150, 150), (600, 600)],
-            qualities: vec!["Normal", "High", "Photo"],
-            ..FakeConfig::default()
-        });
+        let printer = FakePrinter::new(
+            FakeConfig::default()
+                .with_formats(vec!["image/pwg-raster"])
+                .with_resolutions(vec![(150, 150), (600, 600)])
+                .with_qualities(vec!["Normal", "High", "Photo"]),
+        );
         let registry = registry_over(&printer);
         let converter = Arc::new(ToRaster::default());
         registry.set_converter(converter.clone());
@@ -201,7 +198,7 @@ mod wsd {
 
     #[test]
     fn a_printer_with_no_common_format_fails_the_print_before_anything_is_created() {
-        let printer = FakePrinter::new(FakeConfig { formats: vec!["image/tiff"], ..FakeConfig::default() });
+        let printer = FakePrinter::new(FakeConfig::default().with_formats(vec!["image/tiff"]));
         let registry = registry_over(&printer);
         registry.set_converter(Arc::new(ToRaster::default()));
         let clock = ManualClock::new();

@@ -69,6 +69,7 @@ const DISCOVERY_PORT: u16 = 3702;
 
 /// `wsd:AppSequence`: orders announcements from one device across restarts.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct AppSequence {
     /// Increases each time the device restarts.
     pub instance_id: u64,
@@ -95,6 +96,7 @@ impl AppSequence {
 
 /// A discoverable device as an announcement or a match describes it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Target {
     /// The endpoint address, usually `urn:uuid:...`; the stable identity of the device.
     pub address: String,
@@ -134,6 +136,7 @@ impl Target {
 
 /// How a probe's scopes are compared with a target's.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MatchBy {
     /// The default: the probe scope is a path-prefix of the target scope after normalising case of
     /// scheme and host and trailing slashes; `..` segments never match.
@@ -210,6 +213,7 @@ pub fn scope_matches(rule: &MatchBy, probe: &str, target: &str) -> bool {
 
 /// What a `Probe` asks for. Empty `types` and `scopes` match every device.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ProbeQuery {
     pub types: Vec<QName>,
     pub scopes: Vec<String>,
@@ -239,6 +243,7 @@ impl ProbeQuery {
 
 /// The SOAP header of a discovery message.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Header {
     pub action: String,
     pub message_id: Option<String>,
@@ -249,6 +254,7 @@ pub struct Header {
 
 /// The body of a discovery message.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Body {
     Hello(Target),
     Bye(Target),
@@ -260,6 +266,7 @@ pub enum Body {
 
 /// A parsed discovery message.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Message {
     pub header: Header,
     pub body: Body,
@@ -518,6 +525,7 @@ pub fn resolve_matches(message_id: &str, relates_to: &str, seq: &AppSequence, ta
 
 /// Where a datagram goes.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Destination {
     /// The discovery multicast group. What that means on the wire (group address, port, interface,
     /// hop limit) is the socket implementation's business; this crate has none.
@@ -538,6 +546,7 @@ impl Destination {
 
 /// A received datagram.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Datagram {
     pub from: SocketAddr,
     pub payload: Vec<u8>,
@@ -559,6 +568,7 @@ pub trait DiscoverySocket {
 
 /// What [`discover`] should do.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct DiscoverOptions {
     pub query: ProbeQuery,
     /// How long to listen in total.
@@ -600,6 +610,7 @@ impl DiscoverOptions {
 
 /// One device found.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DiscoveredDevice {
     pub target: Target,
     /// The advertised addresses the connection policy allows.
@@ -613,6 +624,7 @@ pub struct DiscoveredDevice {
 
 /// Why datagrams were not used.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Ignored {
     /// Not a parseable discovery message.
     pub malformed: usize,
@@ -630,6 +642,7 @@ pub struct Ignored {
 
 /// The result of [`discover`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DiscoveryReport {
     pub devices: Vec<DiscoveredDevice>,
     pub ignored: Ignored,

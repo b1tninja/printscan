@@ -19,6 +19,7 @@ pub const MAX_PREVIEW_PIXELS: usize = 1 << 28;
 const MAX_RLE_PIXELS: usize = 1 << 24;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Compression {
     Rgb,
     Rle8,
@@ -29,6 +30,7 @@ pub enum Compression {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct BmpInfo {
     pub width: u32,
     /// Absolute height; see `top_down` for the row order.

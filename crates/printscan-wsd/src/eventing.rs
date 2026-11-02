@@ -51,6 +51,7 @@ const MAX_HEADERS: usize = 16;
 
 /// A subscription lifetime as the protocol writes it: a duration (`PT1H`) or an absolute UTC time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Expiry {
     /// Relative to now.
     After(Duration),
@@ -215,6 +216,7 @@ fn format_datetime(secs: i64) -> String {
 
 /// A `wse:Filter`: a dialect URI and its text.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Filter {
     pub dialect: String,
     pub text: String,
@@ -236,6 +238,7 @@ impl Filter {
 
 /// What to put in a `Subscribe`.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SubscribeRequest {
     /// Where the device pushes events. Must be an address the connection policy allows.
     pub notify_to: EndpointRef,
@@ -292,12 +295,18 @@ impl SubscribeRequest {
 
 /// A live subscription: where to manage it and when it ends.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Subscription {
     pub manager: EndpointRef,
     pub expires: Option<Expiry>,
 }
 
 impl Subscription {
+    /// The subscription managed at `manager`, ending at `expires`.
+    pub fn new(manager: EndpointRef, expires: Option<Expiry>) -> Self {
+        Self { manager, expires }
+    }
+
     /// The `wse:Identifier` reference parameter of the manager reference, if the device gave one.
     pub fn identifier(&self) -> Option<&str> {
         self.manager.parameter(ns::WSE, "Identifier")
@@ -384,6 +393,7 @@ pub fn unsubscribe<T: Transport>(client: &SoapClient<T>, sub: &Subscription) -> 
 
 /// The WS-Eventing fault sub-codes, for services that want to react to a specific refusal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum EventingFault {
     DeliveryModeRequestedUnavailable,
     InvalidExpirationTime,
@@ -419,6 +429,7 @@ impl EventingFault {
 
 /// Why a subscription ended, from a `SubscriptionEnd`.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum EndStatus {
     DeliveryFailure,
     SourceShuttingDown,
@@ -428,6 +439,7 @@ pub enum EndStatus {
 
 /// A `wse:SubscriptionEnd` message sent to the `EndTo` sink.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SubscriptionEnd {
     pub manager: EndpointRef,
     pub status: EndStatus,
@@ -473,6 +485,7 @@ impl Notification {
 
 /// Something a device pushed.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Incoming {
     Event(Notification),
     SubscriptionEnd(SubscriptionEnd),

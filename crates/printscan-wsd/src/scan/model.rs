@@ -20,6 +20,7 @@ const MAX_DPI: u32 = 19_200;
 
 /// The `ScannerDescription` element.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Description {
     pub name: Option<String>,
     pub info: Option<String>,
@@ -29,6 +30,7 @@ pub struct Description {
 /// A colour mode (`ColorEntry`, `ColorProcessing`). The modes the scan core cannot ask for are
 /// kept by name so they still show up in a diagnostic dump.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ColorMode {
     BlackAndWhite1,
     Grayscale8,
@@ -60,6 +62,7 @@ impl ColorMode {
 /// One input: the platen, or one side of the feeder (`PlatenType`, `ADFEntryType`). Sizes are in
 /// thousandths of an inch, as the protocol has them.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Input {
     /// Optical resolution (width, height); the height is the width when the scanner names none.
     pub optical: Option<(u32, u32)>,
@@ -72,6 +75,7 @@ pub struct Input {
 
 /// The feeder (`ADFType`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Feeder {
     pub duplex: bool,
     pub front: Input,
@@ -80,6 +84,7 @@ pub struct Feeder {
 
 /// The `ScannerConfiguration` element.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Configuration {
     /// `FormatValue`s, in the scanner's order.
     pub formats: Vec<String>,
@@ -95,6 +100,7 @@ pub struct Configuration {
 
 /// `ScannerState`.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ScannerState {
     Idle,
     Processing,
@@ -115,6 +121,7 @@ impl ScannerState {
 
 /// One active condition (`DeviceConditionType`).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Condition {
     pub name: String,
     pub component: String,
@@ -123,6 +130,7 @@ pub struct Condition {
 
 /// The `ScannerStatus` element.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Status {
     pub state: ScannerState,
     /// `ScannerStateReason`s other than `None`.
@@ -140,6 +148,7 @@ impl Status {
 /// What one `GetScannerElements` returned; a section the scanner left out or marked
 /// `Valid="false"` is `None`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ScannerElements {
     pub description: Option<Description>,
     pub configuration: Option<Configuration>,
@@ -286,6 +295,7 @@ pub fn parse_scanner_elements(response: Node<'_, '_>) -> ScannerElements {
 /// What `CreateScanJob` answered: the job's id and token, and the front image's size when the
 /// scanner gave it.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CreatedJob {
     pub id: u32,
     pub token: String,
@@ -313,6 +323,7 @@ pub fn parse_created_job(response: Node<'_, '_>) -> Result<CreatedJob, crate::Er
 
 /// A job's `JobStatus`, from `GetJobElements`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct JobStatus {
     /// `JobState` as sent (`Processing`, `Canceled`, `Aborted`, ...).
     pub state: String,

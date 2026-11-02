@@ -35,6 +35,7 @@ use crate::print::{CancelToken, Duplex};
 
 /// A document that owns its bytes: what a [`DocumentConverter`] returns.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct OwnedDocument {
     pub format: DocumentFormat,
     pub bytes: Vec<u8>,
@@ -124,6 +125,7 @@ pub trait DocumentConverter: Send + Sync {
 
 /// The registry's choices around conversion; see [`Registry::set_conversion_policy`](crate::print::Registry::set_conversion_policy).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ConversionPolicy {
     /// Target formats, best first. A format the converter makes and the printer accepts earlier in
     /// this list wins. Default: [`DocumentFormat::DEFAULT_PREFERENCE`].

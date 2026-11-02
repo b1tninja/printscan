@@ -156,6 +156,7 @@ pub fn resolve_qname(node: Node<'_, '_>, qname: &str) -> Option<(Option<String>,
 
 /// A qualified name: namespace URI plus local name. Prefixes never matter.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
 pub struct QName {
     pub ns: String,
     pub local: String,

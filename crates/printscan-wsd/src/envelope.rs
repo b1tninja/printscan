@@ -57,6 +57,7 @@ pub fn build_envelope_with_headers(to: &str, action_uri: &str, message_id: &str,
 
 /// What a reply must correspond to.
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct Expect<'a> {
     /// The `wsa:Action` the reply must carry (when it carries one).
     pub action: &'a str,

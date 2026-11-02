@@ -90,6 +90,7 @@ impl RemoteJob {
 /// which jobs are marked [`RemoteJob::ours`], because a caller that shows a queue needs the foreign
 /// jobs too.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct JobFilter {
     /// Only this user's jobs (jobs whose listing has no user pass: the source does not say).
     pub user: Option<String>,
@@ -289,6 +290,7 @@ pub fn reconcile_jobs(jobs: Vec<RemoteJob>, fingerprint: &Fingerprint, support: 
 /// What a backend can answer about the jobs in its queue. Read it before relying on a field of
 /// [`RemoteJob`]; the default is "nothing".
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub struct JobQueryCaps {
     /// [`Backend::list_jobs`](crate::print::backends::Backend::list_jobs) works.
     pub list: bool,

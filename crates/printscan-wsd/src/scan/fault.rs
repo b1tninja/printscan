@@ -80,16 +80,15 @@ pub fn scan_error(doing: &str, error: &Error) -> ScanError {
 /// What the scanner's status says about the paper path. The feeder is only known empty when the
 /// scanner names `InputTrayEmpty`; nothing in WS-Scan says that paper is loaded.
 pub fn handling_status(status: &Status) -> HandlingStatus {
-    HandlingStatus {
-        feeder_ready: status.names("InputTrayEmpty").then_some(false),
-        jam: status.names("MediaJam"),
-        cover_open: status.names("CoverOpen"),
-        path_cover_open: status.names("InterlockOpen"),
-        multiple_feed: status.names("MultipleFeedError"),
-        lamp_error: status.names("LampError"),
-        attention: status.names("AttentionRequired"),
-        ..HandlingStatus::default()
-    }
+    let mut handling = HandlingStatus::default();
+    handling.feeder_ready = status.names("InputTrayEmpty").then_some(false);
+    handling.jam = status.names("MediaJam");
+    handling.cover_open = status.names("CoverOpen");
+    handling.path_cover_open = status.names("InterlockOpen");
+    handling.multiple_feed = status.names("MultipleFeedError");
+    handling.lamp_error = status.names("LampError");
+    handling.attention = status.names("AttentionRequired");
+    handling
 }
 
 #[cfg(test)]

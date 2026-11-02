@@ -32,6 +32,7 @@ pub const CONTENT_TYPE: &str = "application/ipp";
 
 /// The IPP version a client speaks. Ordered: 1.1 is lower than 2.0.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum IppVersion {
     V1_1,
     V2_0,
@@ -133,6 +134,7 @@ pub const JOB_ATTRIBUTES: &[&str] = &[
 
 /// `which-jobs` of `Get-Jobs`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Which {
     NotCompleted,
     Completed,
@@ -150,6 +152,7 @@ impl Which {
 
 /// What a job request carries beyond the printer and the user.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct JobRequest {
     pub job_name: String,
     pub document_name: Option<String>,
@@ -163,6 +166,7 @@ pub struct JobRequest {
 
 /// A reply that carried out the operation.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Reply {
     pub message: Message,
     pub status: StatusCode,
@@ -179,6 +183,7 @@ impl Reply {
 
 /// A job the printer accepted.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Accepted {
     pub job_id: i32,
     pub job: JobAttrs,
@@ -340,8 +345,7 @@ impl<T: Transport> Client<T> {
         // The limit covers the whole exchange, upload included: a document must not use up the time
         // meant for the printer's answer (see `with_upload_allowance`).
         let timeout = with_upload_allowance(self.limits.timeout, body.len());
-        let request =
-            Request { content_type: CONTENT_TYPE.to_owned(), soap_action: String::new(), body, timeout, max_response: self.limits.max_response };
+        let request = Request::new(CONTENT_TYPE, "", body, timeout, self.limits.max_response);
         let response = self.transport.post(self.uri.as_device(), request)?;
         if response.status != 200 {
             return Err(IppError::Http { status: response.status, retry_after: response.retry_after });

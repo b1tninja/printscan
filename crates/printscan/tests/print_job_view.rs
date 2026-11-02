@@ -48,13 +48,10 @@ fn local(script: Vec<Result<JobStatus, PrintError>>) -> FakeBackend {
 }
 
 fn print_job(rig: &Rig) -> PrintJob {
-    PrintJob::new(
-        Job { printer: Some("net:p1".into()), title: "Quarterly report".into(), ..Job::default() },
-        BytesSource::new(DocumentFormat::Pdf, PDF.to_vec()),
-    )
-    .with_clock(Arc::new(rig.clock.clone()))
-    .with_wall_clock(|| at(1_000))
-    .with_consent(UserConfirmed::interactive())
+    PrintJob::new(Job::default().with_printer("net:p1").with_title("Quarterly report"), BytesSource::new(DocumentFormat::Pdf, PDF.to_vec()))
+        .with_clock(Arc::new(rig.clock.clone()))
+        .with_wall_clock(|| at(1_000))
+        .with_consent(UserConfirmed::interactive())
 }
 
 fn drive(job: &mut PrintJob, rig: &Rig) {

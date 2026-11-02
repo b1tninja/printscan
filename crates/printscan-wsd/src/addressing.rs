@@ -19,6 +19,7 @@ const MAX_PARAM_TEXT: usize = 512;
 
 /// One reference parameter: a namespaced element with text content.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ReferenceParameter {
     pub ns: String,
     pub local: String,
@@ -39,6 +40,7 @@ impl ReferenceParameter {
 
 /// An endpoint reference: an address and its reference parameters.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EndpointRef {
     pub address: String,
     pub reference_parameters: Vec<ReferenceParameter>,

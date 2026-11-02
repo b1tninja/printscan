@@ -60,6 +60,7 @@ pub fn state_name(state: ScanJobState) -> &'static str {
 
 /// Which way through the stack a manual-duplex job is going.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Direction {
     /// Each scan adds a new sheet (the fronts).
     Fronts,
@@ -88,6 +89,7 @@ impl Direction {
 
 /// Where a manual-duplex job is in the stack. See the module docs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ManualDuplex {
     /// Sheets in the stack (the pages of the fronts pass).
     pub sheets: u32,
@@ -162,6 +164,7 @@ pub fn duplex_page_number(sheets: u32, index: usize) -> usize {
 
 /// One journal file, as read or about to be written.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct JobRecord {
     /// Stable across `--continue`; unique enough to tell two folders' jobs apart.
     pub id: String,
@@ -179,6 +182,11 @@ pub struct JobRecord {
 }
 
 impl JobRecord {
+    /// The job `id` for `request` with its `journal`; no times, view, attempts or manual duplex yet.
+    pub fn new(id: impl Into<String>, request: Value, journal: ScanJobJournal) -> Self {
+        Self { id: id.into(), started: 0, updated: 0, request, journal, view: Value::Null, attempts: Vec::new(), manual_duplex: None }
+    }
+
     /// The file's JSON.
     pub fn to_json(&self) -> Value {
         let mut value = json!({

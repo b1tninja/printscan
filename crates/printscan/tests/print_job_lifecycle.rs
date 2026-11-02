@@ -41,7 +41,7 @@ fn status(state: JobState) -> JobStatus {
 }
 
 fn request(printer: &str) -> SubmitRequest<'static> {
-    SubmitRequest::new(Document::pdf(b"%PDF-1.7"), Job { printer: Some(printer.into()), ..Job::default() })
+    SubmitRequest::new(Document::pdf(b"%PDF-1.7"), Job::default().with_printer(printer))
 }
 
 fn registry(backend: &FakeBackend) -> Registry {
@@ -119,14 +119,24 @@ fn a_backend_that_cannot_report_is_accepted_outcome_unknown_and_is_not_polled() 
 fn a_watch_with_an_injected_clock_follows_the_job_to_a_terminal_state() {
     let printer = reporting(vec![
         Ok(status(JobState::Pending)),
-        Ok(JobStatus { sheets_done: Some(1), sheets_total: Some(2), ..status(JobState::Processing) }),
+        Ok({
+            let mut built = status(JobState::Processing);
+            built.sheets_done = Some(1);
+            built.sheets_total = Some(2);
+            built
+        }),
         Ok(status(JobState::Completed)),
     ]);
     let registry = registry(&printer);
     let submitted = registry.submit_job(request("net:p1")).unwrap();
     let clock = ManualClock::new();
-    let mut watch =
-        JobWatch::for_submitted(&submitted, WaitPolicy { growth_percent: 100, ..WaitPolicy::default() }).unwrap().with_clock(Arc::new(clock.clone()));
+    let mut watch = JobWatch::for_submitted(&submitted, {
+        let mut built = WaitPolicy::default();
+        built.growth_percent = 100;
+        built
+    })
+    .unwrap()
+    .with_clock(Arc::new(clock.clone()));
     let mut seen = Vec::new();
     let outcome = watch.run(&registry, &mut |step| {
         if let WatchStep::Update(s) = step {
@@ -153,7 +163,14 @@ fn the_blocking_convenience_is_built_on_the_polls_and_gives_up_at_max_wait() {
     assert!(printer.status_calls() >= 2);
     assert_eq!(wait_for_job(&registry, &JobId::new("nope", "1"), WaitPolicy::default()).unwrap_err().kind(), ErrorKind::UnknownBackend);
     // Finishing is also seen by the convenience.
-    let done = reporting(vec![Ok(status(JobState::Processing)), Ok(JobStatus { warnings: vec!["warning".into()], ..status(JobState::Completed) })]);
+    let done = reporting(vec![
+        Ok(status(JobState::Processing)),
+        Ok({
+            let mut built = status(JobState::Completed);
+            built.warnings = vec!["warning".into()];
+            built
+        }),
+    ]);
     let registry = self::registry(&done);
     let outcome = wait_for_job(&registry, &JobId::new("net", "p1#7"), WaitPolicy::every(Duration::from_millis(10))).unwrap();
     assert!(outcome.is_success());
@@ -210,13 +227,26 @@ fn error_kinds_carry_a_default_retry_safety_a_backend_can_override() {
 fn expected_pages_become_the_total_only_where_the_backend_reports_none() {
     // The backend reports sheets done and never a total (a network printer's way).
     let printer = reporting(vec![
-        Ok(JobStatus { sheets_done: Some(1), ..status(JobState::Processing) }),
-        Ok(JobStatus { sheets_done: Some(3), ..status(JobState::Processing) }),
-        Ok(JobStatus { sheets_done: Some(4), sheets_total: Some(4), ..status(JobState::Completed) }),
+        Ok({
+            let mut built = status(JobState::Processing);
+            built.sheets_done = Some(1);
+            built
+        }),
+        Ok({
+            let mut built = status(JobState::Processing);
+            built.sheets_done = Some(3);
+            built
+        }),
+        Ok({
+            let mut built = status(JobState::Completed);
+            built.sheets_done = Some(4);
+            built.sheets_total = Some(4);
+            built
+        }),
     ]);
     let registry = registry(&printer);
     let options = JobOptions::new().with_expected_pages(6);
-    let duplex = Job { printer: Some("net:p1".into()), duplex: Some(printscan::print::Duplex::LongEdge), ..Job::default() };
+    let duplex = Job::default().with_printer("net:p1").with_duplex(printscan::print::Duplex::LongEdge);
     let submitted = registry.submit_job(SubmitRequest::new(Document::pdf(b"%PDF-1.7"), duplex).with_options(options)).unwrap();
     assert_eq!((submitted.expected.pages, submitted.expected.sheets), (Some(6), Some(3)));
     let mut watch =

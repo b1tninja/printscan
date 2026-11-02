@@ -29,6 +29,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// The size and shape caps of the reader.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Limits {
     /// The largest message, document bytes included.
     pub max_message: usize,
@@ -110,6 +111,7 @@ impl std::error::Error for CodecError {}
 
 /// An attribute group.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum GroupTag {
     Operation,
     Job,
@@ -191,6 +193,7 @@ mod tag {
 
 /// An RFC 2579 date and time (`dateTime`, 11 bytes).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DateTime {
     pub year: u16,
     pub month: u8,
@@ -270,6 +273,7 @@ impl DateTime {
 
 /// One value, typed by its syntax.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Value {
     Integer(i32),
     Boolean(bool),
@@ -369,6 +373,7 @@ impl Value {
 
 /// An attribute: a name and one or more values (1setOf).
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Attribute {
     pub name: String,
     pub values: Vec<Value>,
@@ -443,6 +448,7 @@ impl Attribute {
 
 /// A group of attributes.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Group {
     pub tag: GroupTag,
     pub attributes: Vec<Attribute>,
@@ -489,6 +495,7 @@ impl Group {
 
 /// One IPP message.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Message {
     pub major: u8,
     pub minor: u8,

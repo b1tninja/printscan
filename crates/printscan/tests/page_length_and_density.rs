@@ -151,7 +151,7 @@ fn tiff_at(image: &image::GrayImage, dpi_x: u32, dpi_y: u32) -> Vec<u8> {
 
 /// A rule at `dpi` that leaves the page as delivered.
 fn plain_rule(dpi: u32) -> PageRule {
-    PageRule { dpi, dpi_y: None, bw_threshold: None, length: LengthPlan::default() }
+    PageRule::new(dpi)
 }
 
 #[test]
@@ -203,7 +203,7 @@ fn a_non_square_request_keeps_its_vertical_resolution_when_the_file_carries_no_d
     assert_eq!(image_density(&no_density_jpeg), None);
     assert_eq!(image_density(&no_phys_png), None);
 
-    let settings = printscan::scan::ScanSettings { dpi: 200, dpi_y: Some(100), ..printscan::scan::ScanSettings::default() };
+    let settings = printscan::scan::ScanSettings::default().with_dpi(200).with_dpi_y(100);
     for (format, bytes) in [("jpeg", &no_density_jpeg), ("png", &no_phys_png)] {
         let (page, _) = page_for(bytes, PageRule::for_settings(&settings));
         assert_eq!((page.dpi, page.dpi_y, page.requested_dpi), (200, 100, 200), "{format}");
@@ -211,14 +211,14 @@ fn a_non_square_request_keeps_its_vertical_resolution_when_the_file_carries_no_d
         assert_eq!(page.length.length_mils, mils_of(page.height, 100), "{format}");
 
         // A thresholded page writes the same two resolutions into its BMP.
-        let bw = printscan::scan::ScanSettings { color: printscan::scan::Color::BlackAndWhite, ..settings.clone() };
+        let bw = settings.clone().with_color(printscan::scan::Color::BlackAndWhite);
         let (page, _) = page_for(bytes, PageRule::for_settings(&bw));
         assert!(page.thresholded, "{format}");
         assert_eq!(image_density(&page.bytes).map(|(x, y)| (x.round(), y.round())), Some((200.0, 100.0)), "{format} bmp");
     }
 
     // A square request is unchanged.
-    let square = printscan::scan::ScanSettings { dpi: 200, ..printscan::scan::ScanSettings::default() };
+    let square = printscan::scan::ScanSettings::default().with_dpi(200);
     let (page, _) = page_for(&no_density_jpeg, PageRule::for_settings(&square));
     assert_eq!((page.dpi, page.dpi_y), (200, 200));
 }
@@ -243,7 +243,11 @@ fn feeder_page(width: u32, height: u32, sheet_rows: u32) -> impl Fn(u32, u32) ->
 
 /// A rule at `dpi` that infers the sheet end with the default options.
 fn infer_rule(dpi: u32) -> PageRule {
-    PageRule { dpi, dpi_y: None, bw_threshold: None, length: LengthPlan { source: LengthSource::Driver, infer: Some(InferOptions::default()) } }
+    {
+        let mut built = PageRule::new(dpi);
+        built.length = LengthPlan::new(LengthSource::Driver, Some(InferOptions::default()));
+        built
+    }
 }
 
 #[test]
@@ -296,7 +300,11 @@ fn without_inference_the_page_is_never_cut_and_keeps_the_plans_source() {
     let value = feeder_page(width, height, rows_for_mils(11_000, dpi));
     let bytes = bmp_at(width, height, dpi, dpi, &value);
     for source in [LengthSource::Driver, LengthSource::Size, LengthSource::Device] {
-        let rule = PageRule { dpi, dpi_y: None, bw_threshold: None, length: LengthPlan { source, infer: None } };
+        let rule = {
+            let mut built = PageRule::new(dpi);
+            built.length = LengthPlan::new(source, None);
+            built
+        };
         let (page, _) = page_for(&bytes, rule);
         assert_eq!((page.height, page.length.source, page.length.approximate), (height, source, false), "{source:?}");
         assert_eq!(page.length.length_mils, Some(14_000), "{source:?}");

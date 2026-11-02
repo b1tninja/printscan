@@ -13,19 +13,19 @@
 //! use printscan::scan::job::{Continuation, ScanJob, ScanJobConfig};
 //! use printscan::scan::{Acquired, Page, ScanError, ScanSettings, Source};
 //!
-//! let settings = ScanSettings { device: "demo:1".into(), source: Source::Feeder, pages: 3, ..ScanSettings::default() };
+//! let settings = ScanSettings::new("demo:1").with_source(Source::Feeder).with_pages(3);
 //! let mut job = ScanJob::new(settings, ScanJobConfig::default().with_title("Contract"));
 //! let t = Timestamp::from_secs;
 //!
-//! let page = || Page { bytes: vec![0; 8], format: "jpeg", width: 4, height: 4, dpi: 200, dpi_y: 200, requested_dpi: 200, thresholded: false, length: Default::default() };
+//! let page = || Page::new(vec![0; 8], "jpeg", 4, 4, 200);
 //! let plan = job.begin_attempt(t(1))?;
 //! assert_eq!(plan.settings.pages, 3);
 //! // ... the app runs `printscan::scan::acquire(&plan.settings)` on its worker thread. Say the feeder
 //! // ran dry after two sheets:
 //! let shortfall = ScanError::Incomplete {
 //!     message: printscan::scan::feeder_shortfall_message(3, 2),
-//!     acquired: Acquired { source: Source::Feeder, pages: vec![page(), page()] },
-//!     cause: Some(printscan::scan::Cause { kind: printscan::scan::InterruptKind::FeederEmpty, native: None }),
+//!     acquired: Acquired::new(Source::Feeder, vec![page(), page()]),
+//!     cause: Some(printscan::scan::Cause::new(printscan::scan::InterruptKind::FeederEmpty, None)),
 //! };
 //! job.finish_attempt(Err(shortfall), t(2))?;
 //! assert_eq!(job.snapshot().pages.len(), 2); // kept
@@ -34,7 +34,7 @@
 //! // The person reloaded and chose to continue: scan the one missing page onto the two kept.
 //! let plan = job.begin_attempt_with(t(30), Continuation::Append)?;
 //! assert_eq!(plan.settings.pages, 1);
-//! job.finish_attempt(Ok(Acquired { source: Source::Feeder, pages: vec![page()] }), t(32))?;
+//! job.finish_attempt(Ok(Acquired::new(Source::Feeder, vec![page()])), t(32))?;
 //! assert!(job.state().is_terminal());
 //! assert_eq!(job.take_pages()?.len(), 3);
 //! # Ok::<(), Box<dyn std::error::Error>>(())
@@ -386,8 +386,9 @@ pub struct AttemptPlan {
 }
 
 /// One page, without its bytes.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[non_exhaustive]
 pub struct PageInfo {
     /// 1-based position in the job.
     pub number: u32,
@@ -428,6 +429,7 @@ pub enum AttemptOutcome {
 /// A failure of one attempt, as data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub struct AttemptFailure {
     /// The kind, phase, native code and sentence of the error (see [`ScanErrorInfo`]).
     pub info: ScanErrorInfo,
@@ -441,6 +443,7 @@ pub struct AttemptFailure {
 /// One entry of the attempt timeline.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub struct AttemptRecord {
     pub number: u32,
     pub started: Timestamp,
@@ -470,6 +473,7 @@ pub struct AttemptRecord {
 /// The page currently crossing the wire.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub struct InFlight {
     pub percent: Option<u8>,
     pub bytes_received: u64,

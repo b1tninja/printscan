@@ -9,3 +9,7 @@ All notable changes to `printscan-ipp` are recorded here. The format follows
 ## [0.1.0]
 
 The first release.
+
+Every public struct and enum is `#[non_exhaustive]`. Structs are built with `new`, `Default` and
+the `with_*` setters, or by assigning fields to a value from one of those; a `match` on an enum
+needs a `_` arm.

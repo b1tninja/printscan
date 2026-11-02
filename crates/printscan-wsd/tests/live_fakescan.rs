@@ -65,14 +65,14 @@ impl Fake {
     }
 
     fn feeder(&self, pages: u32) -> ScanSettings {
-        ScanSettings { source: Source::Feeder, pages, ..ScanSettings::default() }
+        ScanSettings::default().with_source(Source::Feeder).with_pages(pages)
     }
 }
 
 #[test]
 fn a_glass_scan_is_one_page_with_the_density_it_carries() {
     let Some(fake) = fake() else { return };
-    let acquired = fake.backend.acquire(&ScanSettings { source: Source::Glass, dpi: 100, ..ScanSettings::default() }).expect("glass scan");
+    let acquired = fake.backend.acquire(&ScanSettings::default().with_source(Source::Glass).with_dpi(100)).expect("glass scan");
     assert_eq!(acquired.pages.len(), 1);
     let page = &acquired.pages[0];
     assert_eq!(page.format, "png", "the lossless format first");
@@ -84,7 +84,7 @@ fn a_glass_scan_is_one_page_with_the_density_it_carries() {
 fn an_open_ended_feeder_scan_takes_every_sheet() {
     let Some(fake) = fake() else { return };
     fake.paper(3);
-    let acquired = fake.backend.acquire(&ScanSettings { dpi: 100, ..fake.feeder(0) }).expect("feeder scan");
+    let acquired = fake.backend.acquire(&fake.feeder(0).with_dpi(100)).expect("feeder scan");
     assert_eq!(acquired.pages.len(), 3);
 }
 
@@ -100,7 +100,7 @@ fn a_jam_after_two_sheets_keeps_them_and_names_the_jam() {
     let Some(fake) = fake() else { return };
     fake.paper(4);
     fake.plan(r#"{"kind":"jam","when":{"after_pages":2}}"#);
-    let err = fake.backend.acquire(&ScanSettings { dpi: 100, ..fake.feeder(4) }).unwrap_err();
+    let err = fake.backend.acquire(&fake.feeder(4).with_dpi(100)).unwrap_err();
     let ScanError::Incomplete { acquired, cause, .. } = err else { panic!("{err:?}") };
     assert_eq!(acquired.pages.len(), 2);
     assert_eq!(cause.map(|c| c.kind), Some(InterruptKind::Jam));
@@ -111,7 +111,7 @@ fn a_reply_cut_off_mid_page_is_a_failure_not_a_cancel() {
     let Some(fake) = fake() else { return };
     fake.paper(3);
     fake.plan(r#"{"kind":"abort","when":{"page":2,"fraction":0.5}}"#);
-    let err = fake.backend.acquire(&ScanSettings { dpi: 100, ..fake.feeder(3) }).unwrap_err();
+    let err = fake.backend.acquire(&fake.feeder(3).with_dpi(100)).unwrap_err();
     let ScanError::Incomplete { acquired, cause, .. } = err else { panic!("{err:?}") };
     assert_eq!(acquired.pages.len(), 1, "page 2 was not delivered");
     assert_ne!(cause.map(|c| c.kind), Some(InterruptKind::Cancelled), "nobody pressed Cancel");

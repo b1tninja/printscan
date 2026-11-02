@@ -16,6 +16,7 @@ use printscan::print::{ErrorKind, NativeCode, Phase, PrintError, RetrySafety};
 
 /// Everything that can go wrong, as values an interface can show and an agent can act on.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum IppError {
     /// The network policy refused (the URL, a missing confirmation).
     Policy(String),
@@ -125,6 +126,7 @@ pub type Result<T, E = IppError> = std::result::Result<T, E>;
 
 /// The protocol step that was in flight; it decides whether repeating is safe.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Op {
     /// `Get-Printer-Attributes`, `Get-Jobs`, `Validate-Job`: reads.
     Query,
@@ -159,6 +161,7 @@ impl Op {
 
 /// How an error reads to a caller; see [`IppError::classify`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Class {
     pub kind: ErrorKind,
     pub phase: Phase,
@@ -279,8 +282,8 @@ impl IppError {
             error = error.with_retry_after(wait);
         }
         match self {
-            Self::Status { code, .. } => error = error.with_native(NativeCode { domain: "ipp", code: i64::from(code.0), name: code.name() }),
-            Self::Http { status, .. } => error = error.with_native(NativeCode { domain: "http", code: i64::from(*status), name: None }),
+            Self::Status { code, .. } => error = error.with_native(NativeCode::new("ipp", i64::from(code.0), code.name())),
+            Self::Http { status, .. } => error = error.with_native(NativeCode::new("http", i64::from(*status), None)),
             _ => {}
         }
         error

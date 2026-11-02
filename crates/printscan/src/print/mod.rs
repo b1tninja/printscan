@@ -56,7 +56,8 @@ pub use wake::{WakeReceiver, WakeSender, wake_channel};
 pub use watch::{JobSource, JobWatch, WaitPolicy, WatchOutcome, WatchStep, wait_for_job};
 
 /// One of a printer driver's own job options, such as the paper tray.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PrinterOption {
     /// The driver's keyword (`InputSlot`).
     pub key: String,
@@ -72,6 +73,7 @@ pub struct PrinterOption {
 
 /// Which sides of the sheet a job prints on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Duplex {
     /// One side.
     #[default]
@@ -84,6 +86,7 @@ pub enum Duplex {
 
 /// How a page is fitted to the paper.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Scaling {
     /// The page's own size, even where the printer's margins clip it.
     #[default]
@@ -94,6 +97,7 @@ pub enum Scaling {
 
 /// A job's print settings: where it goes and how many copies, sides and colours.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Job {
     /// The printer, or `None` for the default one.
     pub printer: Option<String>,
@@ -111,6 +115,24 @@ pub struct Job {
     pub title: String,
     /// The driver's own options, as a keyword and the chosen value (such as a tray).
     pub options: Vec<(String, String)>,
+}
+
+setters!(Job {
+    some_into with_printer => printer: String,
+    set with_copies => copies: u32,
+    set with_collate => collate: bool,
+    some with_duplex => duplex: Duplex,
+    set with_scaling => scaling: Scaling,
+    set with_grayscale => grayscale: bool,
+    into with_title => title: String,
+    set with_options => options: Vec<(String, String)>,
+});
+
+impl Job {
+    /// The default job (see [`Default`]) for `printer`.
+    pub fn new(printer: impl Into<String>) -> Self {
+        Self::default().with_printer(printer)
+    }
 }
 
 impl Default for Job {

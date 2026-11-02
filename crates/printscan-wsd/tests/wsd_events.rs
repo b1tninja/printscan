@@ -165,7 +165,7 @@ fn rig_with(tuning: EventTuning, config: FakeConfig) -> Rig {
 }
 
 fn rig() -> Rig {
-    rig_with(EventTuning::default(), FakeConfig { polls_to_finish: 2, ..FakeConfig::default() })
+    rig_with(EventTuning::default(), FakeConfig::default().with_polls_to_finish(2))
 }
 
 impl Rig {
@@ -488,7 +488,13 @@ fn a_connection_from_another_address_is_closed_unread_and_a_token_is_bound_to_it
 
 #[test]
 fn a_flood_is_rate_limited_and_a_slow_sender_does_not_stop_the_listener() {
-    let tuning = EventTuning { burst: 5, per_second: 0, connection_deadline: Duration::from_millis(300), ..EventTuning::default() };
+    let tuning = {
+        let mut built = EventTuning::default();
+        built.burst = 5;
+        built.per_second = 0;
+        built.connection_deadline = Duration::from_millis(300);
+        built
+    };
     let rig = rig_with(tuning, FakeConfig::default());
     let rx = rig.subscribed(1);
     // A sender that connects and says nothing is cut off at the deadline.
@@ -514,7 +520,11 @@ fn a_flood_is_rate_limited_and_a_slow_sender_does_not_stop_the_listener() {
 fn a_connection_deadline_too_large_to_add_is_capped_and_not_a_panic() {
     // `Duration::MAX` would overflow `Instant + Duration`; it means the longest allowed deadline,
     // and the listener must survive it (the cap itself is checked in the events unit tests).
-    let tuning = EventTuning { connection_deadline: Duration::MAX, ..EventTuning::default() };
+    let tuning = {
+        let mut built = EventTuning::default();
+        built.connection_deadline = Duration::MAX;
+        built
+    };
     let rig = rig_with(tuning, FakeConfig::default());
     let rx = rig.subscribed(1);
     assert_eq!(rig.send_event("JobStatusEvent", 1, "huge-deadline"), Some(202));
@@ -730,7 +740,7 @@ fn shutdown_unsubscribes_stops_and_joins_and_dropping_the_backend_does_the_same(
 fn submit(rig: &Rig) -> JobId {
     let registry = Registry::new();
     registry.register(Box::new(rig.backend.clone())).unwrap();
-    let job = Job { printer: Some(format!("wsd:{URL}")), title: "t".into(), ..Job::default() };
+    let job = Job::default().with_printer(format!("wsd:{URL}")).with_title("t");
     let accepted = registry.submit_job(SubmitRequest::new(Document::pdf(PDF), job).with_consent(UserConfirmed::interactive())).unwrap();
     accepted.job.unwrap()
 }
@@ -745,7 +755,7 @@ fn watch_over(rig: &Rig, job: &JobId) -> (Registry, JobWatch) {
 #[test]
 fn a_woken_watch_polls_now_and_the_lost_event_is_caught_by_the_safety_poll() {
     // The printer finishes the job at its fourth status read, announcing nothing.
-    let rig = rig_with(EventTuning::default(), FakeConfig { polls_to_finish: 4, ..FakeConfig::default() });
+    let rig = rig_with(EventTuning::default(), FakeConfig::default().with_polls_to_finish(4));
     let job = submit(&rig);
     let (registry, mut watch) = watch_over(&rig, &job);
     // Not trusted yet: ordinary fast polling (this poll also subscribes).
@@ -776,7 +786,7 @@ fn a_woken_watch_polls_now_and_the_lost_event_is_caught_by_the_safety_poll() {
 
 #[test]
 fn events_never_decide_an_outcome_even_when_they_claim_the_job_ended() {
-    let rig = rig_with(EventTuning::default(), FakeConfig { ending: printscan_wsd::print::testing::Ending::Hangs, ..FakeConfig::default() });
+    let rig = rig_with(EventTuning::default(), FakeConfig::default().with_ending(printscan_wsd::print::testing::Ending::Hangs));
     let job = submit(&rig);
     let (registry, mut watch) = watch_over(&rig, &job);
     watch.tick(&registry);
@@ -791,7 +801,7 @@ fn events_never_decide_an_outcome_even_when_they_claim_the_job_ended() {
 
 #[test]
 fn losing_the_subscription_returns_the_watch_to_fast_polling() {
-    let rig = rig_with(EventTuning::default(), FakeConfig { ending: printscan_wsd::print::testing::Ending::Hangs, ..FakeConfig::default() });
+    let rig = rig_with(EventTuning::default(), FakeConfig::default().with_ending(printscan_wsd::print::testing::Ending::Hangs));
     let job = submit(&rig);
     let (registry, mut watch) = watch_over(&rig, &job);
     watch.tick(&registry);

@@ -57,7 +57,7 @@ impl Backend for Recorder {
     fn acquire(&self, settings: &ScanSettings) -> Result<Acquired, ScanError> {
         self.seen.lock().expect("seen").push(settings.device.clone());
         if settings.device == RECORDER_ID || settings.device.is_empty() {
-            Ok(Acquired { source: Source::Glass, pages: Vec::new() })
+            Ok(Acquired::new(Source::Glass, Vec::new()))
         } else {
             Err(ScanError::Failed(format!("rec: unknown device {:?}", settings.device)))
         }
@@ -235,7 +235,7 @@ fn acquire_with_no_prefix_goes_to_the_only_backend_or_the_first_that_lists() {
 fn the_progress_token_receives_pages_as_they_arrive() {
     let registry = all_three();
     let progress = ProgressToken::new();
-    let settings = ScanSettings { progress: Some(progress.clone()), ..request(&format!("escl:{ESCL_ID}"), Source::Feeder, 2) };
+    let settings = request(&format!("escl:{ESCL_ID}"), Source::Feeder, 2).with_progress(progress.clone());
     let acquired = registry.acquire(&settings).expect("acquire");
     assert_eq!(acquired.pages.len(), 2);
     assert_eq!(progress.pages_done(), 2);
@@ -252,7 +252,7 @@ fn partial_pages_are_kept_when_a_later_page_fails_on_each_backend() {
     // WIA: one sheet in the tray; the driver answers busy for the next one.
     registry.register(Box::new(WiaLike::new())).expect("wia");
 
-    let settings = |device: String| ScanSettings { progress: Some(ProgressToken::new()), ..request(&device, Source::Feeder, 3) };
+    let settings = |device: String| request(&device, Source::Feeder, 3).with_progress(ProgressToken::new());
 
     let sane = settings(format!("sane:{SANE_ID}"));
     let error = registry.acquire(&sane).expect_err("sane shortfall");
@@ -329,7 +329,7 @@ fn a_backend_with_a_status_read_blocks_before_scanning() {
 fn black_and_white_works_on_a_jpeg_page_from_a_backend_that_is_not_wia() {
     let registry = Registry::new();
     registry.register(Box::new(SaneLike::new(1))).expect("sane");
-    let settings = ScanSettings { color: Color::BlackAndWhite, ..request("", Source::Glass, 1) };
+    let settings = request("", Source::Glass, 1).with_color(Color::BlackAndWhite);
     let delivered = registry.acquire(&settings).expect("acquire").pages.remove(0);
     assert_eq!(image_format(&delivered.bytes), "jpeg");
     let (page, from_bits) = page_for(&delivered.bytes, PageRule::for_settings(&settings));
@@ -338,7 +338,7 @@ fn black_and_white_works_on_a_jpeg_page_from_a_backend_that_is_not_wia() {
     let info = bmp::parse(&page.bytes).expect("a bmp");
     assert_eq!(info.bits, 1);
     // Colour requests leave the JPEG as it came, with its size read from the JPEG header.
-    let plain = ScanSettings { color: Color::Gray, ..settings };
+    let plain = settings.with_color(Color::Gray);
     let (kept, _) = page_for(&delivered.bytes, PageRule::for_settings(&plain));
     assert_eq!((kept.format, kept.width, kept.height, kept.thresholded), ("jpeg", 16, 8, false));
 }
@@ -346,7 +346,7 @@ fn black_and_white_works_on_a_jpeg_page_from_a_backend_that_is_not_wia() {
 #[test]
 fn native_codes_stay_in_their_own_domain() {
     let registry = all_three();
-    let wia = ScanSettings { progress: Some(ProgressToken::new()), ..request(&format!("wia:{WIA_ID}"), Source::Feeder, 3) };
+    let wia = request(&format!("wia:{WIA_ID}"), Source::Feeder, 3).with_progress(ProgressToken::new());
     let error = registry.acquire(&wia).expect_err("shortfall");
     // The WIA-shaped fake's HRESULT is replaced by the shortfall sentence here; ask it directly.
     let hresult = common::wia_like::error_from_hresult(0x8021_0006, "");

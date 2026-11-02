@@ -36,7 +36,7 @@ fn status(state: JobState) -> Result<JobStatus, printscan::print::backends::Prin
 }
 
 fn print_job(rig: &Rig) -> PrintJob {
-    PrintJob::new(Job { printer: Some("net:p1".into()), title: "t".into(), ..Job::default() }, BytesSource::new(DocumentFormat::Pdf, PDF.to_vec()))
+    PrintJob::new(Job::default().with_printer("net:p1").with_title("t"), BytesSource::new(DocumentFormat::Pdf, PDF.to_vec()))
         .with_clock(Arc::new(rig.clock.clone()))
         .with_consent(UserConfirmed::interactive())
 }

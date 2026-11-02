@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(intent) = intent {
         job_options = job_options.with_rendering_intent(intent);
     }
-    let job = Job { printer: Some(id.clone()), title: "printscan ipp_probe".into(), ..Job::default() };
+    let job = Job::default().with_printer(id.clone()).with_title("printscan ipp_probe");
     let request =
         SubmitRequest::new(Document::new(format, &document), job).with_options(job_options).with_consent(UserConfirmed::attest(Some(true))?);
     let submitted = registry.submit_job(request)?;
@@ -79,6 +79,6 @@ fn cmyk_page() -> Result<Vec<u8>, Box<dyn Error>> {
             }
         }
     }
-    let page = TypedPage { width, height, kind: RasterType::Cmyk8, data };
-    Ok(pwg::encode_typed(&[page], &PwgOptions { dpi: (75, 75), duplex: Duplex::Off })?)
+    let page = TypedPage::new(width, height, RasterType::Cmyk8, data);
+    Ok(pwg::encode_typed(&[page], &PwgOptions::new((75, 75), Duplex::Off))?)
 }

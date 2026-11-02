@@ -111,7 +111,11 @@ fn per_printer_formats_are_read_once_and_a_known_list_is_used_without_asking() {
     assert_eq!(registry.submit_job(request()).unwrap().conversion.unwrap().to, PwgRaster);
     assert_eq!(fake.detail_calls(), 1);
 
-    let details = PrinterDetails { formats: printer_formats, ..PrinterDetails::default() };
+    let details = {
+        let mut built = PrinterDetails::default();
+        built.formats = printer_formats;
+        built
+    };
     registry.submit_job_with_details(request(), Some(details)).unwrap();
     assert_eq!(fake.detail_calls(), 1, "the caller's details replace the request");
     assert_eq!(fake.submissions().len(), 2);
