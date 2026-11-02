@@ -120,6 +120,22 @@ The optional `serde` feature (off by default) adds `Serialize`/`Deserialize` on 
 command-line run writes beside its pages, and the contract enums with their existing wire strings;
 `ScanJob::continuing_from(..)` starts a later run from the journal. Page bytes and tokens are never serialised.
 
+## When a scan stops early: `Interruption`
+
+`Interruption::new(kind, received, expected)`, with `with_pass(Pass::Fronts | Backs)` for a manual duplex and
+`with_source(used)`, answers what the person can do and what to fix first; the app only words it.
+
+* `primary()` is `Continue` when pages were kept and more are wanted, `TryAgain` when nothing was kept, and
+  `None` when every wanted page is in (the `recovery` rule). `actions()` lists the primary, then
+  `ReverseNow` when fronts of a manual duplex are in, then `Finish`, always.
+* `remedy()` (`Remedy::for_kind`) names what to put right at the scanner (`ClearJam`, `LoadPaper`, ...); a
+  cancel or an unknown cause has none, so the error's own sentence is shown.
+* `resume()` is what the next leg asks for: the pages still wanted (`None` for the rest of the feeder), the pages
+  carried over, and the source to keep. Once pages came in the leg stays on their source: `Auto` would choose
+  the glass as soon as the emptied tray reads not ready.
+
+`contract_json()` lists the wire strings of `Pass`, `InterruptAction` and `Remedy` for the bindings.
+
 ## Page length
 
 A feeder often cannot tell how long the sheet it pulled is. `ScanSettings::page_length` says how the
