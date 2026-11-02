@@ -31,7 +31,8 @@ scan       WS-Scan backend for printscan::scan (cargo feature `scan`, default): 
 ```
 
 `cargo run -p printscan-wsd --example wsd_scan -- details <ScannerService url>` reads a scanner
-without scanning; `wsd_probe` does the same for a printer.
+without scanning; `wsd_probe` does the same for a printer, and `wsd_print` prints one file and
+follows the job.
 
 ## Building a service client on it
 
