@@ -139,7 +139,7 @@ device; `tests/http_transport.rs` runs the real transport against loopback
 servers (refused redirects, capped replies, timeouts, early close, refused connections, `Retry-After`
 headers); `tests/live_loopback.rs`
 checks metadata and eventing against a loopback fake device you start yourself,
-and is skipped unless `CRAFT_WSD_LIVE_URL` is set. No test contacts anything but loopback.
+and is skipped unless `PRINTSCAN_WSD_LIVE_URL` is set. No test contacts anything but loopback.
 
 ```text
 cargo test -p printscan-wsd

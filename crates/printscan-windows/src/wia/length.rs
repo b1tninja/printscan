@@ -477,12 +477,12 @@ mod tests {
     }
 
     /// The saved real scan (200 dpi, 14 in extent): inference lands where the measured scanner ended the sheet.
-    /// Set `PDFCRAFT_TEST_PADDED_SCAN` to its path; skipped when unset or missing. Read only, never stored in the
+    /// Set `PRINTSCAN_WIA_PADDED_SCAN` to its path; skipped when unset or missing. Read only, never stored in the
     /// repository.
     #[test]
     fn the_saved_scan_is_inferred_at_the_measured_sheet_end() {
         use printscan::scan::{InferOptions, assess_sheet_end};
-        let Some(path) = std::env::var_os("PDFCRAFT_TEST_PADDED_SCAN") else { return };
+        let Some(path) = std::env::var_os("PRINTSCAN_WIA_PADDED_SCAN") else { return };
         let Ok(bytes) = std::fs::read(path) else { return };
         let Ok(found) = assess_sheet_end(&bytes, 200, &InferOptions::default()) else {
             panic!("the saved scan should be inferable");

@@ -9,6 +9,9 @@ description = "Printing and scanning: a shared job and device vocabulary, the sc
 keywords = ["print", "scan", "scanner", "printer", "wia"]
 categories = ["hardware-support"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lints]
 workspace = true
 

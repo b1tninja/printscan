@@ -3,7 +3,7 @@
 //! sending static bytes), the subscription manager against canned WS-Eventing replies from a small
 //! scripted transport, renew / expiry / `SubscriptionEnd` flows on an injected clock, the fall back to
 //! polling, and a `JobWatch` that is woken. No fake printer sends anything here: the real-device-shaped
-//! integration lives in the pdfcraft-fakeprint harness (outside this repository).
+//! integration runs against [fakeprint](https://github.com/b1tninja/fakeprint) (outside this repository).
 #![cfg(all(feature = "print", not(target_arch = "wasm32")))]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 

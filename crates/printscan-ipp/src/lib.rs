@@ -41,8 +41,8 @@
 //! # Tests
 //!
 //! There is no fake printer in this crate. The unit tests here use static byte vectors and a scripted
-//! transport; the integration suite against a real IPP server (the fake printer is fakeprint) lives
-//! in the pdfcraft-fakeprint harness, outside this repository.
+//! transport; the integration suite runs against a real IPP server,
+//! [fakeprint](https://github.com/b1tninja/fakeprint), outside this repository.
 
 #![cfg(not(target_arch = "wasm32"))]
 

@@ -9,6 +9,9 @@ description = "An IPP (RFC 8010/8011) print backend for printscan: plain HTTP to
 keywords = ["ipp", "print", "printer", "printscan"]
 categories = ["hardware-support", "network-programming"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lints]
 workspace = true
 

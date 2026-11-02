@@ -1579,7 +1579,7 @@ fn write_i4(props: &IWiaPropertyStorage, id: u32, value: i32) -> Result<(), Scan
     ffi::write_i32_property(props, id, value).map_err(|e| {
         let text = describe_error(&e);
         let code = e.code().0 as u32;
-        if std::env::var_os("PDFCRAFT_SCAN_WRITE_LOG").is_some() {
+        if std::env::var_os("PRINTSCAN_WIA_WRITE_LOG").is_some() {
             eprintln!("scan: write_i4 property {id} ({id:#x}) = {value} failed: {text} ({code:#010x})");
         }
         log::warn!("scan: property {id:#x} = {value} was not accepted: {text} ({code:#010x})");

@@ -6,6 +6,11 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Web Services for Devices (WSD) for printers and scanners: bounded XML, SOAP 1.2 / WS-Addressing, MTOM, faults, a local-network-only URL policy, WS-Transfer, WS-Eventing and WS-Discovery messages, and a blocking HTTP transport"
+keywords = ["wsd", "ws-print", "ws-scan", "soap", "printscan"]
+categories = ["hardware-support", "network-programming"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints]
 workspace = true

@@ -9,6 +9,12 @@ description = "Windows printing and scanning for printscan: the print spooler as
 keywords = ["windows", "print", "scan", "wia", "spooler"]
 categories = ["hardware-support", "os::windows-apis"]
 
+# The backends are Windows-only; documenting for Linux would show only the WIA rule tables.
+[package.metadata.docs.rs]
+all-features = true
+default-target = "x86_64-pc-windows-msvc"
+targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"]
+
 # The workspace forbids unsafe code. WIA is COM, and its calls cannot be made without `unsafe`:
 # this crate denies it instead, and only `wia::ffi` and `wia::sinks` allow it, every block with a
 # `// SAFETY:` comment (docs/wia-unsafe-audit.md).

@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  # Publish the crates whose release pull request was just merged (release-plz.toml).
+  release:
+    if: github.repository == 'b1tninja/printscan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # crates.io trusts this workflow only in this environment (RELEASING.md). The job runs on every
+    # push to main and does nothing unless a release pull request was merged.
+    environment: release
+    permissions:
+      contents: write
+      # To see whether the commit came from a release pull request (release_always = false).
+      pull-requests: read
+      # crates.io trusted publishing: a short-lived token from GitHub's OIDC, no stored secret.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Open or update the release pull request.
+  release-pr:
+    if: github.repository == 'b1tninja/printscan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-pr-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

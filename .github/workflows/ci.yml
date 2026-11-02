@@ -9,6 +9,14 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch or pull request makes the older run moot.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   test:
     timeout-minutes: 30
@@ -42,6 +50,22 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  # The oldest compiler the crates claim (`rust-version` in Cargo.toml).
+  msrv:
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.95
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets --all-features --locked
+
   wasm:
     timeout-minutes: 15
     runs-on: ubuntu-latest
@@ -53,6 +77,37 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p printscan --target wasm32-unknown-unknown --no-default-features --locked
       - run: cargo check -p printscan --target wasm32-unknown-unknown --no-default-features --features serde,print --locked
       - run: cargo check -p printscan-wsd --target wasm32-unknown-unknown --locked
       - run: cargo check -p printscan-ipp --target wasm32-unknown-unknown --locked
+
+  # What crates.io would get: every crate packaged and built from its own tarball, against the
+  # others' tarballs (not the workspace paths), and the portable crates' docs built for Linux as
+  # docs.rs does.
+  package:
+    timeout-minutes: 20
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo package --workspace --locked
+      - run: cargo doc -p printscan -p printscan-wsd -p printscan-ipp --all-features --no-deps --locked --target x86_64-unknown-linux-gnu
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  deny:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses sources

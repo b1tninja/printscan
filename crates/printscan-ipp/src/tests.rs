@@ -1,7 +1,7 @@
 //! Printer-free tests of the IPP backend: static byte vectors, request builders checked against
 //! expected bytes, canned replies through a small scripted transport (a mock transport, not a fake
 //! printer: it answers exactly the replies a test queues), and registry-level routing.
-//! Tests against a real IPP server live in the pdfcraft-fakeprint harness, outside this repository.
+//! Tests against a real IPP server run against [fakeprint](https://github.com/b1tninja/fakeprint), outside this repository.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
 use std::collections::VecDeque;

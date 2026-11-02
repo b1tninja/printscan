@@ -143,8 +143,8 @@ impl IWiaTransferCallback_Impl for Transfer_Impl {
         let status = i32::try_from(WIA_TRANSFER_MSG_STATUS).unwrap_or(1);
         let end = i32::try_from(WIA_TRANSFER_MSG_END_OF_STREAM).unwrap_or(2);
         if message == status {
-            // `PDFCRAFT_SCAN_STATUS_LOG=1` prints STATUS (useful when the CLI has no env_logger).
-            if std::env::var_os("PDFCRAFT_SCAN_STATUS_LOG").is_some() {
+            // `PRINTSCAN_WIA_STATUS_LOG=1` prints STATUS (useful when the CLI has no env_logger).
+            if std::env::var_os("PRINTSCAN_WIA_STATUS_LOG").is_some() {
                 eprintln!("scan: transfer status percent={percent} transferred={transferred}");
             }
             if let Ok(state) = self.this.state.try_borrow()

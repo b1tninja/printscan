@@ -389,10 +389,10 @@ fn a_page_built_by_the_page_builder_starts_as_a_driver_length() {
 
 #[test]
 fn the_optional_local_scan_boundary_is_found_where_the_measured_scanner_put_it() {
-    // Local and optional: set CRAFT_SCAN_PADDED_SAMPLE to a 200 dpi BMP of a 14 in extent from a scanner that pads
+    // Local and optional: set PRINTSCAN_SCAN_PADDED_SAMPLE to a 200 dpi BMP of a 14 in extent from a scanner that pads
     // with pure white (the sheet ends at about 10.73 inches). Read only, never stored in the repository, skipped
     // when unset or unreadable.
-    let Some(path) = std::env::var_os("CRAFT_SCAN_PADDED_SAMPLE") else { return };
+    let Some(path) = std::env::var_os("PRINTSCAN_SCAN_PADDED_SAMPLE") else { return };
     let Ok(bytes) = std::fs::read(path) else { return };
     let found = assess_sheet_end(&bytes, 200, &InferOptions::default()).expect("measured scan");
     assert_eq!(found.sheet_end_row, 2146);

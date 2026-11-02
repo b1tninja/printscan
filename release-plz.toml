@@ -1,0 +1,17 @@
+# release-plz (https://release-plz.dev): .github/workflows/release.yml.
+#
+# On every push to main it opens or updates one "release" pull request that bumps the versions of
+# the crates that changed (checked with cargo-semver-checks against the published version) and
+# adds their CHANGELOG.md entries. Merging that pull request publishes them to crates.io in
+# dependency order, tags each one `<crate>-v<version>` and makes a GitHub release. Nothing is
+# published by any other push. RELEASING.md has the one-time setup.
+
+[workspace]
+# Publish only when the release pull request is merged, never on an ordinary push.
+release_always = false
+semver_check = true
+changelog_update = true
+git_release_enable = true
+git_tag_enable = true
+pr_labels = ["release"]
+publish_timeout = "10m"

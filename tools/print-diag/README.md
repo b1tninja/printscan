@@ -26,7 +26,7 @@ driver's default ticket.
 ## Scan and measure
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scan_flatbed.ps1 -Out page.bmp -Device "*MFC-9330CDW*"
+powershell -ExecutionPolicy Bypass -File scan_flatbed.ps1 -Out page.bmp -Device "*part of the scanner name*"
 ```
 
 ```bash

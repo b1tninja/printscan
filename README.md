@@ -18,6 +18,16 @@ The test devices are separate projects, so a parser bug cannot pass on both side
 [fakescan](https://github.com/b1tninja/fakescan) (WSD and WIA scanner) and
 [fakeprint](https://github.com/b1tninja/fakeprint) (WSD printer).
 
+## Using it
+
+Requires Rust 1.95. Each crate's README lists its features; with default features off,
+`printscan` is the job vocabulary alone and builds for `wasm32`. Changes are in each crate's
+`CHANGELOG.md`.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the checks a change must pass and the rules the code keeps,
+[RELEASING.md](RELEASING.md) how a version reaches crates.io, and [SECURITY.md](SECURITY.md) how to
+report a vulnerability.
+
 ## History
 
 The crates started as `craft-job`, `craft-scan`, `craft-devices`, `craft-wsd` and the backend layer of `craft-print`, written for the
