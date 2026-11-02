@@ -115,7 +115,7 @@ pub struct DeviceMetadata {
 
 impl DeviceMetadata {
     /// Read a `wsx:Metadata` element.
-    pub fn from_element(metadata: Node<'_, '_>) -> Result<Self> {
+    pub(crate) fn from_element(metadata: Node<'_, '_>) -> Result<Self> {
         if !xml::is(metadata, ns::WSX, "Metadata") {
             return Err(Error::Protocol(format!("expected wsx:Metadata, found {}", metadata.tag_name().name())));
         }
@@ -285,12 +285,12 @@ pub fn get_metadata_call(dialect: Option<&str>) -> Call<'static> {
 
 /// WS-Transfer `Get` on the client's endpoint (a device or hosted-service address).
 pub fn transfer_get<T: Transport>(client: &SoapClient<T>) -> Result<DeviceMetadata> {
-    client.call(&transfer_get_call(), DeviceMetadata::from_element)
+    client.call_node(&transfer_get_call(), DeviceMetadata::from_element)
 }
 
 /// WS-MetadataExchange `GetMetadata` on the client's endpoint.
 pub fn get_metadata<T: Transport>(client: &SoapClient<T>, dialect: Option<&str>) -> Result<DeviceMetadata> {
-    client.call(&get_metadata_call(dialect), DeviceMetadata::from_element)
+    client.call_node(&get_metadata_call(dialect), DeviceMetadata::from_element)
 }
 
 #[cfg(test)]

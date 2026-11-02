@@ -116,7 +116,7 @@ fn number32(node: Node<'_, '_>) -> Option<u32> {
 
 /// The `JobId` a `CreatePrintJobResponse` assigns; missing, non-numeric or above `i32::MAX` is a
 /// protocol error.
-pub fn parse_create_print_job(response: Node<'_, '_>) -> Result<u32> {
+pub(crate) fn parse_create_print_job(response: Node<'_, '_>) -> Result<u32> {
     let id = child(response, ns::WPRT, "JobId").ok_or_else(|| WsdError::Protocol("CreatePrintJobResponse has no JobId".into()))?;
     match number32(id) {
         Some(n) if n <= i32::MAX as u32 => Ok(n),
@@ -128,7 +128,7 @@ pub fn parse_create_print_job(response: Node<'_, '_>) -> Result<u32> {
 
 /// Read a `GetPrinterElementsResponse`: description, status and capabilities where present, and the
 /// names of sections the printer marked `Valid="false"`. Unknown sections are skipped.
-pub fn parse_printer_elements(response: Node<'_, '_>) -> Result<PrinterElements> {
+pub(crate) fn parse_printer_elements(response: Node<'_, '_>) -> Result<PrinterElements> {
     let list = child(response, ns::WPRT, "PrinterElements").ok_or_else(|| WsdError::Protocol("no PrinterElements in the reply".into()))?;
     let mut out = PrinterElements::default();
     for data in children(list, ns::WPRT, "ElementData").take(MAX_ITEMS) {
@@ -274,7 +274,7 @@ fn read_job_status(n: Node<'_, '_>) -> Result<JobStatus> {
 
 /// Read a `GetJobElementsResponse`: the job status and print ticket where present, and the sections
 /// the printer marked invalid. A malformed status fails the whole reply.
-pub fn parse_job_elements(response: Node<'_, '_>) -> Result<JobElements> {
+pub(crate) fn parse_job_elements(response: Node<'_, '_>) -> Result<JobElements> {
     let list = child(response, ns::WPRT, "JobElements").ok_or_else(|| WsdError::Protocol("no JobElements in the reply".into()))?;
     let mut out = JobElements::default();
     for data in children(list, ns::WPRT, "ElementData").take(MAX_ITEMS) {
@@ -331,7 +331,7 @@ fn read_ticket(n: Node<'_, '_>) -> PrintTicket {
 /// say in which order a history is listed, and job ids grow with submission, so the newest jobs
 /// (the ones a caller looking for a job it just sent needs) are kept whatever the order; the rows
 /// kept stay in the order the printer gave them.
-pub fn parse_job_list(response: Node<'_, '_>, container: &str) -> Result<Vec<JobSummary>> {
+pub(crate) fn parse_job_list(response: Node<'_, '_>, container: &str) -> Result<Vec<JobSummary>> {
     let list = child(response, ns::WPRT, container).ok_or_else(|| WsdError::Protocol(format!("no {container} in the reply")))?;
     let history = container == "JobHistory";
     let mut out = Vec::new();

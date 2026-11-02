@@ -120,7 +120,7 @@ impl fmt::Display for Fault {
 }
 
 /// Read a `soap:Fault` element. Missing parts degrade to empty values; this never fails.
-pub fn parse_fault(fault: Node<'_, '_>) -> Fault {
+pub(crate) fn parse_fault(fault: Node<'_, '_>) -> Fault {
     let code_el = xml::child(fault, ns::SOAP, "Code");
     let role = code_el.and_then(|c| xml::child(c, ns::SOAP, "Value")).and_then(|v| xml::resolve_qname(v, &xml::text(v))).map_or(
         Role::Other,

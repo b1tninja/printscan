@@ -24,7 +24,7 @@ pub type WireError = crate::Error;
 pub use crate::KINDS as WIRE_KINDS;
 /// A SOAP fault as the generic layer parses it (the sub-code is classified by [`super::fault`]).
 pub type WireFault = crate::Fault;
-pub use crate::fault::{Role, parse_fault};
+pub use crate::fault::Role;
 pub use crate::ns::{ANONYMOUS, FAULT_ACTION, SOAP, WSA, WSA_FINAL, XOP};
 pub use crate::{Fault, Stage, SubCode, TransportKind};
 

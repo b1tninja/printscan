@@ -8,8 +8,6 @@
 
 use std::fmt;
 
-use roxmltree::Node;
-
 use super::ns;
 
 /// The sub-code of a fault.
@@ -144,8 +142,9 @@ impl From<super::adapter::WireFault> for Fault {
 }
 
 /// Read a `soap:Fault` element. Missing parts degrade to `Other`/empty; this never fails.
-pub fn parse_fault(fault: Node<'_, '_>) -> Fault {
-    super::adapter::parse_fault(fault).into()
+#[cfg(test)]
+fn parse_fault(fault: roxmltree::Node<'_, '_>) -> Fault {
+    crate::fault::parse_fault(fault).into()
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@ use roxmltree::Node;
 use crate::error::{Error, Result};
 use crate::fault::parse_fault;
 use crate::ns;
-use crate::xml;
+use crate::xml::{self, Element};
 
 /// A random version-4 style UUID (std only: random hasher keys, a clock reading that is safe on wasm32, and a counter).
 pub fn new_uuid() -> String {
@@ -73,13 +73,23 @@ pub struct Expect<'a> {
 /// A SOAP fault becomes [`Error::Fault`], whatever the HTTP status was. A reply whose action
 /// header, correlation id or body element does not match the request is a protocol error. `E` is
 /// the caller's error type, so a service crate can read its own messages with its own errors.
-pub fn read_reply<T, E: From<Error>>(bytes: &[u8], expect: Expect<'_>, read: impl FnOnce(Node<'_, '_>) -> Result<T, E>) -> Result<T, E> {
+pub fn read_reply<T, E: From<Error>>(bytes: &[u8], expect: Expect<'_>, read: impl FnOnce(Element<'_, '_>) -> Result<T, E>) -> Result<T, E> {
     read_reply_hinted(bytes, expect, None, read)
 }
 
 /// [`read_reply`] for a caller that has the HTTP reply's `Retry-After`: a fault in the body carries
 /// it ([`crate::Fault::retry_after`]).
 pub fn read_reply_hinted<T, E: From<Error>>(
+    bytes: &[u8],
+    expect: Expect<'_>,
+    retry_after: Option<Duration>,
+    read: impl FnOnce(Element<'_, '_>) -> Result<T, E>,
+) -> Result<T, E> {
+    read_reply_node(bytes, expect, retry_after, |n| read(Element::new(n)))
+}
+
+/// [`read_reply_hinted`] with the parser's node, for this crate's own readers.
+pub(crate) fn read_reply_node<T, E: From<Error>>(
     bytes: &[u8],
     expect: Expect<'_>,
     retry_after: Option<Duration>,
@@ -150,7 +160,7 @@ fn check_header(header: Option<Node<'_, '_>>, action: &str, message_id: &str) ->
 }
 
 /// The text of a WS-Addressing header block (either namespace), if present.
-pub fn addressing(header: Node<'_, '_>, local: &str) -> Option<String> {
+pub(crate) fn addressing(header: Node<'_, '_>, local: &str) -> Option<String> {
     header.children().find(|c| xml::is(*c, ns::WSA, local) || xml::is(*c, ns::WSA_FINAL, local)).map(xml::text)
 }
 
@@ -212,7 +222,7 @@ mod tests {
     #[test]
     fn a_matching_reply_is_read() {
         let r = reply(ACT_RESP, Some("abc"), "<svc:DoItResponse/>");
-        let name = read_reply::<_, Error>(r.as_bytes(), expect("abc"), |n| Ok(n.tag_name().name().to_owned())).unwrap();
+        let name = read_reply::<_, Error>(r.as_bytes(), expect("abc"), |n| Ok(n.name().to_owned())).unwrap();
         assert_eq!(name, "DoItResponse");
         // No header at all is tolerated; correlation is checked only when present.
         let bare = format!("<s:Envelope xmlns:s=\"{}\" xmlns:svc=\"{SVC}\"><s:Body><svc:DoItResponse/></s:Body></s:Envelope>", ns::SOAP);

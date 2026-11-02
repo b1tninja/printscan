@@ -203,7 +203,7 @@ fn input(node: Node<'_, '_>, prefix: &str) -> Input {
 }
 
 /// Parse a `ScannerConfiguration` element.
-pub fn parse_configuration(node: Node<'_, '_>) -> Configuration {
+pub(crate) fn parse_configuration(node: Node<'_, '_>) -> Configuration {
     let settings = xml::child(node, WSCN, "DeviceSettings");
     let formats = settings
         .and_then(|s| xml::child(s, WSCN, "FormatsSupported"))
@@ -241,7 +241,7 @@ pub fn parse_configuration(node: Node<'_, '_>) -> Configuration {
 }
 
 /// Parse a `ScannerStatus` element.
-pub fn parse_status(node: Node<'_, '_>) -> Status {
+pub(crate) fn parse_status(node: Node<'_, '_>) -> Status {
     let state = ScannerState::parse(&xml::child_text(node, WSCN, "ScannerState").unwrap_or_default());
     let reasons = xml::child(node, WSCN, "ScannerStateReasons")
         .map(|r| xml::children(r, WSCN, "ScannerStateReason").take(MAX_LIST).map(xml::text).filter(|t| !t.is_empty() && t != "None").collect())
@@ -262,7 +262,7 @@ pub fn parse_status(node: Node<'_, '_>) -> Status {
 }
 
 /// Parse a `ScannerDescription` element.
-pub fn parse_description(node: Node<'_, '_>) -> Description {
+pub(crate) fn parse_description(node: Node<'_, '_>) -> Description {
     Description {
         name: xml::child_text(node, WSCN, "ScannerName"),
         info: xml::child_text(node, WSCN, "ScannerInfo"),
@@ -272,7 +272,7 @@ pub fn parse_description(node: Node<'_, '_>) -> Description {
 
 /// Parse a `GetScannerElementsResponse`: each `ElementData` that is valid and holds one of the
 /// three sections. Unknown and invalid sections are skipped.
-pub fn parse_scanner_elements(response: Node<'_, '_>) -> ScannerElements {
+pub(crate) fn parse_scanner_elements(response: Node<'_, '_>) -> ScannerElements {
     let mut out = ScannerElements::default();
     let Some(elements) = xml::child(response, WSCN, "ScannerElements") else { return out };
     for data in xml::children(elements, WSCN, "ElementData").take(16) {
@@ -306,7 +306,7 @@ pub struct CreatedJob {
 }
 
 /// Parse a `CreateScanJobResponse`.
-pub fn parse_created_job(response: Node<'_, '_>) -> Result<CreatedJob, crate::Error> {
+pub(crate) fn parse_created_job(response: Node<'_, '_>) -> Result<CreatedJob, crate::Error> {
     let id = xml::child(response, WSCN, "JobId")
         .and_then(|n| number(n, u32::MAX))
         .ok_or_else(|| crate::Error::Protocol("CreateScanJobResponse without a JobId".into()))?;
@@ -339,7 +339,7 @@ impl JobStatus {
 }
 
 /// Parse a `GetJobElementsResponse` for its `JobStatus`; `None` when it has no valid one.
-pub fn parse_job_status(response: Node<'_, '_>) -> Option<JobStatus> {
+pub(crate) fn parse_job_status(response: Node<'_, '_>) -> Option<JobStatus> {
     let elements = xml::child(response, WSCN, "JobElements")?;
     xml::children(elements, WSCN, "ElementData").take(16).filter(|d| d.attribute("Valid").and_then(xml::parse_bool) != Some(false)).find_map(|d| {
         let status = xml::child(d, WSCN, "JobStatus")?;

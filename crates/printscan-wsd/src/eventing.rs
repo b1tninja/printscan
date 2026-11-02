@@ -25,7 +25,7 @@ use crate::error::{Error, Result};
 use crate::fault::parse_fault;
 use crate::soap::{Call, SoapClient};
 use crate::transport::Transport;
-use crate::xml::{self, QName};
+use crate::xml::{self, Element, QName};
 use crate::{SubCode, ns};
 
 pub const ACTION_SUBSCRIBE: &str = "http://schemas.xmlsoap.org/ws/2004/08/eventing/Subscribe";
@@ -314,7 +314,7 @@ impl Subscription {
 }
 
 /// Read a `wse:SubscribeResponse`.
-pub fn parse_subscribe_response(node: Node<'_, '_>) -> Result<Subscription> {
+pub(crate) fn parse_subscribe_response(node: Node<'_, '_>) -> Result<Subscription> {
     let mut managers = xml::children(node, ns::WSE, "SubscriptionManager");
     let manager = managers.next().ok_or_else(|| Error::Protocol("SubscribeResponse has no SubscriptionManager".into()))?;
     if managers.next().is_some() {
@@ -346,9 +346,9 @@ pub fn subscribe<T: Transport>(client: &SoapClient<T>, request: &SubscribeReques
 pub fn subscribe_with<T: Transport, X>(
     client: &SoapClient<T>,
     request: &SubscribeRequest,
-    extra: impl FnOnce(Node<'_, '_>) -> Result<X>,
+    extra: impl FnOnce(Element<'_, '_>) -> Result<X>,
 ) -> Result<(Subscription, X)> {
-    client.call(&request.call()?, |node| Ok((parse_subscribe_response(node)?, extra(node)?)))
+    client.call_node(&request.call()?, |node| Ok((parse_subscribe_response(node)?, extra(Element::new(node))?)))
 }
 
 /// A manager-addressed call: reference parameters become headers, and the manager's address (which
@@ -369,7 +369,7 @@ pub fn renew<T: Transport>(client: &SoapClient<T>, sub: &Subscription, expires: 
         .namespace("wse", ns::WSE)
         .headers(sub.manager.header_xml())
         .body(body);
-    manager_call(client, sub)?.call(&call, read_expires)
+    manager_call(client, sub)?.call_node(&call, read_expires)
 }
 
 /// GetStatus; the remaining lifetime if the device states one.
@@ -379,7 +379,7 @@ pub fn get_status<T: Transport>(client: &SoapClient<T>, sub: &Subscription) -> R
         .namespace("wse", ns::WSE)
         .headers(sub.manager.header_xml())
         .body("<wse:GetStatus/>");
-    manager_call(client, sub)?.call(&call, read_expires)
+    manager_call(client, sub)?.call_node(&call, read_expires)
 }
 
 /// Unsubscribe.
@@ -474,12 +474,12 @@ impl Notification {
     }
 
     /// Read the payload element (re-parsed from the bounded message) with a service-specific reader.
-    pub fn with_body<R, E: From<Error>>(&self, read: impl FnOnce(Node<'_, '_>) -> std::result::Result<R, E>) -> std::result::Result<R, E> {
+    pub fn with_body<R, E: From<Error>>(&self, read: impl FnOnce(Element<'_, '_>) -> std::result::Result<R, E>) -> std::result::Result<R, E> {
         let text = xml::checked_text(&self.raw)?;
         let doc = xml::parse(text)?;
         let body = xml::child(doc.root_element(), ns::SOAP, "Body").ok_or_else(|| Error::Protocol("the envelope has no Body".into()))?;
         let payload = body.children().find(|c| c.is_element()).ok_or_else(|| Error::Protocol("the Body is empty".into()))?;
-        read(payload)
+        read(Element::new(payload))
     }
 }
 
@@ -824,7 +824,7 @@ mod tests {
         assert_eq!(n.body, QName::new("urn:ev", "Changed"));
         assert_eq!(n.header("urn:x", "Ctx"), Some("c1"));
         assert_eq!(n.header("urn:x", "Nested"), None, "only plain-text blocks are kept");
-        let v = n.with_body(|b| Ok::<_, Error>(xml::child_text(b, "urn:ev", "Value"))).unwrap();
+        let v = n.with_body(|b| Ok::<_, Error>(b.child_text("urn:ev", "Value"))).unwrap();
         assert_eq!(v.as_deref(), Some("9"));
     }
 

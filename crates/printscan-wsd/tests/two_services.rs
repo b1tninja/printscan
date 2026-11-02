@@ -11,7 +11,7 @@ use printscan_wsd::discovery::fake::{FakeResponder, FakeSocket};
 use printscan_wsd::discovery::{DiscoverOptions, Target, discover};
 use printscan_wsd::eventing::{self, CollectingSink, EndStatus, EventingFault, Expiry, Filter, Incoming, SubscribeRequest};
 use printscan_wsd::testing::FakeDevice;
-use printscan_wsd::{EndpointRef, Error, QName, ReferenceParameter, ServiceKind, SoapClient, ns, xml};
+use printscan_wsd::{EndpointRef, Error, QName, ReferenceParameter, ServiceKind, SoapClient, ns};
 
 /// A discovery target of `kind` that advertises `device`'s URL and one public address the policy drops.
 fn target_for(kind: ServiceKind, device: &FakeDevice) -> Target {
@@ -70,7 +70,7 @@ fn exercise(kind: ServiceKind, other: ServiceKind) {
     let svc = at_device.at(meta.endpoint_for(kind, at_device.endpoint().host()).unwrap());
     let op = if kind == ServiceKind::Print { "GetPrinterElements" } else { "GetScannerElements" };
     let handled =
-        svc.call(&d.call(op, format!("<{p}:{op}Request/>", p = d.prefix)), |n| Ok::<_, Error>(xml::child_text(n, d.namespace, "Handled"))).unwrap();
+        svc.call(&d.call(op, format!("<{p}:{op}Request/>", p = d.prefix)), |n| Ok::<_, Error>(n.child_text(d.namespace, "Handled"))).unwrap();
     assert_eq!(handled.as_deref(), Some(d.name));
     // An operation of the other service's namespace is refused by the device with a fault.
     let wrong = other.descriptor().call("Anything", format!("<{}:AnythingRequest/>", other.descriptor().prefix));
@@ -109,7 +109,7 @@ fn exercise(kind: ServiceKind, other: ServiceKind) {
     let Incoming::Event(event) = &got[0] else { panic!("not an event: {got:?}") };
     assert_eq!(event.body, QName::new(d.namespace, "SomethingChanged"));
     assert_eq!(event.header("urn:test", "Context"), Some("ctx-1"), "the NotifyTo reference parameter came back as a header");
-    let what = event.with_body(|b| Ok::<_, Error>(xml::child_text(b, d.namespace, "What"))).unwrap();
+    let what = event.with_body(|b| Ok::<_, Error>(b.child_text(d.namespace, "What"))).unwrap();
     assert_eq!(what.as_deref(), Some("paper"));
     let Incoming::SubscriptionEnd(end) = &got[1] else { panic!("not an end: {got:?}") };
     assert_eq!((end.status.clone(), end.reason.as_str(), end.identifier()), (EndStatus::SourceShuttingDown, "power off", Some(id.as_str())));

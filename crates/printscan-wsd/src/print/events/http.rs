@@ -224,16 +224,7 @@ fn soap_content_type(value: Option<&str>) -> bool {
 
 /// The job number of a job event's body, if it has a well-formed one.
 fn job_number(notification: &Notification) -> Option<u32> {
-    notification
-        .with_body::<Option<u32>, WireError>(|payload| {
-            Ok(payload
-                .descendants()
-                .find(|d| d.is_element() && d.tag_name().name() == "JobId" && d.tag_name().namespace() == Some(WPRT))
-                .and_then(|d| d.text())
-                .and_then(|t| t.trim().parse().ok()))
-        })
-        .ok()
-        .flatten()
+    notification.with_body::<Option<u32>, WireError>(|payload| Ok(payload.find(WPRT, "JobId").and_then(|d| d.text().parse().ok()))).ok().flatten()
 }
 
 /// Decide what a request may do. Returns the status to answer. Event content is read for exactly
