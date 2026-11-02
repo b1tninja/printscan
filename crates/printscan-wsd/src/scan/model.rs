@@ -311,9 +311,59 @@ pub fn parse_created_job(response: Node<'_, '_>) -> Result<CreatedJob, crate::Er
     Ok(CreatedJob { id, token, front, format })
 }
 
+/// A job's `JobStatus`, from `GetJobElements`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct JobStatus {
+    /// `JobState` as sent (`Processing`, `Canceled`, `Aborted`, ...).
+    pub state: String,
+    /// `JobStateReason`s other than `None`.
+    pub reasons: Vec<String>,
+}
+
+impl JobStatus {
+    /// The scanner says the job was cancelled at the device (its panel, or the scanner itself).
+    pub fn cancelled_at_device(&self) -> bool {
+        self.reasons.iter().any(|r| r == "JobCanceledAtDevice")
+    }
+}
+
+/// Parse a `GetJobElementsResponse` for its `JobStatus`; `None` when it has no valid one.
+pub fn parse_job_status(response: Node<'_, '_>) -> Option<JobStatus> {
+    let elements = xml::child(response, WSCN, "JobElements")?;
+    xml::children(elements, WSCN, "ElementData").take(16).filter(|d| d.attribute("Valid").and_then(xml::parse_bool) != Some(false)).find_map(|d| {
+        let status = xml::child(d, WSCN, "JobStatus")?;
+        let state = xml::child_text(status, WSCN, "JobState").unwrap_or_default();
+        let reasons = xml::child(status, WSCN, "JobStateReasons")
+            .map(|r| xml::children(r, WSCN, "JobStateReason").take(MAX_LIST).map(xml::text).filter(|t| !t.is_empty() && t != "None").collect())
+            .unwrap_or_default();
+        Some(JobStatus { state, reasons })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn job_status_reads_state_and_reasons() {
+        let doc = format!(
+            r#"<wscn:GetJobElementsResponse xmlns:wscn="{WSCN}"><wscn:JobElements>
+              <wscn:ElementData Name="wscn:JobStatus" Valid="false"><wscn:JobStatus><wscn:JobState>Processing</wscn:JobState></wscn:JobStatus></wscn:ElementData>
+              <wscn:ElementData Name="wscn:JobStatus" Valid="true"><wscn:JobStatus><wscn:JobId>7</wscn:JobId><wscn:JobState>Canceled</wscn:JobState>
+                <wscn:JobStateReasons><wscn:JobStateReason>JobCanceledAtDevice</wscn:JobStateReason><wscn:JobStateReason>None</wscn:JobStateReason></wscn:JobStateReasons>
+                <wscn:ScansCompleted>0</wscn:ScansCompleted></wscn:JobStatus></wscn:ElementData>
+            </wscn:JobElements></wscn:GetJobElementsResponse>"#
+        );
+        let doc = roxmltree::Document::parse(&doc).unwrap();
+        let status = parse_job_status(doc.root_element()).unwrap();
+        assert_eq!(status, JobStatus { state: "Canceled".into(), reasons: vec!["JobCanceledAtDevice".into()] });
+        assert!(status.cancelled_at_device());
+        assert!(!JobStatus { state: "Canceled".into(), reasons: Vec::new() }.cancelled_at_device(), "our own CancelJob is not the device's");
+
+        let empty = format!(r#"<wscn:GetJobElementsResponse xmlns:wscn="{WSCN}"/>"#);
+        let empty = roxmltree::Document::parse(&empty).unwrap();
+        assert_eq!(parse_job_status(empty.root_element()), None);
+    }
 
     fn parse(body: &str) -> ScannerElements {
         let doc = format!(

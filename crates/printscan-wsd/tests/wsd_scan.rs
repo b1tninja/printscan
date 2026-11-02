@@ -44,6 +44,20 @@ struct Script {
     fail_at: Option<usize>,
     /// Cancel this token after the first image.
     cancel_after_first: Option<CancelToken>,
+    /// `RetrieveImage` number n (1-based) is cut off in the middle of the image part, and
+    /// `GetJobElements` then answers as given.
+    cut_at: Option<(usize, AfterCut)>,
+}
+
+/// What `GetJobElements` says after a cut-off image.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AfterCut {
+    /// The job's status: `Canceled`, `JobCanceledAtDevice` (the Cancel key on the panel).
+    CancelledStatus,
+    /// The fault a scanner that dropped the job sends: `ClientErrorJobCancelled`.
+    CancelledFault,
+    /// Still processing: the connection broke, nobody cancelled.
+    Processing,
 }
 
 #[derive(Default)]
@@ -55,6 +69,8 @@ struct State {
     sent: usize,
     /// Images still due for the open job; `None` once it ended.
     due: Option<usize>,
+    /// The image reply was cut off.
+    cut: bool,
 }
 
 struct Fake {
@@ -159,6 +175,11 @@ impl Fake {
                     st.due = None;
                     return Self::fault(&relates, "OperationFailed");
                 }
+                let cut = self.script.cut_at.is_some_and(|(n, _)| n == st.sent);
+                if cut {
+                    st.cut = true;
+                    st.due = None;
+                }
                 st.due = st.due.map(|n| n - 1);
                 if st.sent == 1
                     && let Some(token) = &self.script.cancel_after_first
@@ -176,7 +197,23 @@ impl Fake {
                     ),
                 );
                 let package = mtom::package(&envelope, &cid, &bmp(u8::try_from(st.sent).unwrap()));
-                Response::new(200, Some(package.content_type), package.body)
+                let mut body = package.body;
+                if cut {
+                    body.truncate(body.len() - 40);
+                }
+                Response::new(200, Some(package.content_type), body)
+            }
+            "GetJobElements" => {
+                let status = |state: &str, reason: &str| {
+                    format!(
+                        "<wscn:GetJobElementsResponse><wscn:JobElements><wscn:ElementData Name=\"wscn:JobStatus\" Valid=\"true\"><wscn:JobStatus>                         <wscn:JobId>9</wscn:JobId><wscn:JobState>{state}</wscn:JobState><wscn:JobStateReasons><wscn:JobStateReason>{reason}</wscn:JobStateReason></wscn:JobStateReasons>                         <wscn:ScansCompleted>0</wscn:ScansCompleted></wscn:JobStatus></wscn:ElementData></wscn:JobElements></wscn:GetJobElementsResponse>"
+                    )
+                };
+                match self.script.cut_at.filter(|_| st.cut).map(|(_, after)| after) {
+                    Some(AfterCut::CancelledStatus) => Self::reply(&op, &relates, &status("Canceled", "JobCanceledAtDevice")),
+                    Some(AfterCut::CancelledFault) => Self::fault(&relates, "ClientErrorJobCancelled"),
+                    _ => Self::reply(&op, &relates, &status("Processing", "JobScanning")),
+                }
             }
             "CancelJob" => {
                 st.due = None;
@@ -295,6 +332,35 @@ fn a_cancel_stops_between_images_and_cancels_the_job() {
     assert_eq!(acquired.pages.len(), 1);
     assert_eq!(fake.actions().iter().filter(|a| *a == "RetrieveImage").count(), 1);
     assert_eq!(fake.actions().last().map(String::as_str), Some("CancelJob"));
+}
+
+#[test]
+fn the_cancel_key_on_the_scanner_ends_the_scan_as_cancelled_at_the_device() {
+    // The scanner cuts the image reply off; its job status (or a fault) then says why.
+    for after in [AfterCut::CancelledStatus, AfterCut::CancelledFault] {
+        let fake = Fake::new(Script { cut_at: Some((1, after)), ..lossless() });
+        let err = backend(&fake).acquire(&ScanSettings::default()).unwrap_err();
+        assert_eq!(err.interrupt_kind(), InterruptKind::Cancelled, "{err:?}");
+        assert_eq!(err.to_string(), InterruptKind::Cancelled.sentence());
+        assert_eq!(fake.actions(), ["GetScannerElements", "CreateScanJob", "RetrieveImage", "GetJobElements"], "the scanner ended the job itself");
+
+        // With pages in hand from the feeder, they are kept.
+        let fake = Fake::new(Script { cut_at: Some((2, after)), ..lossless() });
+        let err = backend(&fake).acquire(&ScanSettings { source: Source::Feeder, pages: 3, ..ScanSettings::default() }).unwrap_err();
+        let ScanError::Incomplete { acquired, cause, .. } = err else { panic!("{err:?}") };
+        assert_eq!(acquired.pages.len(), 1);
+        assert_eq!(cause.unwrap().kind, InterruptKind::Cancelled);
+    }
+}
+
+#[test]
+fn a_cut_off_image_nobody_cancelled_stays_a_failure_and_the_job_is_cancelled() {
+    let fake = Fake::new(Script { cut_at: Some((1, AfterCut::Processing)), ..lossless() });
+    let err = backend(&fake).acquire(&ScanSettings::default()).unwrap_err();
+    assert_ne!(err.interrupt_kind(), InterruptKind::Cancelled, "{err:?}");
+    let actions = fake.actions();
+    let at = |op: &str| actions.iter().position(|a| a == op).unwrap();
+    assert!(at("GetJobElements") < at("CancelJob"), "the job's status is read before our own CancelJob: {actions:?}");
 }
 
 #[test]

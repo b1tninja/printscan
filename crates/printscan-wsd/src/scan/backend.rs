@@ -344,6 +344,15 @@ impl WsdScanBackend {
         End::Counted
     }
 
+    /// The scanner says `job` was cancelled at the device: its status gives `JobCanceledAtDevice`,
+    /// or it answers that the job was cancelled. Anything else, a failed read included, is no.
+    fn cancelled_at_device(&self, entry: &Entry, job: &CreatedJob) -> bool {
+        match self.client(entry).get_job_status(job) {
+            Ok(status) => status.is_some_and(|s| s.cancelled_at_device()),
+            Err(e) => fault::is(&e, "ClientErrorJobCancelled"),
+        }
+    }
+
     /// A failure with no named cause, restated from a fresh status read when the status names one.
     fn explain(&self, entry: &Entry, error: ScanError) -> ScanError {
         if !matches!(error.interrupt_kind(), InterruptKind::Other | InterruptKind::Attention) {
@@ -380,15 +389,21 @@ impl WsdScanBackend {
         if let Some(token) = &settings.cancel {
             token.clear_canceller();
         }
+        // A reply cut off without a fault may be the scanner's own cancel (its panel), which a
+        // scanner shows in the job's status; asked before our CancelJob, which would look the same.
+        let at_device = matches!(&end, End::Failed(e) if e.fault().is_none()) && self.cancelled_at_device(entry, &job);
         // The scanner ends a job by itself once it has no more images or sent the count it was
         // asked for; any other stop leaves the job open, so it is cancelled (best effort, on a
         // client without the caller's cancel token).
         let finished = matches!(end, End::Exhausted(_)) || (matches!(end, End::Counted) && ticket.images > 0);
-        if !finished {
+        if !finished && !at_device {
             let _ = self.client(entry).cancel_job(job.id);
         }
         let cancelled = matches!(end, End::Cancelled);
         let download_error = match end {
+            End::Failed(e) if at_device => {
+                Some(fault::scan_error("RetrieveImage", &e).restated(InterruptKind::Cancelled, InterruptKind::Cancelled.sentence()))
+            }
             End::Failed(e) => Some(self.explain(entry, fault::scan_error("RetrieveImage", &e))),
             // No image at all from the feeder: it was empty.
             End::Exhausted(e) if pages.is_empty() && source == Source::Feeder => Some(fault::scan_error("RetrieveImage", &e)),

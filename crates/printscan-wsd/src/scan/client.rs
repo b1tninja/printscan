@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use super::model::{self, CreatedJob, ScannerElements};
+use super::model::{self, CreatedJob, JobStatus, ScannerElements};
 use super::ns::WSCN;
 use super::ticket::Ticket;
 use crate::service::ServiceKind;
@@ -117,6 +117,18 @@ impl<T: Transport> Client<T> {
             let text: String = data.children().filter(|c| c.is_text()).filter_map(|c| c.text()).collect();
             decode_base64(&text).ok_or_else(|| Error::Protocol("RetrieveImageResponse carries no image".into()))
         })
+    }
+
+    /// GetJobElements for the job's `JobStatus`. `Ok(None)` when the reply has no valid one; a
+    /// scanner that no longer knows the job answers with a fault (`ClientErrorJobIdNotFound`, or
+    /// `ClientErrorJobCancelled` for one cancelled at the device).
+    pub fn get_job_status(&self, job: &CreatedJob) -> Result<Option<JobStatus>> {
+        let body = format!(
+            "<wscn:GetJobElementsRequest><wscn:JobId>{}</wscn:JobId><wscn:RequestedElements><wscn:Name>wscn:JobStatus</wscn:Name></wscn:RequestedElements></wscn:GetJobElementsRequest>",
+            job.id
+        );
+        let call = ServiceKind::Scan.descriptor().call("GetJobElements", body);
+        self.soap.call(&call, |n| Ok(model::parse_job_status(n)))
     }
 
     /// CancelJob.
