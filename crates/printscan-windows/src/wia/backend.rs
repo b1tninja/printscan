@@ -6,9 +6,9 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use printscan::scan::{
-    Acquired, Backend, CancelToken, ChoiceField, Color, Compression, Connection, HandlingStatus, ImageChoices, ImageFormat, InferOptions, Intent,
-    LengthSource, MAX_PAGES, Page, PageLengthSupport, PageSize, Reported, Rotation, ScanError, ScanSettings, Scanner, ScannerRef, Source, ValueSpan,
-    align_to_span, fit_region, listed_values, planned_frame, spanned_values,
+    Acquired, Area, Backend, CancelToken, ChoiceField, Color, Compression, Connection, HandlingStatus, ImageChoices, ImageFormat, InferOptions,
+    Intent, LengthSource, MAX_PAGES, Page, PageLengthSupport, PageSize, Reported, Rotation, ScanError, ScanSettings, Scanner, ScannerRef, Source,
+    ValueSpan, align_to_span, fit_region, listed_values, planned_frame, spanned_values,
 };
 use windows::Win32::Devices::ImageAcquisition::{
     DUPLEX, FEEDER, FLATBED, IWiaDataTransfer, IWiaDevMgr, IWiaDevMgr2, IWiaItem, IWiaItem2, IWiaPropertyStorage, IWiaTransfer, TYMED_CALLBACK,
@@ -201,8 +201,8 @@ fn read_scanner(mgr: &IWiaDevMgr2, id: &str, name: &str) -> Result<Scanner, Scan
     scanner.optical_x = optical(WIA_DPS_OPTICAL_XRES);
     scanner.optical_y = optical(WIA_DPS_OPTICAL_YRES);
     scanner.pages = pages;
-    scanner.bed = bed;
-    scanner.sheet = sheet;
+    scanner.bed = bed.map(Area::from);
+    scanner.sheet = sheet.map(Area::from);
     scanner.glass = glass_item.as_ref().map(image_choices);
     scanner.feeder_choices = feeder_item.as_ref().map(image_choices);
     scanner.reported = reported;

@@ -11,6 +11,7 @@ mod backend;
 mod clock;
 pub mod convert;
 mod job;
+pub mod media;
 mod options;
 pub mod pwg;
 mod registry;

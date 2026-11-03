@@ -252,7 +252,7 @@ fn listing_opens_no_connection_and_details_read_the_scanner() {
     let s = b.scanner_details(URL).unwrap();
     assert_eq!(s.name, "Scripted");
     assert!(s.flatbed && s.feeder && !s.duplex);
-    assert_eq!(s.bed, Some((8500, 11690)));
+    assert_eq!(s.bed, Some(printscan::scan::Area::new(8500, 11690)));
     assert_eq!(s.glass.unwrap().dpi, [150, 300]);
     assert_eq!(fake.actions(), ["GetScannerElements"]);
     assert!(WsdScanBackend::with_transport(Arc::new(Wire(fake))).add("http://scanner.example/ScannerService").is_err(), "host names are refused");
