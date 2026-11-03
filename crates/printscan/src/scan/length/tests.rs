@@ -372,9 +372,9 @@ fn records_convert_rows_to_inches_and_millimetres() {
 
 #[test]
 fn named_sizes_have_extents_except_auto_and_custom() {
-    assert_eq!(PageSize::A4.extent_mils(), Some((8267, 11692)));
-    assert_eq!(PageSize::Letter.extent_mils(), Some((8500, 11000)));
-    assert_eq!(PageSize::Legal.extent_mils(), Some((8500, 14000)));
+    assert_eq!(PageSize::A4.extent_mils(), Some(Area::new(8267, 11692)));
+    assert_eq!(PageSize::Letter.extent_mils(), Some(Area::new(8500, 11000)));
+    assert_eq!(PageSize::Legal.extent_mils(), Some(Area::new(8500, 14000)));
     assert_eq!(PageSize::Auto.extent_mils(), None);
     assert_eq!(PageSize::Custom.extent_mils(), None);
 }

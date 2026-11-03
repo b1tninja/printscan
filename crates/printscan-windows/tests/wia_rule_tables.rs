@@ -335,8 +335,10 @@ fn the_page_size_plan_tries_the_asked_size_then_only_covering_sizes_smallest_fir
                     let want = rules::page_size_dims(requested);
                     let mut last_area = 0u64;
                     for size in others {
-                        let (w, h) = rules::page_size_dims(*size).unwrap_or_else(|| panic!("{case}: {size:?} has no sheet but was tried"));
-                        let (want_w, want_h) = want.unwrap_or_else(|| panic!("{case}: a sheetless request only tries itself"));
+                        let printscan::scan::Area { width: w, height: h, .. } =
+                            rules::page_size_dims(*size).unwrap_or_else(|| panic!("{case}: {size:?} has no sheet but was tried"));
+                        let printscan::scan::Area { width: want_w, height: want_h, .. } =
+                            want.unwrap_or_else(|| panic!("{case}: a sheetless request only tries itself"));
                         assert!(w >= want_w && h >= want_h, "{case}: {size:?} does not cover the asked sheet");
                         let area = u64::from(w) * u64::from(h);
                         assert!(area >= last_area, "{case}: not smallest first");

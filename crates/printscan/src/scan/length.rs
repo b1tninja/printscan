@@ -48,7 +48,7 @@
 
 #[cfg(doc)]
 use crate::scan::ScanSettings;
-use crate::scan::{Page, PageSize, Presence};
+use crate::scan::{Area, Page, PageSize, Presence};
 
 /// What the caller asks for as the page length. See the [module documentation](self).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
@@ -214,12 +214,12 @@ impl PageLengthSupport {
 impl PageSize {
     /// Width and height of a named size in thousandths of an inch. `None` for [`PageSize::Auto`] and
     /// [`PageSize::Custom`], which name no dimensions.
-    pub fn extent_mils(self) -> Option<(u32, u32)> {
+    pub fn extent_mils(self) -> Option<Area> {
         match self {
-            Self::A4 => Some((8267, 11692)),
-            Self::Letter => Some((8500, 11000)),
-            Self::Legal => Some((8500, 14000)),
-            Self::BusinessCard => Some((3543, 2165)),
+            Self::A4 => Some(Area::new(8267, 11692)),
+            Self::Letter => Some(Area::new(8500, 11000)),
+            Self::Legal => Some(Area::new(8500, 14000)),
+            Self::BusinessCard => Some(Area::new(3543, 2165)),
             Self::Auto | Self::Custom => None,
         }
     }

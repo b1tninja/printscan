@@ -4,7 +4,7 @@
 //! transfer failure with a status read. `printscan::scan` knows only [`NativeCode`] and
 //! [`InterruptKind`]; this module is what the Windows backend does with them.
 
-use printscan::scan::{HandlingStatus, InterruptKind, NativeCode, PageSize, ScanError, ScannerRef, Source, interrupt_kind};
+use printscan::scan::{Area, HandlingStatus, InterruptKind, NativeCode, PageSize, ScanError, ScannerRef, Source, interrupt_kind};
 
 /// The sentence for a feeder transfer that answered busy while nothing names a cause.
 pub const BUSY_OR_FEEDER_EMPTY: &str = printscan::scan::BUSY_OR_FEEDER_EMPTY;
@@ -488,7 +488,7 @@ pub fn after_transfer_checked(
 
 /// The nominal sheet of a named page size in thousandths of an inch, `(width, height)`. `Custom`
 /// and `Auto` are not a sheet and have none.
-pub fn page_size_dims(size: PageSize) -> Option<(u32, u32)> {
+pub fn page_size_dims(size: PageSize) -> Option<Area> {
     size.extent_mils()
 }
 
@@ -527,13 +527,13 @@ pub fn plan_page_size(requested: PageSize, published: Option<&[PageSize]>) -> Pa
     if listed.contains(&requested) {
         tries.push(requested);
     }
-    if let Some((want_w, want_h)) = page_size_dims(requested) {
+    if let Some(Area { width: want_w, height: want_h, .. }) = page_size_dims(requested) {
         let mut covering: Vec<(u64, PageSize)> = listed
             .iter()
             .copied()
             .filter(|size| *size != requested)
             .filter_map(|size| {
-                let (w, h) = page_size_dims(size)?;
+                let Area { width: w, height: h, .. } = page_size_dims(size)?;
                 (w >= want_w && h >= want_h).then_some((u64::from(w) * u64::from(h), size))
             })
             .collect();

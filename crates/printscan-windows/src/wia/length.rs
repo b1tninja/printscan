@@ -215,7 +215,7 @@ pub fn decide(request: &Request, table: &PropTable) -> Decision {
         return Decision { action: Action::Device(*method), why: "the scanner publishes length detection" };
     }
     if let Some(size) = request.page_size
-        && let Some((_, height_mils)) = size.extent_mils()
+        && let Some(height_mils) = size.extent_mils().map(|extent| extent.height)
     {
         return Decision { action: Action::Size { size, height_mils }, why: "extents from the chosen page size" };
     }
@@ -415,7 +415,7 @@ mod tests {
     fn extents_for_a4_letter_legal_and_custom_at_several_resolutions() {
         // Rows are the rounded length times the resolution; the item's range is 16 rows up to 14 in.
         let rows = |size: PageSize, dpi: u32| -> Result<u32, FitError> {
-            let (_, mils) = size.extent_mils().ok_or(FitError::TooShort { min_rows: 0 })?;
+            let mils = size.extent_mils().ok_or(FitError::TooShort { min_rows: 0 })?.height;
             fit_height(mils, dpi, Some(span(16, 14 * dpi as i32)))
         };
         assert_eq!(rows(PageSize::A4, 200), Ok(2338));
