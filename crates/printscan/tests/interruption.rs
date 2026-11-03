@@ -98,3 +98,51 @@ fn a_stop_and_its_resume_read_back() {
     let resume = serde_json::to_string(&stop.resume()).unwrap();
     assert_eq!(resume, r#"{"pages":5,"carried":4,"source":"feeder"}"#);
 }
+
+/// Merge by the rule an app follows while backs arrive, on plain numbers.
+fn merged(mut doc: Vec<u32>, first: usize, fronts: usize, backs: &[u32], reversed: bool) -> Vec<u32> {
+    for (index, back) in backs.iter().enumerate() {
+        let at = printscan::scan::back_position(first, fronts, index, reversed).expect("a front is left");
+        doc.insert(at, *back);
+    }
+    doc
+}
+
+#[test]
+fn each_back_lands_after_its_front_in_a_flipped_stack_or_in_scan_order() {
+    // Fronts 1 2 3 4; the stack was flipped as a whole: the backs of 4, 3, 2, 1 arrive.
+    assert_eq!(merged(vec![1, 2, 3, 4], 0, 4, &[14, 13, 12, 11], true), vec![1, 11, 2, 12, 3, 13, 4, 14]);
+    // Not flipped: the backs arrive in front order and each shifts the rest down.
+    assert_eq!(merged(vec![1, 2, 3, 4], 0, 4, &[11, 12, 13, 14], false), vec![1, 11, 2, 12, 3, 13, 4, 14]);
+    // Fewer backs than fronts: they belong to the LAST fronts.
+    assert_eq!(merged(vec![1, 2, 3, 4], 0, 4, &[14, 13], true), vec![1, 2, 3, 13, 4, 14]);
+    assert_eq!(merged(vec![1, 2, 3, 4], 0, 4, &[11, 12], false), vec![1, 11, 2, 12, 3, 4]);
+    assert_eq!(merged(vec![1, 2], 0, 2, &[], true), vec![1, 2]);
+    // Fronts that start part-way into the document.
+    assert_eq!(merged(vec![7, 8, 1, 2, 9], 2, 2, &[12, 11], true), vec![7, 8, 1, 11, 2, 12, 9]);
+    assert_eq!(printscan::scan::back_position(0, 2, 2, true), None, "no front is left for a third back");
+    assert_eq!(printscan::scan::back_position(0, 0, 0, true), None);
+    assert_eq!(printscan::scan::back_position(usize::MAX, 2, 0, true), Some(usize::MAX), "saturates");
+}
+
+#[test]
+fn the_backs_pass_asks_for_the_backs_still_missing_and_never_for_none() {
+    assert_eq!(printscan::scan::backs_to_request(3, 1), 2);
+    assert_eq!(printscan::scan::backs_to_request(3, 3), 1);
+    assert_eq!(printscan::scan::backs_to_request(0, 0), 1, "never asks the scanner for zero pages");
+}
+
+#[cfg(feature = "devices")]
+#[test]
+fn placing_backs_in_a_document_agrees_with_the_page_files_a_journal_writes() {
+    use printscan::devices::scan_jobs::duplex_page_number;
+    for sheets in 1..=6_u32 {
+        let n = sheets as usize;
+        let fronts: Vec<usize> = (0..n).collect();
+        let backs: Vec<usize> = (n..2 * n).collect();
+        let doc = merged(fronts.iter().map(|&i| i as u32).collect(), 0, n, &backs.iter().map(|&i| i as u32).collect::<Vec<_>>(), true);
+        for (position, index) in doc.iter().enumerate() {
+            assert_eq!(duplex_page_number(sheets, *index as usize), position + 1, "{sheets} sheets, scan index {index}");
+        }
+    }
+}

@@ -656,6 +656,30 @@ pub struct Resume {
     pub source: Option<Source>,
 }
 
+// ---- manual duplex into an open document ----------------------------------------------------------------
+
+/// Reverse sides still to ask for in a manual duplex ([`Pass::Backs`]): one per front, less the `backs` already
+/// in hand, and at least one (a scanner is never asked for zero pages).
+pub fn backs_to_request(fronts: usize, backs: usize) -> u32 {
+    u32::try_from(fronts.saturating_sub(backs)).unwrap_or(u32::MAX).max(1)
+}
+
+/// Where the `back_index`-th reverse side scanned goes, as a page index, when the `fronts` sit together from
+/// page index `first` and every back scanned before it has been inserted. `None` when no front is left for it.
+///
+/// A flipped stack (`reversed`, the normal case) feeds the back of the LAST front first, so each back goes right
+/// after its front and the backs placed before it, which all sit further down, do not move it. In scan order
+/// (not `reversed`) the backs come in front order and each one placed before shifts the next down by one.
+///
+/// This is the in-document form of `devices::scan_jobs::duplex_page_number`, which numbers page files instead.
+pub fn back_position(first: usize, fronts: usize, back_index: usize, reversed: bool) -> Option<usize> {
+    if back_index >= fronts {
+        return None;
+    }
+    let (front, placed_before) = if reversed { (fronts - 1 - back_index, 0) } else { (back_index, back_index) };
+    Some(first.saturating_add(front).saturating_add(1).saturating_add(placed_before))
+}
+
 // ---- HandlingStatus ---------------------------------------------------------------------------------
 
 impl HandlingStatus {
