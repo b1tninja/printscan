@@ -2,8 +2,9 @@
 
 > Moved from storytold/pdfcraft#1724 (`docs/unsafe-audit.md` at 513e70b3) with the backend. In printscan the
 > workspace forbids `unsafe`; `printscan-windows` denies it instead (its `Cargo.toml` says why), and only
-> `src/wia/ffi.rs` and `src/wia/sinks.rs` allow it. The print spooler backend (`src/spooler.rs`) has none:
-> winprint holds its Win32 calls.
+> `src/wia/ffi.rs`, `src/wia/sinks.rs` and `src/spooler/draw.rs` allow it. The spooler's page drawing has its
+> own section below, ["The spooler's page drawing"](#the-spoolers-page-drawing); the rest of the spooler
+> backend has none: winprint holds its other Win32 calls.
 
 
 The workspace sets `unsafe_code = "forbid"`. There is one exception: the Windows scanner backend,
@@ -30,7 +31,7 @@ in one crate, each block with a written reason.
 
 | Crate | Unsafe | Role |
 |-------|--------|------|
-| `printscan-windows` (`crates/printscan-windows`) | yes, two modules | The WIA backend and the print spooler backend. `[lints.rust] unsafe_code = "deny"`; only `src/wia/ffi.rs` and `src/wia/sinks.rs` carry `#![allow(unsafe_code)]`. |
+| `printscan-windows` (`crates/printscan-windows`) | yes, three modules | The WIA backend and the print spooler backend. `[lints.rust] unsafe_code = "deny"`; only `src/wia/ffi.rs`, `src/wia/sinks.rs` and `src/spooler/draw.rs` carry `#![allow(unsafe_code)]`. |
 | `printscan` (`crates/printscan`, module `scan`) | none | Settings, errors, page handling, the contract and the backend registry. Forbids unsafe and has no Windows dependency. |
 | every other crate | none | Inherits the workspace `forbid`. |
 
@@ -121,14 +122,15 @@ plumbing; that generated code sits under the `sinks.rs` allow and is not counted
 ## How to review
 
 ```text
-# every unsafe site in the workspace (expect hits only under crates/printscan-windows/src/wia/{ffi,sinks}.rs)
+# every unsafe site in the workspace (expect hits only in crates/printscan-windows/src/wia/{ffi,sinks}.rs and
+# crates/printscan-windows/src/spooler/draw.rs)
 rg -n "\bunsafe\b" crates --glob '*.rs'
 
-# the two allow attributes (expect exactly two)
+# the allow attributes (expect exactly three)
 rg -n "allow\(unsafe_code\)" crates
 
 # every unsafe block must be preceded by a SAFETY comment
-rg -n -B3 "\bunsafe\b" crates/printscan-windows/src/wia/ffi.rs crates/printscan-windows/src/wia/sinks.rs
+rg -n -B3 "\bunsafe\b" crates/printscan-windows/src/wia/ffi.rs crates/printscan-windows/src/wia/sinks.rs crates/printscan-windows/src/spooler/draw.rs
 
 # the compiler and Clippy enforce both rules
 cargo clippy -p printscan-windows --all-targets -- -D warnings
@@ -153,3 +155,35 @@ or contract the comment names. `backend.rs`, `rules.rs` and `printscan::scan` ne
   that is not owned by the COM allocator). The leak is small and only occurs in the dump.
 - **Not covered by tools.** Miri cannot run the FFI paths. The unit tests cover the pure logic and the
   variant conversions; the COM calls themselves are exercised only on a real or simulated scanner.
+
+## The spooler's page drawing
+
+The owner approved this exception on 2026-11-02, for the design described here and no more: the spooler draws each
+page of a job itself, so that pages of either orientation and of other sizes print as one job (each with its own
+transform), and so that copies a driver cannot make are drawn into the job. winprint's own `WinPdfPrinter` draws
+every page at its own size, unturned; its `DxgiPrintContext` takes pages one at a time, and drawing into it needs
+the Direct2D and `Windows.Data.Pdf` native calls below. They are `unsafe fn`s in the `windows` crate (COM methods
+taking interface pointers), and there is no safe wrapper for them.
+
+`src/spooler/draw.rs` carries the module's `#![allow(unsafe_code)]`: 8 blocks, each with a `// SAFETY:` comment.
+Everything that decides where a page goes (`placement.rs`), what the driver kept (`checks.rs`) and the job's flow
+(`spooler.rs`) is safe Rust.
+
+**1. COM apartment guard (2).** `CoInitializeEx(None, COINIT_MULTITHREADED)` and `CoUninitialize` in
+`Apartment`, which `submit` creates before any COM object of the job and drops after the last is released. As with
+WIA's `ComInit`, `CoUninitialize` runs only after a successful `CoInitializeEx`, and the type is `!Send`
+(`PhantomData<*const ()>`). The apartment is multithreaded, as winprint's own render context initialises it.
+
+**2. The PDF renderer (1).** `PdfCreateRenderer` with the job's DXGI device, owned by the `DxgiPrintContext`
+that outlives the renderer in `submit`.
+
+**3. Recording a page (4).** `CreateCommandList`; `SetTarget` and `BeginDraw` on the job's device context;
+`EndDraw` (called on every path after `BeginDraw`, whether drawing failed or not); `Close` on the command list.
+The device context is the job's, used only on the thread that runs `submit`.
+
+**4. Rendering a page (1).** `SetTransform`, `RenderPageToDeviceContext` and the transform's reset, between
+`BeginDraw` and `EndDraw`. The transform and the `PDF_RENDER_PARAMS` are locals that outlive the calls; the page
+is a live `PdfPage` of the open document.
+
+Nothing borrowed from these calls outlives them, and no interface pointer leaves `submit`.
+

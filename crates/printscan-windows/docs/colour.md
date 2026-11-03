@@ -4,7 +4,7 @@ What reaches the driver, and how an application that manages its own colour prin
 
 ## The spooler path keeps RGB values
 
-`WindowsSpooler` prints through winprint, which draws with Direct2D into the XPS print API. Direct2D's
+`WindowsSpooler` draws each page with Direct2D into the XPS print API, through winprint's print context. Direct2D's
 print control is RGB only: its colour space is sRGB, scRGB or a custom profile
 ([`D2D1_PRINT_CONTROL_PROPERTIES`](https://learn.microsoft.com/en-us/windows/win32/api/d2d1_1/ns-d2d1_1-d2d1_print_control_properties)).
 CMYK cannot be sent this way.

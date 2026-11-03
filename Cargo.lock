@@ -446,6 +446,7 @@ dependencies = [
  "tempfile",
  "windows",
  "windows-core",
+ "windows-numerics",
  "winprint",
 ]
 
@@ -1005,9 +1006,9 @@ dependencies = [
 
 [[package]]
 name = "winprint"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cca3afe3157c8c94d73bd33e12d56c4344a1a8ab491059100dd1bc2f2edbe230"
+checksum = "65c7ef28549436499618bb12373239666830503ea0c1d8b171a1b5f89461c3a2"
 dependencies = [
  "bs58",
  "fmt-derive",

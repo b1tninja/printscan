@@ -6,15 +6,19 @@ Rust 1.95.
 * **`spooler`** (feature `print`, default): the Windows print spooler as a `printscan::print`
   backend, on [`winprint`](https://crates.io/crates/winprint). A PDF job is drawn by the in-box
   `Windows.Data.Pdf` into the XPS print API at the resolution of the job's PrintTicket, in this
-  process: no other program is started. Copies, collation, two-sided, colour, paper, orientation
-  and resolution become the PrintTicket, each from the options the driver offers; a setting the
-  driver does not offer is named in the job's warnings.
+  process: no other program is started. Pages of either orientation print as one job on one
+  paper, a page the other way round turned onto it; with shrink-to-fit, oversized pages shrink
+  onto the printable area. Copies, collation, two-sided, colour, paper, orientation and
+  resolution become the PrintTicket, which the driver validates: a setting the job asks for that
+  the driver does not keep refuses the job before anything is sent, and copies the driver cannot
+  make are drawn into the job. `spooler::open_preferences` opens the driver's own Printing
+  Preferences window.
 * **`wia`** (feature `scan`, default): WIA 2.0 scanners as a `printscan::scan` backend, registered
   as `wia` with device ids `wia:<WIA id>`. Listing opens no device; reading details opens it;
   only `acquire` feeds paper.
 
 ```rust,ignore
-printscan::print::register(Box::new(printscan_windows::spooler::WindowsSpooler))?;
+printscan::print::register(Box::new(printscan_windows::spooler::WindowsSpooler::default()))?;
 printscan_windows::wia::register();
 ```
 
