@@ -15,9 +15,10 @@ all-features = true
 default-target = "x86_64-pc-windows-msvc"
 targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"]
 
-# The workspace forbids unsafe code. WIA is COM, and its calls cannot be made without `unsafe`:
-# this crate denies it instead, and only `wia::ffi` and `wia::sinks` allow it, every block with a
-# `// SAFETY:` comment (docs/wia-unsafe-audit.md).
+# The workspace forbids unsafe code. WIA is COM, and so are Direct2D and the PDF renderer the spooler
+# draws pages with; their calls cannot be made without `unsafe`: this crate denies it instead, and only
+# `wia::ffi`, `wia::sinks` and `spooler::draw` allow it, every block with a `// SAFETY:` comment
+# (docs/wia-unsafe-audit.md).
 [lints.rust]
 unsafe_code = "deny"
 
@@ -32,7 +33,7 @@ undocumented_unsafe_blocks = "deny"
 [features]
 default = ["print", "scan"]
 # The Windows print spooler as a `printscan::print` backend (`printscan_windows::spooler`).
-print = ["dep:printscan", "printscan?/print", "dep:winprint", "dep:tempfile"]
+print = ["dep:printscan", "printscan?/print", "dep:winprint", "dep:tempfile", "dep:windows", "dep:windows-numerics"]
 # WIA 2.0 scanners as a `printscan::scan` backend (`printscan_windows::wia`). Its rule tables (no
 # COM) build on every platform.
 scan = ["dep:printscan", "printscan?/scan", "dep:log", "dep:windows", "dep:windows-core"]
@@ -48,8 +49,17 @@ winprint = { version = "0.3.1", default-features = false, optional = true }
 tempfile = { version = "3", optional = true }
 # The implement macro names windows-core; it is the same one the windows crate (and winprint) use.
 windows-core = { version = "0.62", optional = true }
+# The spooler draws each page with Direct2D from `Windows.Data.Pdf` (`spooler::draw`).
+windows-numerics = { version = "0.3", optional = true }
 windows = { version = "0.62", features = [
+    "Data_Pdf",
+    "Foundation",
+    "Storage",
     "Win32_Foundation",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_Dxgi",
+    "Win32_System_WinRT_Pdf",
     "Win32_Devices_ImageAcquisition",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",

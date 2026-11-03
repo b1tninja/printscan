@@ -2,25 +2,51 @@
 //!
 //! Printers come from the spooler (local queues and `\\server\queue` connections). A PDF job is
 //! drawn by the in-box `Windows.Data.Pdf` into the XPS print API at the resolution of the job's
-//! PrintTicket, in this process: no other program is started. The job's settings become the
-//! PrintTicket: copies, collation, two-sided, colour, paper, orientation and resolution, each
-//! taken from the options the driver offers. A setting the driver does not offer is left to the
-//! driver and named in [`Submitted::warnings`].
+//! PrintTicket, in this process: no other program is started.
+//!
+//! Windows prints a job on one paper in one orientation; the document's pages need not agree. The
+//! paper is the one [`JobOptions::media`] names, else the first page's size, taken from the
+//! driver's own paper list; the orientation is the one asked for, else the first page's. Every page
+//! is then drawn with its own transform (`placement`): a page the other way round is turned a
+//! quarter turn clockwise, and with [`Scaling::ShrinkToFit`] a page larger than the printable area
+//! shrinks onto it. With [`Scaling::Exact`] every page must be the paper's size, either way round,
+//! and a job with another size is refused before anything is sent.
+//!
+//! The job's settings become the PrintTicket, which the driver validates. A setting the job asks for
+//! explicitly (two sides, grey or colour, collated or uncollated copies, an orientation) that the
+//! validated ticket does not keep refuses the job: it would otherwise print differently from what
+//! was asked. Copies the driver cannot make as asked (it has no collation, or fewer copies) are
+//! drawn by the job itself, a blank back keeping each two-sided copy on its own sheets. Hints the
+//! driver lacks (a resolution, a rendering intent) are named in [`Submitted::warnings`].
 //!
 //! The spooler gives no handle for the job, so the backend reports it accepted once the document
-//! is in the queue ([`WatchSupport::None`]).
+//! is in the queue ([`WatchSupport::None`]). [`open_preferences`] opens the driver's own Printing
+//! Preferences window.
 
+mod checks;
+mod draw;
+mod placement;
+
+use std::ffi::OsStr;
 use std::ops::ControlFlow;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use printscan::print::backends::{Backend, BackendClass, DocumentFormat, ErrorKind, JobHint, PrintError, PrinterDetails, PrinterRef, SubmitRequest};
-use printscan::print::{ColourMode, Duplex, Job, JobOptions, Orientation, Progress, Resolution, RetrySafety, Submitted, WatchSupport};
-use winprint::printer::{FilePrinter as _, PrintOutcome, PrinterDevice, WinPdfPrinter};
+use printscan::print::{
+    CancelToken, ColourMode, Job, JobOptions, Orientation, Progress, ProgressCallback, Resolution, RetrySafety, Scaling, Submitted, WatchSupport,
+};
+use windows::Win32::Graphics::Direct2D::D2D1_COLOR_SPACE_SRGB;
+use winprint::printer::{DxgiRenderContext, PrintOutcome, PrinterDevice};
+use winprint::ticket::document::reader::ParsableXmlDocument as _;
+use winprint::ticket::document::{NS_PSK, PrintCapabilitiesDocument, Property, WithProperties as _};
 use winprint::ticket::{
     Collation, Copies, FeatureOptionPack as _, FeatureOptionPackWithPredefined as _, JobDuplex, PageMediaSize, PageOrientation, PageOutputColor,
     PageResolution, PredefinedCollation, PredefinedDuplexType, PredefinedPageOrientation, PredefinedPageOutputColor, PrintCapabilities, PrintTicket,
     PrintTicketBuilder, StaticFeaturePathOptionPack as _,
 };
+
+use checks::{Chosen, Wanted};
+use placement::{Fit, Mismatch, Size};
 
 /// The backend's registry name.
 pub const NAME: &str = "spooler";
@@ -104,7 +130,6 @@ impl Backend for WindowsSpooler {
     fn submit(&self, request: SubmitRequest<'_>) -> Result<Submitted, PrintError> {
         let device = device(request.job.printer.as_deref())?;
         let capabilities = capabilities(&device)?;
-        let (ticket, warnings) = ticket(&device, &capabilities, &request.job, &request.options)?;
         // A closed file in a private folder: Windows.Data.Pdf opens the file itself, and an open
         // temporary file would be locked against it.
         let staging = |e: std::io::Error| PrintError::new(ErrorKind::Io, format!("staging the document: {e}")).with_safety(RetrySafety::Safe);
@@ -112,27 +137,44 @@ impl Backend for WindowsSpooler {
         let path = folder.path().join("document.pdf");
         std::fs::write(&path, request.document.bytes).map_err(staging)?;
 
-        let cancel = request.cancel.clone();
-        let mut report = request.progress;
-        // winprint turns the ticket into a DEVMODE through the provider before the first progress
-        // report, which releases the guard; a job that fails before it releases it on return.
-        let mut provider = Some(print_ticket_provider());
-        let outcome = WinPdfPrinter::new(device.clone())
-            .print_with_progress(&path, ticket, &mut |progress| {
-                drop(provider.take());
-                if let Some(report) = report.as_mut() {
-                    report(Progress::new(progress.current(), Some(progress.total())));
-                }
-                if cancel.is_cancelled() { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
-            })
-            .map_err(|e| failed("printing", &e))?;
+        // Entered before any COM object of the job is made, and left after the last is released.
+        let _apartment = draw::Apartment::enter();
+        let pdf = draw::Pdf::open(&path).map_err(|e| failed("opening the document", &e))?;
+        let pages = pdf.page_sizes().map_err(|e| failed("reading the document's pages", &e))?;
+        let first = *pages.first().ok_or_else(|| PrintError::new(ErrorKind::InvalidRequest, "the document has no pages"))?;
+        let plan = plan(&device, &capabilities, &request.job, &request.options, first)?;
+        let placements = placement::place_all(&pages, plan.paper, plan.fit).map_err(|m| mismatch(m, plan.paper))?;
+        let order: Vec<Option<usize>> = match plan.copies_here {
+            Some(copies) => placement::sequence(pages.len(), copies, request.job.collate, plan.chosen.two_sided()),
+            None => (0..pages.len()).map(Some).collect(),
+        };
+
+        let render = DxgiRenderContext::new().map_err(|e| failed("starting Direct2D", &e))?;
+        let context = {
+            // Turning the ticket into the job's DEVMODE goes through the PrintTicket provider.
+            let _provider = print_ticket_provider();
+            render
+                .start_job(&device, &plan.ticket, OsStr::new(&request.job.title), D2D1_COLOR_SPACE_SRGB)
+                .map_err(|e| failed("starting the job", &e))?
+        };
+        let drawer = draw::Drawer::new(&context.dxgi_device).map_err(|e| failed("starting the PDF renderer", &e))?;
+        let pages: Vec<(Size, placement::Placement)> = pages.into_iter().zip(placements).collect();
+        let job = Sending { context: &context, drawer: &drawer, pdf: &pdf, pages: &pages, paper: plan.paper };
+        let outcome = match job.send(&order, &request.cancel, request.progress)? {
+            Some(outcome) => outcome,
+            None => context.close_and_wait().map_err(|e| failed("printing", &e))?,
+        };
         match outcome {
             PrintOutcome::Completed => {
-                let mut submitted = Submitted::new(NAME, format!("the document is in the queue of {}", device.name()));
-                submitted.warnings = warnings;
+                let mut message = format!("the document is in the queue of {}", device.name());
+                if let Some(copies) = plan.copies_here {
+                    message.push_str(&format!(" ({copies} copies, drawn into one job: the driver cannot make them as asked)"));
+                }
+                let mut submitted = Submitted::new(NAME, message);
+                submitted.warnings = plan.warnings;
                 Ok(submitted)
             }
-            PrintOutcome::Canceled => Err(PrintError::new(ErrorKind::Cancelled, "the job was cancelled").with_safety(RetrySafety::Safe)),
+            _ => Err(PrintError::new(ErrorKind::Cancelled, "the job was cancelled").with_safety(RetrySafety::Safe)),
         }
     }
 
@@ -176,40 +218,124 @@ fn failed(what: &str, error: &dyn std::error::Error) -> PrintError {
     PrintError::new(ErrorKind::Failed, message).with_safety(RetrySafety::Safe)
 }
 
-/// The PrintTicket for `job` and `options`, from the options the driver offers, and the settings
-/// it could not carry.
-fn ticket(
-    device: &PrinterDevice,
-    capabilities: &PrintCapabilities,
-    job: &Job,
-    options: &JobOptions,
-) -> Result<(PrintTicket, Vec<String>), PrintError> {
-    // Declared before the builder, so the builder closes its provider handle before it is released.
-    let _provider = print_ticket_provider();
-    let mut builder = PrintTicketBuilder::new(device).map_err(|e| failed("building the print ticket", &e))?;
-    let mut warnings = Vec::new();
-    let merge = |builder: &mut PrintTicketBuilder, ticket: PrintTicket| builder.merge(ticket).map_err(|e| failed("building the print ticket", &e));
+/// A job's pages going into its print job.
+struct Sending<'a> {
+    context: &'a winprint::printer::DxgiPrintContext,
+    drawer: &'a draw::Drawer,
+    pdf: &'a draw::Pdf,
+    pages: &'a [(Size, placement::Placement)],
+    paper: Size,
+}
 
-    merge(&mut builder, Copies(u16::try_from(job.copies.max(1)).unwrap_or(u16::MAX)).into())?;
-    if job.copies > 1 {
-        let wanted = if job.collate { PredefinedCollation::Collated } else { PredefinedCollation::Uncollated };
-        match Collation::list(capabilities).find(|c| c.as_predefined_name() == Some(wanted)) {
-            Some(collation) => merge(&mut builder, collation.into())?,
-            None => warnings.push("collation is left to the driver".to_owned()),
-        }
-    }
-    if let Some(duplex) = job.duplex {
-        let wanted = match duplex {
-            Duplex::Off => Some(PredefinedDuplexType::OneSided),
-            Duplex::LongEdge => Some(PredefinedDuplexType::TwoSidedLongEdge),
-            Duplex::ShortEdge => Some(PredefinedDuplexType::TwoSidedShortEdge),
-            _ => None,
+impl Sending<'_> {
+    /// Add the pages of `order` (a page index, or a blank back) to the job, reporting each and stopping at a
+    /// cancel. `Some` when the job ended early (cancelled here or outside this process); `None` when every page is
+    /// in and the job is to be closed.
+    fn send(
+        &self,
+        order: &[Option<usize>],
+        cancel: &CancelToken,
+        mut progress: Option<ProgressCallback<'_>>,
+    ) -> Result<Option<PrintOutcome>, PrintError> {
+        let total = u32::try_from(order.len()).unwrap_or(u32::MAX);
+        let mut report = |done: usize| {
+            if let Some(report) = progress.as_mut() {
+                report(Progress::new(u32::try_from(done).unwrap_or(u32::MAX), Some(total)));
+            }
         };
-        match wanted.and_then(|wanted| JobDuplex::list(capabilities).find(|d| d.as_predefined_name() == Some(wanted))) {
-            Some(option) => merge(&mut builder, option.into())?,
-            None => warnings.push(format!("the printer does not offer {duplex:?}; it prints with its default")),
+        let checkpoint = || {
+            let requested = if cancel.is_cancelled() { ControlFlow::Break(()) } else { ControlFlow::Continue(()) };
+            self.context.checkpoint(requested).map_err(|e| failed("printing", &e))
+        };
+        for (done, item) in order.iter().enumerate() {
+            if let ControlFlow::Break(outcome) = checkpoint()? {
+                return Ok(Some(outcome));
+            }
+            report(done);
+            let added = match item {
+                Some(index) => {
+                    let (page, placement) = &self.pages[*index];
+                    self.drawer.page(self.context, self.pdf, (*index, *page), placement, self.paper)
+                }
+                None => self.drawer.blank(self.context, self.paper),
+            };
+            let added = added.map_err(|e| failed(&format!("drawing page {} of {}", done + 1, order.len()), &e))?;
+            if let ControlFlow::Break(outcome) = added {
+                return Ok(Some(outcome));
+            }
         }
+        if let ControlFlow::Break(outcome) = checkpoint()? {
+            return Ok(Some(outcome));
+        }
+        report(order.len());
+        Ok(None)
     }
+}
+
+/// A job's ticket as the driver validated it, and how its pages meet the paper.
+struct Plan {
+    ticket: PrintTicket,
+    /// The paper as the ticket orients it, in DIPs.
+    paper: Size,
+    fit: Fit,
+    chosen: Chosen,
+    /// Copies the job draws itself, when the driver cannot make them as asked.
+    copies_here: Option<u32>,
+    warnings: Vec<String>,
+}
+
+/// The ticket for `job` and `options` on `device`, validated by the driver and checked against what was asked;
+/// `first` is the document's first page.
+fn plan(device: &PrinterDevice, capabilities: &PrintCapabilities, job: &Job, options: &JobOptions, first: Size) -> Result<Plan, PrintError> {
+    let name = device.name();
+    let mut warnings = Vec::new();
+    let exact = !matches!(job.scaling, Scaling::ShrinkToFit);
+
+    // The paper: the size asked for, else the first page's, from the driver's own list.
+    let asked = options.media.as_deref().and_then(|media| {
+        let size = pwg_size(media);
+        if size.is_none() {
+            warnings.push(format!("{media} names no size; the paper is the document's first page's"));
+        }
+        size
+    });
+    let wanted_paper = asked.map_or(first, |(w, h)| Size::from_micron(w, h));
+    let media = paper(capabilities, micron(wanted_paper));
+    if media.is_none() {
+        let inches = inches(wanted_paper);
+        if exact {
+            return Err(PrintError::new(
+                ErrorKind::InvalidRequest,
+                format!("{name} has no {inches} paper; print shrunk to fit, or add the size in the printer's driver"),
+            ));
+        }
+        warnings.push(format!("the printer has no {inches} paper; the pages shrink onto its default paper"));
+    }
+
+    // The orientation: the one asked for, else the first page's where the driver offers it. Pages the other way
+    // round are turned onto the paper either way.
+    let offered = |wanted: PredefinedPageOrientation| PageOrientation::list(capabilities).find(|o| o.as_predefined_name() == Some(wanted));
+    let explicit = options.orientation.map(|orientation| match orientation {
+        Orientation::Landscape => PredefinedPageOrientation::Landscape,
+        Orientation::ReversePortrait => PredefinedPageOrientation::ReversePortrait,
+        Orientation::ReverseLandscape => PredefinedPageOrientation::ReverseLandscape,
+        // `Portrait`, and any orientation a newer printscan adds.
+        _ => PredefinedPageOrientation::Portrait,
+    });
+    let orientation = explicit.unwrap_or(if first.landscape() && offered(PredefinedPageOrientation::Landscape).is_some() {
+        PredefinedPageOrientation::Landscape
+    } else {
+        PredefinedPageOrientation::Portrait
+    });
+
+    // Copies: the driver's when it makes them as asked, else drawn by the job.
+    let copies = job.copies.max(1);
+    let collation = if job.collate { PredefinedCollation::Collated } else { PredefinedCollation::Uncollated };
+    let collation_option = Collation::list(capabilities).find(|c| c.as_predefined_name() == Some(collation));
+    let drivers_copies = capabilities.max_copies().is_none_or(|max| u32::from(max.0) >= copies);
+    let copies_here = (copies > 1 && !(drivers_copies && collation_option.is_some())).then_some(copies);
+    let ticket_copies = if copies_here.is_some() { 1 } else { copies };
+
     let grey = job.grayscale || options.colour == ColourMode::Mono;
     let colour = if grey {
         Some(PredefinedPageOutputColor::Grayscale)
@@ -218,34 +344,39 @@ fn ticket(
     } else {
         None
     };
+    let duplex = job.duplex.map(|duplex| (duplex, checks::duplex_option(duplex)));
+
+    // Declared before the builder, so the builder closes its provider handle before it is released.
+    let _provider = print_ticket_provider();
+    let mut builder = PrintTicketBuilder::new(device).map_err(|e| failed("building the print ticket", &e))?;
+    let merge = |builder: &mut PrintTicketBuilder, ticket: PrintTicket| builder.merge(ticket).map_err(|e| failed("building the print ticket", &e));
+    merge(&mut builder, Copies(u16::try_from(ticket_copies).unwrap_or(u16::MAX)).into())?;
+    if let (true, Some(option)) = (ticket_copies > 1, collation_option) {
+        merge(&mut builder, option.into())?;
+    }
+    match duplex {
+        Some((_, Some(wanted))) => {
+            if let Some(option) = JobDuplex::list(capabilities).find(|d| d.as_predefined_name() == Some(wanted)) {
+                merge(&mut builder, option.into())?;
+            }
+        }
+        Some((duplex, None)) => warnings.push(format!("{duplex:?} is left to the driver")),
+        None => {}
+    }
     if let Some(wanted) = colour {
-        let offered = PageOutputColor::list(capabilities).find(|c| {
+        let option = PageOutputColor::list(capabilities).find(|c| {
             c.as_predefined_name() == Some(wanted)
                 || (wanted == PredefinedPageOutputColor::Grayscale && c.as_predefined_name() == Some(PredefinedPageOutputColor::Monochrome))
         });
-        match offered {
-            Some(option) => merge(&mut builder, option.into())?,
-            None => warnings.push(format!("the printer does not offer {wanted:?}")),
+        if let Some(option) = option {
+            merge(&mut builder, option.into())?;
         }
     }
-    if let Some(media) = options.media.as_deref() {
-        match pwg_size(media).and_then(|size| paper(capabilities, size)) {
-            Some(option) => merge(&mut builder, option.into())?,
-            None => warnings.push(format!("the printer has no {media}; it prints on its default paper")),
-        }
+    if let Some(media) = &media {
+        merge(&mut builder, media.clone().into())?;
     }
-    if let Some(orientation) = options.orientation {
-        let wanted = match orientation {
-            Orientation::Portrait => PredefinedPageOrientation::Portrait,
-            Orientation::Landscape => PredefinedPageOrientation::Landscape,
-            Orientation::ReversePortrait => PredefinedPageOrientation::ReversePortrait,
-            Orientation::ReverseLandscape => PredefinedPageOrientation::ReverseLandscape,
-            _ => PredefinedPageOrientation::Portrait,
-        };
-        match PageOrientation::list(capabilities).find(|o| o.as_predefined_name() == Some(wanted)) {
-            Some(option) => merge(&mut builder, option.into())?,
-            None => warnings.push(format!("the printer does not offer {wanted:?}")),
-        }
+    if let Some(option) = offered(orientation) {
+        merge(&mut builder, option.into())?;
     }
     if let Some(resolution) = options.resolution {
         let wanted = (resolution.x_dpi, resolution.y_dpi);
@@ -258,7 +389,98 @@ fn ticket(
         warnings.push("the rendering intent is left to the driver".to_owned());
     }
     let ticket = builder.build().map_err(|e| failed("building the print ticket", &e))?;
-    Ok((ticket, warnings))
+
+    // What the driver kept of what was asked.
+    let chosen = Chosen::read(&ticket);
+    let wanted = Wanted {
+        duplex: duplex.and_then(|(_, wanted)| wanted),
+        collation: (ticket_copies > 1).then_some(collation),
+        colour,
+        orientation: explicit,
+        copies: ticket_copies,
+    };
+    let lost = checks::dropped(&wanted, &chosen);
+    if !lost.is_empty() {
+        return Err(PrintError::new(ErrorKind::Rejected, format!("{name} would not print {}; nothing was sent", lost.join(", ")))
+            .with_safety(RetrySafety::Safe));
+    }
+
+    // The paper as the driver has it, turned to the orientation it kept.
+    let printable = imageable(device, &ticket);
+    let paper = match (&media, printable) {
+        (Some(media), _) => Size::from_micron(media.size().width_in_micron(), media.size().height_in_micron()),
+        (None, Some((size, _))) => size,
+        (None, None) => {
+            return Err(PrintError::new(ErrorKind::Failed, format!("{name} did not say what paper it prints on")).with_safety(RetrySafety::Safe));
+        }
+    };
+    let landscape =
+        matches!(chosen.orientation.unwrap_or(orientation), PredefinedPageOrientation::Landscape | PredefinedPageOrientation::ReverseLandscape);
+    let paper = if paper.landscape() == landscape { paper } else { paper.turned() };
+    let fit = if exact { Fit::Exact } else { Fit::Shrink { margin: printable.map_or(0.0, |(_, margin)| margin) } };
+    Ok(Plan { ticket, paper, fit, chosen, copies_here, warnings })
+}
+
+/// The paper `ticket` prints on and its widest unprintable margin (DIPs), as the driver reports them for it.
+fn imageable(device: &PrinterDevice, ticket: &PrintTicket) -> Option<(Size, f64)> {
+    let xml = PrintCapabilities::fetch_xml_for_ticket(device, Some(ticket)).ok()?;
+    let document = PrintCapabilitiesDocument::parse_from_bytes(&xml).ok()?;
+    let number =
+        |property: &Property, name: &str| property.get_property(name, Some(NS_PSK))?.value.as_ref()?.integer().and_then(|v| u32::try_from(v).ok());
+    let size = document.get_property("PageImageableSize", Some(NS_PSK))?;
+    let paper = (number(size, "ImageableSizeWidth")?, number(size, "ImageableSizeHeight")?);
+    let area = size.get_property("ImageableArea", Some(NS_PSK))?;
+    let origin = (number(area, "OriginWidth")?, number(area, "OriginHeight")?);
+    let extent = (number(area, "ExtentWidth")?, number(area, "ExtentHeight")?);
+    let margin = f64::from(widest_margin(paper, origin, extent)) * 96.0 / 25_400.0;
+    Some((Size::from_micron(paper.0, paper.1), margin))
+}
+
+/// The widest of the four margins around the printable area `origin` + `extent` on `paper` (micrometres).
+fn widest_margin(paper: (u32, u32), origin: (u32, u32), extent: (u32, u32)) -> u32 {
+    let right = paper.0.saturating_sub(origin.0.saturating_add(extent.0));
+    let bottom = paper.1.saturating_sub(origin.1.saturating_add(extent.1));
+    origin.0.max(origin.1).max(right).max(bottom)
+}
+
+/// `size` in micrometres.
+fn micron(size: Size) -> (u32, u32) {
+    let micron = |dips: f64| (dips * 25_400.0 / 96.0).round().clamp(0.0, f64::from(u32::MAX)) as u32;
+    (micron(size.w), micron(size.h))
+}
+
+/// `size` in inches, for people ("8.50 x 11.00 in").
+fn inches(size: Size) -> String {
+    format!("{:.2} x {:.2} in", size.w / 96.0, size.h / 96.0)
+}
+
+/// A page the paper does not take at its own size.
+fn mismatch(m: Mismatch, paper: Size) -> PrintError {
+    PrintError::new(
+        ErrorKind::InvalidRequest,
+        format!("page {} is {}, not the paper's {}; print it shrunk to fit, or as a job of its own", m.index + 1, inches(m.page), inches(paper)),
+    )
+}
+
+/// Open the driver's Printing Preferences window for `printer` (`printui.dll`'s `PrintUIEntry /e`), and return once
+/// it is open. What the person sets there is saved as that printer's defaults for this Windows user, which every
+/// job's ticket starts from; a job's own settings still apply on top.
+pub fn open_preferences(printer: &str) -> Result<(), PrintError> {
+    use std::os::windows::process::CommandExt as _;
+    // printui takes the name in quotes; a Windows printer name cannot hold one.
+    if printer.is_empty() || printer.contains('"') || printer.chars().any(char::is_control) {
+        return Err(PrintError::new(ErrorKind::InvalidRequest, "not a printer name"));
+    }
+    let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
+    let rundll32 = std::path::Path::new(&root).join("System32").join("rundll32.exe");
+    std::process::Command::new(rundll32)
+        .raw_arg("printui.dll,PrintUIEntry")
+        .raw_arg("/e")
+        .raw_arg("/n")
+        .raw_arg(format!("\"{printer}\""))
+        .spawn()
+        .map(drop)
+        .map_err(|e| PrintError::new(ErrorKind::Unavailable, format!("the printer's preferences could not be opened: {e}")))
 }
 
 /// The paper the driver offers in `size` (micrometres, either way round).
