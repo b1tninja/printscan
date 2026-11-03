@@ -1715,11 +1715,11 @@ pub fn region_pixels(region: Region, dpi: u32) -> Result<RegionPixels, ScanError
 }
 
 /// Keep `region` inside `max` (thousandths of an inch). `None` leaves the request as it is.
-pub fn fit_region(region: Region, max: Option<(u32, u32)>) -> Result<Region, ScanError> {
+pub fn fit_region(region: Region, max: Option<Area>) -> Result<Region, ScanError> {
     if region.width == 0 || region.height == 0 {
         return Err(ScanError::Failed("the scan region has no size".into()));
     }
-    let Some((max_w, max_h)) = max.filter(|(w, h)| *w > 0 && *h > 0) else {
+    let Some(Area { width: max_w, height: max_h }) = max.filter(|max| max.width > 0 && max.height > 0) else {
         return Ok(region);
     };
     if region.left >= max_w || region.top >= max_h {
@@ -1768,7 +1768,7 @@ pub fn planned_frame(
     from_dpi: u32,
     to_dpi: u32,
     region: Option<Region>,
-    max: Option<(u32, u32)>,
+    max: Option<Area>,
 ) -> Result<PlannedFrame, ScanError> {
     if let Some(region) = region {
         let fitted = fit_region(region, max)?;
@@ -1855,7 +1855,7 @@ mod tests {
 
     use super::trace::{TraceDest, trace_dest_from_str};
     use super::{
-        CancelToken, Color, Connection, HandlingStatus, Intent, Page, PageSize, ProgressToken, Region, RegionPixels, Rotation, ScanError,
+        Area, CancelToken, Color, Connection, HandlingStatus, Intent, Page, PageSize, ProgressToken, Region, RegionPixels, Rotation, ScanError,
         ScanSettings, Source, ValueSpan, align_to_span, bmp_size, estimated_bmp_bytes, fit_region, image_format, interleave_manual_duplex,
         listed_values, page_path, pixels_for, planned_frame, preview_dpi, region_from_inches, region_from_preview, region_pixels, rescale_extent,
         spanned_values,
@@ -2134,7 +2134,7 @@ mod tests {
 
     #[test]
     fn a_full_page_leaves_the_rescaled_extent_and_a_zero_region_is_refused() {
-        let full = planned_frame(1700, 2200, 200, 300, None, Some((8500, 11693)));
+        let full = planned_frame(1700, 2200, 200, 300, None, Some(Area::new(8500, 11693)));
         assert!(full.is_ok_and(|frame| {
             !frame.move_origin && frame.width == rescale_extent(1700, 200, 300) && frame.height == rescale_extent(2200, 200, 300)
         }));
@@ -2148,11 +2148,11 @@ mod tests {
         assert!(region_from_inches(0.0, 0.0, 0.0, 1.0).is_err());
         assert!(region_from_inches(0.0, 0.0, -1.0, 1.0).is_err());
         assert_eq!(
-            fit_region(Region { left: 8000, top: 0, width: 2000, height: 1000 }, Some((8500, 11693))),
+            fit_region(Region { left: 8000, top: 0, width: 2000, height: 1000 }, Some(Area::new(8500, 11693))),
             Ok(Region { left: 8000, top: 0, width: 500, height: 1000 })
         );
         assert_eq!(fit_region(window, None), Ok(window));
-        assert!(fit_region(Region { left: 9000, top: 0, width: 100, height: 100 }, Some((8500, 11693))).is_err());
+        assert!(fit_region(Region { left: 9000, top: 0, width: 100, height: 100 }, Some(Area::new(8500, 11693))).is_err());
     }
 
     #[test]

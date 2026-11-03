@@ -630,8 +630,8 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
     let old_x = u32::try_from(read_i4(&item, WIA_IPS_XEXTENT).unwrap_or(0)).unwrap_or(0);
     let old_y = u32::try_from(read_i4(&item, WIA_IPS_YEXTENT).unwrap_or(0)).unwrap_or(0);
     let max = match source {
-        Source::Glass => bed_area(&item, &root),
-        Source::Feeder => sheet_area(&item, &root),
+        Source::Glass => bed_area(&item, &root).map(Area::from),
+        Source::Feeder => sheet_area(&item, &root).map(Area::from),
         _ => None,
     };
     let dpi_y = settings.dpi_y.unwrap_or(settings.dpi);
@@ -643,8 +643,8 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
         // Some WSD items leave the extent at 0 until a window is written. The bed size is
         // already in thousandths of an inch, which is the unit a region uses. When the bed
         // size is missing too, leave the driver's own page size rather than writing 0.
-        if let Some((width, height)) = max {
-            let full = printscan::scan::Region::new(0, 0, width, height);
+        if let Some(max) = max {
+            let full = printscan::scan::Region::new(0, 0, max.width, max.height);
             planned_frame(old_x, old_y, from_dpi, settings.dpi, Some(full), None)?
         } else {
             // The installed WSD item can be a named Flatbed whose format and extent never
@@ -675,7 +675,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
             }
             log::debug!("scan: page length from {}: {} rows at {dpi_y} dpi", size.name(), frame.height);
         } else if infer_requested {
-            let max_mils = length::support(&length_table).max_length_mils.or(max.map(|(_, height)| height));
+            let max_mils = length::support(&length_table).max_length_mils.or(max.map(|max| max.height));
             if let Some(rows) = length::longest_rows(y_span, max_mils, dpi_y) {
                 frame.height = rows;
                 inferring = true;
