@@ -145,6 +145,13 @@ pub struct BackendError {
     pub error: ScanError,
 }
 
+impl BackendError {
+    /// `backend` failed with `error`.
+    pub fn new(backend: &'static str, error: ScanError) -> Self {
+        Self { backend, error }
+    }
+}
+
 /// What the registered backends found. `items` holds every device that was found, with namespaced
 /// ids; `errors` holds one entry for each backend that failed. A failing backend does not hide the
 /// others' devices.
@@ -156,6 +163,12 @@ pub struct Listing<T> {
 }
 
 impl<T> Listing<T> {
+    /// `items` found, and the `errors` of the backends that failed. An app that fakes a registry in its tests
+    /// builds its answers with this.
+    pub fn new(items: Vec<T>, errors: Vec<BackendError>) -> Self {
+        Self { items, errors }
+    }
+
     /// No backend failed.
     pub fn is_complete(&self) -> bool {
         self.errors.is_empty()
