@@ -414,3 +414,17 @@ fn page_length_support_is_unknown_unless_a_backend_reads_it() {
     assert_eq!(scanner.length_support(Source::Glass), PageLengthSupport::default());
     assert_eq!(scanner.length_support(Source::Feeder), PageLengthSupport::default());
 }
+
+#[test]
+fn an_app_can_build_the_listings_a_fake_registry_answers() {
+    use printscan::{print, scan};
+    let listing = scan::Listing::new(vec!["fake:1"], vec![scan::BackendError::new("wia", scan::ScanError::Unsupported)]);
+    assert!(!listing.is_complete());
+    assert_eq!(listing.errors[0].backend, "wia");
+    let listing = print::Listing::new(
+        vec!["fake:1"],
+        vec![print::BackendError::new("spooler", print::PrintError::new(print::ErrorKind::Unsupported, "no print stack"))],
+    );
+    assert!(!listing.is_complete());
+    assert!(scan::Listing::<()>::new(Vec::new(), Vec::new()).is_complete());
+}

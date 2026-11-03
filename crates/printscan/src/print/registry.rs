@@ -55,6 +55,13 @@ pub struct BackendError {
     pub error: PrintError,
 }
 
+impl BackendError {
+    /// `backend` failed with `error`.
+    pub fn new(backend: &'static str, error: PrintError) -> Self {
+        Self { backend, error }
+    }
+}
+
 /// What the registered backends found: every printer that was found (namespaced ids) and one
 /// [`BackendError`] per backend that failed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -65,6 +72,12 @@ pub struct Listing<T> {
 }
 
 impl<T> Listing<T> {
+    /// `items` found, and the `errors` of the backends that failed. An app that fakes a registry in its tests
+    /// builds its answers with this.
+    pub fn new(items: Vec<T>, errors: Vec<BackendError>) -> Self {
+        Self { items, errors }
+    }
+
     /// No backend failed.
     pub fn is_complete(&self) -> bool {
         self.errors.is_empty()
