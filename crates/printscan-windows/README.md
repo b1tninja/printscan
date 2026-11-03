@@ -18,7 +18,7 @@ Rust 1.95.
   only `acquire` feeds paper.
 
 ```rust,ignore
-printscan::print::register(Box::new(printscan_windows::spooler::WindowsSpooler))?;
+printscan::print::register(Box::new(printscan_windows::spooler::WindowsSpooler::default()))?;
 printscan_windows::wia::register();
 ```
 

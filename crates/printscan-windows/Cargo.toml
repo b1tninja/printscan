@@ -45,7 +45,7 @@ log = { version = "0.4", optional = true }
 [target.'cfg(windows)'.dependencies]
 # Pages drawn at the ticket's resolution, progress with cancellation, the cancel guard. Its default
 # `pdfium` feature downloads PDFium at build time and is off.
-winprint = { version = "0.3.1", default-features = false, optional = true }
+winprint = { version = "0.4.0", default-features = false, optional = true }
 tempfile = { version = "3", optional = true }
 # The implement macro names windows-core; it is the same one the windows crate (and winprint) use.
 windows-core = { version = "0.62", optional = true }
@@ -68,4 +68,4 @@ windows = { version = "0.62", features = [
 
 [target.'cfg(windows)'.dev-dependencies]
 # A temporary print-to-file printer for the tests (Microsoft Print To PDF or PWG raster on a file port).
-winprint = { version = "0.3.1", default-features = false, features = ["test-utils"] }
+winprint = { version = "0.4.0", default-features = false, features = ["test-utils"] }

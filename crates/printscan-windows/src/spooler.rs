@@ -30,13 +30,14 @@ mod placement;
 use std::ffi::OsStr;
 use std::ops::ControlFlow;
 use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use printscan::print::backends::{Backend, BackendClass, DocumentFormat, ErrorKind, JobHint, PrintError, PrinterDetails, PrinterRef, SubmitRequest};
 use printscan::print::{
     CancelToken, ColourMode, Job, JobOptions, Orientation, Progress, ProgressCallback, Resolution, RetrySafety, Scaling, Submitted, WatchSupport,
 };
 use windows::Win32::Graphics::Direct2D::D2D1_COLOR_SPACE_SRGB;
-use winprint::printer::{DxgiRenderContext, PrintOutcome, PrinterDevice};
+use winprint::printer::{DxgiPrintContextError, DxgiRenderContext, PrintOutcome, PrinterDevice};
 use winprint::ticket::document::reader::ParsableXmlDocument as _;
 use winprint::ticket::document::{NS_PSK, PrintCapabilitiesDocument, Property, WithProperties as _};
 use winprint::ticket::{
@@ -44,6 +45,7 @@ use winprint::ticket::{
     PageResolution, PredefinedCollation, PredefinedDuplexType, PredefinedPageOrientation, PredefinedPageOutputColor, PrintCapabilities, PrintTicket,
     PrintTicketBuilder, StaticFeaturePathOptionPack as _,
 };
+use winprint::utils::Deadline;
 
 use checks::{Chosen, Wanted};
 use placement::{Fit, Mismatch, Size};
@@ -66,9 +68,43 @@ fn print_ticket_provider() -> MutexGuard<'static, ()> {
     PRINT_TICKET_PROVIDER.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// How long a job may take by default, from opening the document until the print system has
+/// taken the whole job ([`WindowsSpooler::with_timeout`]).
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
 /// The Windows print spooler. Register it with a [`printscan::print::Registry`].
-#[derive(Clone, Copy, Debug, Default)]
-pub struct WindowsSpooler;
+#[derive(Clone, Copy, Debug)]
+pub struct WindowsSpooler {
+    timeout: Option<Duration>,
+}
+
+impl WindowsSpooler {
+    /// The spooler with [`DEFAULT_TIMEOUT`].
+    pub const fn new() -> Self {
+        Self { timeout: Some(DEFAULT_TIMEOUT) }
+    }
+
+    /// The same spooler with jobs limited to `timeout`, or unlimited with `None`. The limit bounds
+    /// [`Backend::submit`]: a driver or spooler that never reports the end of a job would otherwise
+    /// hold the caller for ever. A job past it is cancelled and fails with [`ErrorKind::Timeout`]. It
+    /// counts drawing the pages too, so a long document needs a longer limit.
+    #[must_use]
+    pub const fn with_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// The limit on a job; `None` for none.
+    pub const fn timeout(&self) -> Option<Duration> {
+        self.timeout
+    }
+}
+
+impl Default for WindowsSpooler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Backend for WindowsSpooler {
     fn name(&self) -> &'static str {
@@ -137,6 +173,8 @@ impl Backend for WindowsSpooler {
         let path = folder.path().join("document.pdf");
         std::fs::write(&path, request.document.bytes).map_err(staging)?;
 
+        // The job's limit counts from here: reading the document, drawing it and the print system taking it.
+        let deadline = Deadline::after(self.timeout);
         // Entered before any COM object of the job is made, and left after the last is released.
         let _apartment = draw::Apartment::enter();
         let pdf = draw::Pdf::open(&path).map_err(|e| failed("opening the document", &e))?;
@@ -154,15 +192,15 @@ impl Backend for WindowsSpooler {
             // Turning the ticket into the job's DEVMODE goes through the PrintTicket provider.
             let _provider = print_ticket_provider();
             render
-                .start_job(&device, &plan.ticket, OsStr::new(&request.job.title), D2D1_COLOR_SPACE_SRGB)
-                .map_err(|e| failed("starting the job", &e))?
+                .start_job(&device, &plan.ticket, OsStr::new(&request.job.title), D2D1_COLOR_SPACE_SRGB, deadline)
+                .map_err(|e| job_failed("starting the job", &e))?
         };
         let drawer = draw::Drawer::new(&context.dxgi_device).map_err(|e| failed("starting the PDF renderer", &e))?;
         let pages: Vec<(Size, placement::Placement)> = pages.into_iter().zip(placements).collect();
         let job = Sending { context: &context, drawer: &drawer, pdf: &pdf, pages: &pages, paper: plan.paper };
         let outcome = match job.send(&order, &request.cancel, request.progress)? {
             Some(outcome) => outcome,
-            None => context.close_and_wait().map_err(|e| failed("printing", &e))?,
+            None => context.close_and_wait().map_err(|e| job_failed("printing", &e))?,
         };
         match outcome {
             PrintOutcome::Completed => {
@@ -180,6 +218,17 @@ impl Backend for WindowsSpooler {
 
     fn watch_support(&self) -> WatchSupport {
         WatchSupport::None
+    }
+}
+
+/// A failure of the job, or its deadline passing ([`ErrorKind::Timeout`]: winprint cancelled the
+/// job, but pages may have reached the printer before it did).
+fn job_failed(what: &str, error: &DxgiPrintContextError) -> PrintError {
+    match error {
+        DxgiPrintContextError::TimedOut(elapsed) => {
+            PrintError::new(ErrorKind::Timeout, format!("{what}: the job was cancelled after {} s, its time limit", elapsed.as_secs()))
+        }
+        other => failed(what, other),
     }
 }
 
@@ -245,7 +294,7 @@ impl Sending<'_> {
         };
         let checkpoint = || {
             let requested = if cancel.is_cancelled() { ControlFlow::Break(()) } else { ControlFlow::Continue(()) };
-            self.context.checkpoint(requested).map_err(|e| failed("printing", &e))
+            self.context.checkpoint(requested).map_err(|e| job_failed("printing", &e))
         };
         for (done, item) in order.iter().enumerate() {
             if let ControlFlow::Break(outcome) = checkpoint()? {
@@ -561,10 +610,10 @@ mod tests {
     #[test]
     #[ignore]
     fn lists_printers_and_reads_details() {
-        let printers = WindowsSpooler.list_printers().unwrap();
+        let printers = WindowsSpooler::default().list_printers().unwrap();
         assert!(!printers.is_empty());
         let pdf = printers.iter().find(|p| p.id == "Microsoft Print to PDF").expect("Microsoft Print to PDF is installed");
-        let details = WindowsSpooler.printer_details(&pdf.id).unwrap();
+        let details = WindowsSpooler::default().printer_details(&pdf.id).unwrap();
         assert!(!details.paper.is_empty());
         assert!(!details.resolutions.is_empty());
     }

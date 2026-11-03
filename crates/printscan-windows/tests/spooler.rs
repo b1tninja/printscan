@@ -64,14 +64,14 @@ fn job_for(device: &FilePrinterDevice<Pdf>) -> Job {
 #[test]
 fn a_pdf_reaches_the_printer_with_the_settings_it_offers() {
     let device = FilePrinterDevice::<Pdf>::new().expect("add a temporary print-to-file printer");
-    let details = WindowsSpooler.printer_details(device.device().name()).unwrap();
+    let details = WindowsSpooler::default().printer_details(device.device().name()).unwrap();
     assert!(!details.paper.is_empty(), "the driver lists paper");
     assert!(!details.resolutions.is_empty(), "the driver lists resolutions");
 
     let pdf = one_page_pdf();
     let options = JobOptions::new().with_media("iso_a4_210x297mm");
     let request = SubmitRequest::new(Document::pdf(&pdf), job_for(&device)).with_options(options);
-    let submitted = WindowsSpooler.submit(request).unwrap();
+    let submitted = WindowsSpooler::default().submit(request).unwrap();
     assert!(submitted.job.is_none(), "the spooler gives no job handle");
     assert!(submitted.warnings.is_empty(), "A4 is offered: {:?}", submitted.warnings);
 
@@ -110,7 +110,7 @@ fn page_sizes(pdf: &[u8]) -> Vec<(i64, i64)> {
 /// printer wrote (nothing when the submit failed).
 fn printed(pdf: &[u8], job: impl FnOnce(Job) -> Job, options: JobOptions) -> (Result<Submitted, PrintError>, Vec<u8>) {
     let device = FilePrinterDevice::<Pdf>::new().expect("add a temporary print-to-file printer");
-    let result = WindowsSpooler.submit(SubmitRequest::new(Document::pdf(pdf), job(job_for(&device))).with_options(options));
+    let result = WindowsSpooler::default().submit(SubmitRequest::new(Document::pdf(pdf), job(job_for(&device))).with_options(options));
     let written = if result.is_ok() {
         device.wait_for_idle(Duration::from_secs(120)).unwrap();
         whole_pdf(device.file_path(), Duration::from_secs(120))
@@ -197,14 +197,24 @@ fn a_cancelled_request_ends_cancelled() {
     let pdf = one_page_pdf();
     let cancel = CancelToken::new();
     cancel.cancel();
-    let error = WindowsSpooler.submit(SubmitRequest::new(Document::pdf(&pdf), job_for(&device)).with_cancel(cancel)).unwrap_err();
+    let error = WindowsSpooler::default().submit(SubmitRequest::new(Document::pdf(&pdf), job_for(&device)).with_cancel(cancel)).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Cancelled, "{error}");
+}
+
+#[test]
+fn a_job_past_its_time_limit_is_cancelled_and_times_out() {
+    let device = FilePrinterDevice::<Pdf>::new().expect("add a temporary print-to-file printer");
+    let spooler = WindowsSpooler::default().with_timeout(Some(Duration::ZERO));
+    let error = spooler.submit(SubmitRequest::new(Document::pdf(&one_page_pdf()), job_for(&device))).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Timeout, "{error}");
+    assert_eq!(WindowsSpooler::default().timeout(), Some(printscan_windows::spooler::DEFAULT_TIMEOUT));
+    assert_eq!(spooler.with_timeout(None).timeout(), None);
 }
 
 #[test]
 fn an_unknown_printer_is_not_found() {
     let pdf = one_page_pdf();
     let job = Job::default().with_printer("printscan: no such printer");
-    let error = WindowsSpooler.submit(SubmitRequest::new(Document::pdf(&pdf), job)).unwrap_err();
+    let error = WindowsSpooler::default().submit(SubmitRequest::new(Document::pdf(&pdf), job)).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::NotFound, "{error}");
 }
