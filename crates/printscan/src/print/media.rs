@@ -24,10 +24,17 @@ pub struct Media {
 }
 
 impl Media {
-    /// The size in PostScript points (1/72 in), as a PDF page is laid out.
+    /// The size in PostScript points (1/72 in), as a PDF page is laid out: from the dimensions the PWG name
+    /// states, so an inch size is a whole number of points (US #10 is 297 x 684, where [`Media::size`] rounds
+    /// 4.125 in to 104.78 mm).
     pub fn points(&self) -> (f64, f64) {
-        let pt = |hmm: u32| f64::from(hmm) * 72.0 / 2540.0;
-        (pt(self.size.0), pt(self.size.1))
+        match stated(self.pwg) {
+            Some((w, h, unit)) => (w * 72.0 / unit.inches(), h * 72.0 / unit.inches()),
+            None => {
+                let pt = |hmm: u32| f64::from(hmm) * 72.0 / 2540.0;
+                (pt(self.size.0), pt(self.size.1))
+            }
+        }
     }
 
     /// The `media` value for a CUPS queue: the PPD keyword when the size has one, else the PWG name (CUPS
@@ -102,20 +109,53 @@ pub fn by_size(size: (u32, u32), tolerance: u32) -> Option<&'static Media> {
 /// `class_name_WxHunit` with `unit` `mm` or `in` (`iso_a4_210x297mm`, `na_number-10_4.125x9.5in`,
 /// `custom_57x31mm`). `None` for anything else, a zero or a size over 10 m.
 pub fn parse_pwg(pwg: &str) -> Option<(u32, u32)> {
+    let (w, h, unit) = stated(pwg)?;
+    let hmm = |side: f64| (side * unit.hmm()).round() as u32;
+    Some((hmm(w), hmm(h)))
+}
+
+/// The unit a PWG self-describing name states its size in.
+#[derive(Clone, Copy)]
+enum Unit {
+    Mm,
+    In,
+}
+
+impl Unit {
+    /// Hundredths of a millimetre in one unit.
+    fn hmm(self) -> f64 {
+        match self {
+            Self::Mm => 100.0,
+            Self::In => 2540.0,
+        }
+    }
+
+    /// Units in an inch.
+    fn inches(self) -> f64 {
+        match self {
+            Self::Mm => 25.4,
+            Self::In => 1.0,
+        }
+    }
+}
+
+/// The width, height and unit a PWG self-describing name states, as written (see [`parse_pwg`] for what is
+/// accepted).
+fn stated(pwg: &str) -> Option<(f64, f64, Unit)> {
     let dims = pwg.rsplit('_').next()?;
-    let (numbers, hmm_per_unit) = match dims.strip_suffix("mm") {
-        Some(n) => (n, 100.0),
-        None => (dims.strip_suffix("in")?, 2540.0),
+    let (numbers, unit) = match dims.strip_suffix("mm") {
+        Some(n) => (n, Unit::Mm),
+        None => (dims.strip_suffix("in")?, Unit::In),
     };
     let (w, h) = numbers.split_once('x')?;
-    let side = |text: &str| -> Option<u32> {
+    let side = |text: &str| -> Option<f64> {
         if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
             return None;
         }
-        let value = text.parse::<f64>().ok()? * hmm_per_unit;
-        (1.0..=1_000_000.0).contains(&value).then(|| value.round() as u32)
+        let value = text.parse::<f64>().ok()?;
+        (1.0..=1_000_000.0).contains(&(value * unit.hmm())).then_some(value)
     };
-    Some((side(w)?, side(h)?))
+    Some((side(w)?, side(h)?, unit))
 }
 
 #[cfg(test)]
@@ -149,9 +189,11 @@ mod tests {
         ];
         for (name, (w, h)) in laid_out {
             let (pw, ph) = by_name(name).unwrap().points();
-            // Within half a hundredth of a millimetre (0.014 pt), the unit sizes are kept in: 4.125 in is 10477.5.
-            assert!((pw - w).abs() < 0.015 && (ph - h).abs() < 0.015, "{name}: {pw} x {ph}");
+            // Metric sizes were laid out to the hundredth of a point; inch sizes are exact.
+            assert!((pw - w).abs() < 0.005 && (ph - h).abs() < 0.005, "{name}: {pw} x {ph}");
         }
+        assert_eq!(by_name("US #10 Envelope (4.125 x 9.5 in)").unwrap().points(), (297.0, 684.0), "not 104.78 mm");
+        assert_eq!(by_name("ARCH D (24 x 36 in)").unwrap().points(), (1728.0, 2592.0));
     }
 
     #[test]
