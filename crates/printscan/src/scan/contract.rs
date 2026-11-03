@@ -404,6 +404,258 @@ pub fn recovery(pages_received: usize, pages_expected: Option<u32>) -> Recovery 
     Recovery { retryable: wanted_more && pages_received == 0, resumable: wanted_more && pages_received > 0 }
 }
 
+// ---- interruptions --------------------------------------------------------------------------------
+
+/// Which leg of a scan stopped: a plain scan, or the fronts or the reverse sides of a manual duplex (the
+/// stack scanned once, turned over and scanned again).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
+#[non_exhaustive]
+pub enum Pass {
+    #[default]
+    Direct,
+    Fronts,
+    Backs,
+}
+
+impl Pass {
+    pub const ALL: &'static [Pass] = &[Pass::Direct, Pass::Fronts, Pass::Backs];
+
+    /// Wire string: `direct`, `fronts`, `backs`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Fronts => "fronts",
+            Self::Backs => "backs",
+        }
+    }
+
+    /// The variant whose wire string (see `as_str`) is exactly `text`, or `None`.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|value| value.as_str() == text)
+    }
+}
+wire_text!(Pass, "pass");
+
+/// What a person can do about a scan that stopped early.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum InterruptAction {
+    /// Nothing was kept: start the same scan again.
+    TryAgain,
+    /// Pages were kept and more are wanted: scan on from where it stopped ([`Interruption::resume`]).
+    Continue,
+    /// Fronts of a manual duplex were scanned: stop scanning fronts and scan the reverse sides of those.
+    ReverseNow,
+    /// Keep what was scanned and end the scan.
+    Finish,
+}
+
+impl InterruptAction {
+    pub const ALL: &'static [InterruptAction] =
+        &[InterruptAction::TryAgain, InterruptAction::Continue, InterruptAction::ReverseNow, InterruptAction::Finish];
+
+    /// Wire string: `try_again`, `continue`, `reverse_now`, `finish`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::TryAgain => "try_again",
+            Self::Continue => "continue",
+            Self::ReverseNow => "reverse_now",
+            Self::Finish => "finish",
+        }
+    }
+
+    /// The variant whose wire string (see `as_str`) is exactly `text`, or `None`.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|value| value.as_str() == text)
+    }
+}
+wire_text!(InterruptAction, "interrupt action");
+
+/// What to put right at the scanner before going on, for the causes that name one. The app words it
+/// ("Clear the jam and load the remaining sheets squarely, then choose Continue.").
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Remedy {
+    /// Close the feeder cover and check the paper.
+    CloseCover,
+    /// Clear the jam and load the sheets squarely.
+    ClearJam,
+    /// Load sheets in the feeder.
+    LoadPaper,
+    /// Separate the sheets that went in together and load them again.
+    SeparateSheets,
+    /// Open the cover, clear any jam or sheets fed together, and load the sheets squarely (the scanner did not
+    /// say which).
+    ClearPaperPath,
+    /// Check that the scanner is on and connected.
+    CheckConnection,
+    /// Look at the scanner for a message or an open door or cover.
+    CheckScanner,
+    /// Wait for the scanner to finish, or close another program using it.
+    Wait,
+    /// Check that the feeder has paper, or wait for the scanner to finish (the scanner did not say which).
+    CheckPaperOrWait,
+    /// Switch the scanner off and on again and wait until it is ready.
+    RestartScanner,
+}
+
+impl Remedy {
+    pub const ALL: &'static [Remedy] = &[
+        Remedy::CloseCover,
+        Remedy::ClearJam,
+        Remedy::LoadPaper,
+        Remedy::SeparateSheets,
+        Remedy::ClearPaperPath,
+        Remedy::CheckConnection,
+        Remedy::CheckScanner,
+        Remedy::Wait,
+        Remedy::CheckPaperOrWait,
+        Remedy::RestartScanner,
+    ];
+
+    /// Wire string: `close_cover`, `clear_jam`, `load_paper`, `separate_sheets`, `clear_paper_path`,
+    /// `check_connection`, `check_scanner`, `wait`, `check_paper_or_wait`, `restart_scanner`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CloseCover => "close_cover",
+            Self::ClearJam => "clear_jam",
+            Self::LoadPaper => "load_paper",
+            Self::SeparateSheets => "separate_sheets",
+            Self::ClearPaperPath => "clear_paper_path",
+            Self::CheckConnection => "check_connection",
+            Self::CheckScanner => "check_scanner",
+            Self::Wait => "wait",
+            Self::CheckPaperOrWait => "check_paper_or_wait",
+            Self::RestartScanner => "restart_scanner",
+        }
+    }
+
+    /// The variant whose wire string (see `as_str`) is exactly `text`, or `None`.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|value| value.as_str() == text)
+    }
+
+    /// What to put right for `kind`; `None` for a cause with nothing to fix at the scanner (`Cancelled`,
+    /// `Other`): show the error's own sentence then.
+    pub fn for_kind(kind: InterruptKind) -> Option<Self> {
+        Some(match kind {
+            InterruptKind::CoverOpen => Self::CloseCover,
+            InterruptKind::Jam => Self::ClearJam,
+            InterruptKind::FeederEmpty => Self::LoadPaper,
+            InterruptKind::MultiFeed => Self::SeparateSheets,
+            InterruptKind::PaperProblem => Self::ClearPaperPath,
+            InterruptKind::Offline => Self::CheckConnection,
+            InterruptKind::Attention => Self::CheckScanner,
+            InterruptKind::Busy => Self::Wait,
+            InterruptKind::BusyOrFeederEmpty => Self::CheckPaperOrWait,
+            InterruptKind::DeviceError => Self::RestartScanner,
+            _ => return None,
+        })
+    }
+}
+wire_text!(Remedy, "remedy");
+
+/// A scan that stopped early, with what deciding the next step needs: why, how many pages came in of how many,
+/// which leg it was and which source it used.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct Interruption {
+    pub kind: InterruptKind,
+    /// Pages of this scan kept so far, over every Continue.
+    pub received: u32,
+    /// Pages wanted in all; `None` for the whole feeder (or a hardware duplex scan, which counts sides).
+    pub expected: Option<u32>,
+    pub pass: Pass,
+    /// The source the scan used; [`Source::Auto`] when it stopped before resolving one.
+    pub source: Source,
+}
+
+impl Interruption {
+    /// A plain scan ([`Pass::Direct`]) that stopped for `kind` after `received` of `expected` pages, its source not
+    /// known.
+    pub const fn new(kind: InterruptKind, received: u32, expected: Option<u32>) -> Self {
+        Self { kind, received, expected, pass: Pass::Direct, source: Source::Auto }
+    }
+
+    /// The same stop in the leg `pass` of a manual duplex.
+    #[must_use]
+    pub const fn with_pass(mut self, pass: Pass) -> Self {
+        self.pass = pass;
+        self
+    }
+
+    /// The same stop on `source`, the source the scan used.
+    #[must_use]
+    pub const fn with_source(mut self, source: Source) -> Self {
+        self.source = source;
+        self
+    }
+
+    /// The rule for this stop ([`recovery`]).
+    pub fn recovery(&self) -> Recovery {
+        recovery(usize::try_from(self.received).unwrap_or(usize::MAX), self.expected)
+    }
+
+    /// The action to offer first: Continue when pages were kept and more are wanted, Try again when nothing was
+    /// kept, and `None` when every wanted page is in (only Finish is left).
+    pub fn primary(&self) -> Option<InterruptAction> {
+        let recovery = self.recovery();
+        if recovery.resumable {
+            Some(InterruptAction::Continue)
+        } else if recovery.retryable {
+            Some(InterruptAction::TryAgain)
+        } else {
+            None
+        }
+    }
+
+    /// Every action to offer, the primary first: the primary, then Reverse now when fronts of a manual duplex
+    /// are in, then Finish (always).
+    pub fn actions(&self) -> Vec<InterruptAction> {
+        let mut actions: Vec<InterruptAction> = self.primary().into_iter().collect();
+        if self.pass == Pass::Fronts && self.received > 0 {
+            actions.push(InterruptAction::ReverseNow);
+        }
+        actions.push(InterruptAction::Finish);
+        actions
+    }
+
+    /// What to put right at the scanner first ([`Remedy::for_kind`]).
+    pub fn remedy(&self) -> Option<Remedy> {
+        Remedy::for_kind(self.kind)
+    }
+
+    /// Pages still wanted, for a fixed count.
+    pub fn remaining(&self) -> Option<u32> {
+        self.expected.map(|expected| expected.saturating_sub(self.received))
+    }
+
+    /// What a Continue (or a Try again) asks of the next leg.
+    pub fn resume(&self) -> Resume {
+        Resume {
+            pages: self.remaining().filter(|left| *left > 0),
+            carried: self.received,
+            // Once pages came in, the next leg stays on the source they came from: Auto would choose the glass
+            // as soon as the emptied tray reads not ready.
+            source: (self.received > 0 && self.source != Source::Auto).then_some(self.source),
+        }
+    }
+}
+
+/// The next leg of an interrupted scan ([`Interruption::resume`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct Resume {
+    /// Pages to ask for (`ScanSettings::pages`); `None` for the rest of the feeder.
+    pub pages: Option<u32>,
+    /// Pages already kept, which the new leg's pages follow.
+    pub carried: u32,
+    /// The source to keep (`ScanSettings::source`); `None` to use the one asked for.
+    pub source: Option<Source>,
+}
+
 // ---- HandlingStatus ---------------------------------------------------------------------------------
 
 impl HandlingStatus {
@@ -598,9 +850,12 @@ fn list_json(values: impl Iterator<Item = &'static str>) -> String {
 /// backend) is not part of the core contract; an app that exposes one adds it beside this dump.
 pub fn contract_json() -> String {
     format!(
-        "{{\"kinds\":{},\"phases\":{},\"sources\":{},\"colors\":{},\"intents\":{},\"page_sizes\":{},\"formats\":{},\"compressions\":{},\"connections\":{},\"list_details\":{},\"handling_flags\":{},\"conditions\":{},\"page_lengths\":{},\"length_sources\":{}}}",
+        "{{\"kinds\":{},\"phases\":{},\"passes\":{},\"interrupt_actions\":{},\"remedies\":{},\"sources\":{},\"colors\":{},\"intents\":{},\"page_sizes\":{},\"formats\":{},\"compressions\":{},\"connections\":{},\"list_details\":{},\"handling_flags\":{},\"conditions\":{},\"page_lengths\":{},\"length_sources\":{}}}",
         list_json(InterruptKind::ALL.iter().map(|v| v.as_str())),
         list_json(Phase::ALL.iter().map(|v| v.as_str())),
+        list_json(Pass::ALL.iter().map(|v| v.as_str())),
+        list_json(InterruptAction::ALL.iter().map(|v| v.as_str())),
+        list_json(Remedy::ALL.iter().map(|v| v.as_str())),
         list_json(Source::ALL.iter().map(|v| v.as_str())),
         list_json(Color::ALL.iter().map(|v| v.as_str())),
         list_json(Intent::ALL.iter().map(|v| v.as_str())),
@@ -638,6 +893,9 @@ mod tests {
     #[test]
     fn every_enum_round_trips_through_its_wire_string() {
         round_trips(Source::ALL, Source::as_str);
+        round_trips(Pass::ALL, Pass::as_str);
+        round_trips(InterruptAction::ALL, InterruptAction::as_str);
+        round_trips(Remedy::ALL, Remedy::as_str);
         round_trips(Color::ALL, Color::as_str);
         round_trips(Intent::ALL, Intent::as_str);
         round_trips(PageSize::ALL, PageSize::as_str);
