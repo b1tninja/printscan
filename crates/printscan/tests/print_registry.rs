@@ -14,18 +14,21 @@ fn cups_like() -> FakeBackend {
     FakeBackend::new("cups")
         .with_printer("Office", true)
         .with_printer("Label:Writer", false)
-        .with_details(PrinterDetails {
-            formats: vec![DocumentFormat::Pdf],
-            options: vec![PrinterOption {
-                key: "InputSlot".into(),
-                label: "Tray".into(),
-                group: String::new(),
-                choices: vec![("Tray1".into(), "Tray 1".into())],
-                default: "Tray1".into(),
-            }],
-            honoured: Some(vec![JobHint::Copies, JobHint::Duplex, JobHint::DriverOptions]),
-            status: None,
-            ..PrinterDetails::default()
+        .with_details({
+            let mut built = PrinterDetails::default();
+            built.formats = vec![DocumentFormat::Pdf];
+            built.options = vec![{
+                let mut built = PrinterOption::default();
+                built.key = "InputSlot".into();
+                built.label = "Tray".into();
+                built.group = String::new();
+                built.choices = vec![("Tray1".into(), "Tray 1".into())];
+                built.default = "Tray1".into();
+                built
+            }];
+            built.honoured = Some(vec![JobHint::Copies, JobHint::Duplex, JobHint::DriverOptions]);
+            built.status = None;
+            built
         })
         .with_message("request id is Office-1")
         .with_job_handle(|_, _| Some("Office-1".into()))
@@ -34,12 +37,17 @@ fn cups_like() -> FakeBackend {
 /// Reports state up front, ignores duplex and colour, reports progress, hands out no job.
 fn ipp_like() -> FakeBackend {
     FakeBackend::new("ipp")
-        .with_printer_ref(PrinterRef { two_sided: Some(true), ..printer("net-1", false) })
-        .with_details(PrinterDetails {
-            formats: vec![DocumentFormat::Pdf, DocumentFormat::PwgRaster],
-            honoured: Some(vec![JobHint::Copies]),
-            status: Some(PrinterStatus { state: PrinterState::Stopped, reasons: vec!["paper empty".into()] }),
-            ..PrinterDetails::default()
+        .with_printer_ref({
+            let mut built = printer("net-1", false);
+            built.two_sided = Some(true);
+            built
+        })
+        .with_details({
+            let mut built = PrinterDetails::default();
+            built.formats = vec![DocumentFormat::Pdf, DocumentFormat::PwgRaster];
+            built.honoured = Some(vec![JobHint::Copies]);
+            built.status = Some(PrinterStatus::new(PrinterState::Stopped, vec!["paper empty".into()]));
+            built
         })
         .with_progress_events(vec![Progress::of(0, 2), Progress::of(2, 2)])
         .with_job_handle(|_, _| None)
@@ -51,24 +59,21 @@ fn wsd_like() -> FakeBackend {
         .with_class(BackendClass::Network)
         .with_formats(vec![DocumentFormat::PwgRaster, DocumentFormat::OctetStream])
         .with_printer("device-a", false)
-        .failing_submit(PrintError::new(ErrorKind::Busy, "the device is busy").with_native(NativeCode {
-            domain: "wsd-fault",
-            code: 7,
-            name: Some("ServerErrorBusy"),
-        }))
+        .failing_submit(PrintError::new(ErrorKind::Busy, "the device is busy").with_native(NativeCode::new("wsd-fault", 7, Some("ServerErrorBusy"))))
 }
 
 /// Lists nothing but errors.
 fn broken() -> FakeBackend {
     let down = || PrintError::new(ErrorKind::Unavailable, "the service is down");
-    FakeBackend::new("broken")
-        .failing_list(down().with_native(NativeCode { domain: "win32", code: 1722, name: None }))
-        .failing_details(down())
-        .failing_submit(down())
+    FakeBackend::new("broken").failing_list(down().with_native(NativeCode::new("win32", 1722, None))).failing_details(down()).failing_submit(down())
 }
 
 fn printer(id: &str, default: bool) -> PrinterRef {
-    PrinterRef { id: id.into(), name: format!("Printer {id}"), default, two_sided: None }
+    {
+        let mut built = PrinterRef::new(id, format!("Printer {id}"));
+        built.default = default;
+        built
+    }
 }
 
 struct Fakes {
@@ -95,7 +100,11 @@ fn all() -> (Registry, Fakes) {
 }
 
 fn job_for(id: Option<&str>) -> Job {
-    Job { printer: id.map(str::to_string), ..Job::default() }
+    {
+        let mut built = Job::default();
+        built.printer = id.map(str::to_string);
+        built
+    }
 }
 
 #[test]
@@ -245,7 +254,7 @@ fn a_network_backend_needs_consent_and_a_local_one_does_not() {
     let err = registry.submit(SubmitRequest::new(raster, job_for(Some("wsd:device-a"))).with_consent(consent)).unwrap_err();
     assert_eq!(err.kind(), ErrorKind::Busy, "with consent the backend ran and its error came back");
     assert!(err.is_retryable());
-    assert_eq!(err.native(), Some(NativeCode { domain: "wsd-fault", code: 7, name: Some("ServerErrorBusy") }));
+    assert_eq!(err.native(), Some(NativeCode::new("wsd-fault", 7, Some("ServerErrorBusy"))));
     assert_eq!(fakes.seen().len(), 1);
 
     // A local backend does not need consent.

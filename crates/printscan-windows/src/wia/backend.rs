@@ -120,7 +120,9 @@ fn scanner_status(id: &str) -> Option<HandlingStatus> {
         let status = status_from_bits(bits);
         let port = read_string(&root, WIA_DIP_PORT_NAME).ok().filter(|text| !text.is_empty());
         let wsd = port.as_deref().map(Connection::from_port) == Some(Connection::Wsd);
-        return Some(HandlingStatus { feeder_ready: feeder_ready_signal(status.feeder_ready == Some(true), wsd), ..status });
+        let mut status = status;
+        status.feeder_ready = feeder_ready_signal(status.feeder_ready == Some(true), wsd);
+        return Some(status);
     }
     None
 }
@@ -187,26 +189,24 @@ fn read_scanner(mgr: &IWiaDevMgr2, id: &str, name: &str) -> Result<Scanner, Scan
     reported.feeder_absent = feeder_props.as_ref().map(missing_choices).unwrap_or_default();
     reported.glass_length = glass_props.as_ref().map(|props| length::support(&read_length_table(props))).unwrap_or_default();
     reported.feeder_length = feeder_props.as_ref().map(|props| length::support(&read_length_table(props))).unwrap_or_default();
-    Ok(Scanner {
-        id: id.to_string(),
-        name: name.to_string(),
-        feeder,
-        flatbed,
-        duplex,
-        feeder_ready,
-        handling_status,
-        feeder_capacity,
-        connection,
-        port,
-        optical_x: optical(WIA_DPS_OPTICAL_XRES),
-        optical_y: optical(WIA_DPS_OPTICAL_YRES),
-        pages,
-        bed,
-        sheet,
-        glass: glass_item.as_ref().map(image_choices),
-        feeder_choices: feeder_item.as_ref().map(image_choices),
-        reported,
-    })
+    let mut scanner = Scanner::new(id.to_string(), name.to_string());
+    scanner.feeder = feeder;
+    scanner.flatbed = flatbed;
+    scanner.duplex = duplex;
+    scanner.feeder_ready = feeder_ready;
+    scanner.handling_status = handling_status;
+    scanner.feeder_capacity = feeder_capacity;
+    scanner.connection = connection;
+    scanner.port = port;
+    scanner.optical_x = optical(WIA_DPS_OPTICAL_XRES);
+    scanner.optical_y = optical(WIA_DPS_OPTICAL_YRES);
+    scanner.pages = pages;
+    scanner.bed = bed;
+    scanner.sheet = sheet;
+    scanner.glass = glass_item.as_ref().map(image_choices);
+    scanner.feeder_choices = feeder_item.as_ref().map(image_choices);
+    scanner.reported = reported;
+    Ok(scanner)
 }
 
 /// The list and range options an item whose property storage was READ does not publish at all (the attribute call
@@ -408,7 +408,11 @@ fn acquire(settings: &ScanSettings) -> Result<Acquired, ScanError> {
 /// nothing: with it unknown, a feeder transfer that delivered nothing and named no fault reads as an
 /// empty tray, as it does when the bit is clear.
 fn inferable(status: HandlingStatus, wsd_port: bool) -> HandlingStatus {
-    if wsd_port { HandlingStatus { feeder_ready: None, ..status } } else { status }
+    let mut status = status;
+    if wsd_port {
+        status.feeder_ready = None;
+    }
+    status
 }
 
 /// Auto chose the feeder, no page arrived and the driver named no fault: a feeder that reports
@@ -628,7 +632,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
     let max = match source {
         Source::Glass => bed_area(&item, &root),
         Source::Feeder => sheet_area(&item, &root),
-        Source::Auto => None,
+        _ => None,
     };
     let dpi_y = settings.dpi_y.unwrap_or(settings.dpi);
     let frame = if let Some(region) = settings.region {
@@ -640,7 +644,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
         // already in thousandths of an inch, which is the unit a region uses. When the bed
         // size is missing too, leave the driver's own page size rather than writing 0.
         if let Some((width, height)) = max {
-            let full = printscan::scan::Region { left: 0, top: 0, width, height };
+            let full = printscan::scan::Region::new(0, 0, width, height);
             planned_frame(old_x, old_y, from_dpi, settings.dpi, Some(full), None)?
         } else {
             // The installed WSD item can be a named Flatbed whose format and extent never
@@ -737,7 +741,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
         Source::Glass => 1,
         Source::Feeder if settings.pages == 0 => 0,
         Source::Feeder => i32::try_from(settings.pages).unwrap_or(i32::MAX),
-        Source::Auto => return Err(ScanError::Failed("the scan source was not resolved".into())),
+        _ => return Err(ScanError::Failed("the scan source was not resolved".into())),
     };
     if source == Source::Feeder {
         // The page count belongs on the feeder item. Some WIA 2.0 roots keep Document Handling
@@ -783,7 +787,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
     }
 
     let page_rule = printscan::scan::bw::PageRule::for_settings(settings)
-        .with_length(printscan::scan::bw::LengthPlan { source: length_source, infer: inferring.then(InferOptions::default) });
+        .with_length(printscan::scan::bw::LengthPlan::new(length_source, inferring.then(InferOptions::default)));
     let wanted_n = if page_count == 0 { usize::try_from(MAX_PAGES).unwrap_or(0) } else { usize::try_from(page_count).unwrap_or(0) };
     // Media type is a whole file or a banded callback. Inbox WSD (wsdscdrv) accepts a
     // TYMED_CALLBACK (128) write, starts CreateScanJob, then fails the banded transfer
@@ -830,7 +834,7 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
                         let pages_n = pages.len().to_string();
                         trace.phase("transfer_end", &[("mode", "banded"), ("outcome", "ok"), ("pages", &pages_n)]);
                     }
-                    return Ok(Acquired { source, pages });
+                    return Ok(Acquired::new(source, pages));
                 }
                 Err(error) => {
                     if trace.enabled() {
@@ -942,14 +946,14 @@ fn acquire_pages(settings: &ScanSettings, route: &Cell<Option<(Source, bool)>>) 
             return Err(error);
         }
         pages.truncate(wanted_n);
-        let acquired = Acquired { source, pages };
+        let acquired = Acquired::new(source, pages);
         return Err(ScanError::Incomplete { message: error.to_string(), cause: error.cause(), acquired });
     }
     pages.truncate(wanted_n);
     if pages.is_empty() {
         return Err(ScanError::Failed("the scanner transferred no pages".into()));
     }
-    Ok(Acquired { source, pages })
+    Ok(Acquired::new(source, pages))
 }
 
 struct CancelTransferClear(Option<CancelToken>);
@@ -974,7 +978,7 @@ fn handling_select_value(source: Source, duplex: bool) -> Result<i32, ScanError>
     let mut value = match source {
         Source::Feeder => FEEDER,
         Source::Glass => FLATBED,
-        Source::Auto => return Err(ScanError::Failed("the scan source was not resolved".into())),
+        _ => return Err(ScanError::Failed("the scan source was not resolved".into())),
     };
     if duplex {
         value |= DUPLEX;
@@ -992,7 +996,7 @@ fn write_handling_select(props: &IWiaPropertyStorage, source: Source, duplex: bo
             Source::Glass => ScanError::Failed("the scanner did not select the bed".into()),
             Source::Feeder if duplex => ScanError::Failed("the scanner did not select duplex".into()),
             Source::Feeder => ScanError::Failed("the scanner did not select the feeder".into()),
-            Source::Auto => ScanError::Failed("the scan source was not resolved".into()),
+            _ => ScanError::Failed("the scan source was not resolved".into()),
         });
     }
     Ok(())
@@ -1114,7 +1118,7 @@ fn scan_item(root: &IWiaItem2, source: Source) -> Result<IWiaItem2, ScanError> {
     chosen.cloned().ok_or_else(|| match source {
         Source::Feeder => ScanError::Failed("this scanner has no feeder".into()),
         Source::Glass => ScanError::Failed("this scanner has no glass".into()),
-        Source::Auto => ScanError::Failed("the scan source was not resolved".into()),
+        _ => ScanError::Failed("the scan source was not resolved".into()),
     })
 }
 
@@ -1129,7 +1133,7 @@ fn source_matches(source: Source, category: Option<&GUID>, name: &str) -> bool {
                 || feeder_name
         }
         Source::Glass => category.is_some_and(|id| id == &WIA_CATEGORY_FLATBED) || glass_name,
-        Source::Auto => false,
+        _ => false,
     }
 }
 
@@ -1164,25 +1168,25 @@ fn image_choices(item: &IWiaItem2) -> ImageChoices {
     let invert = read_i4(&props, WIA_IPS_INVERT).is_ok();
     let mirror = read_i4(&props, WIA_IPS_MIRROR).is_ok();
     let lamp = read_i4(&props, WIA_IPS_LAMP).is_ok();
-    ImageChoices {
-        dpi,
-        dpi_y,
-        colors,
-        brightness: choice_span(&props, WIA_IPS_BRIGHTNESS),
-        contrast: choice_span(&props, WIA_IPS_CONTRAST),
-        threshold: choice_span(&props, WIA_IPS_THRESHOLD),
-        rotation,
-        formats,
-        compression,
-        intents,
-        page_sizes,
-        auto_deskew,
-        orientation,
-        photometric,
-        invert,
-        mirror,
-        lamp,
-    }
+    let mut choices = ImageChoices::default();
+    choices.dpi = dpi;
+    choices.dpi_y = dpi_y;
+    choices.colors = colors;
+    choices.brightness = choice_span(&props, WIA_IPS_BRIGHTNESS);
+    choices.contrast = choice_span(&props, WIA_IPS_CONTRAST);
+    choices.threshold = choice_span(&props, WIA_IPS_THRESHOLD);
+    choices.rotation = rotation;
+    choices.formats = formats;
+    choices.compression = compression;
+    choices.intents = intents;
+    choices.page_sizes = page_sizes;
+    choices.auto_deskew = auto_deskew;
+    choices.orientation = orientation;
+    choices.photometric = photometric;
+    choices.invert = invert;
+    choices.mirror = mirror;
+    choices.lamp = lamp;
+    choices
 }
 
 /// The intents the item offers, from its list or, for a flag-style property, from the bits of the mask.
@@ -1253,6 +1257,7 @@ fn compression_value(name: &str) -> Option<i32> {
         Compression::Jbig => WIA_COMPRESSION_JBIG,
         Compression::Jpeg2k => WIA_COMPRESSION_JPEG2K,
         Compression::Png => WIA_COMPRESSION_PNG,
+        _ => return None,
     };
     i32::try_from(code).ok()
 }
@@ -1301,6 +1306,8 @@ fn guid_of(format: ImageFormat) -> GUID {
         ImageFormat::Png => WiaImgFmt_PNG,
         ImageFormat::Tiff => WiaImgFmt_TIFF,
         ImageFormat::Jpeg2k => WiaImgFmt_JPEG2K,
+        // A format this backend does not know yet: BMP, which every WIA driver delivers.
+        _ => WiaImgFmt_BMP,
     }
 }
 
@@ -1790,7 +1797,7 @@ fn receive_bands(
         if pages.is_empty() {
             return Err(error);
         }
-        let acquired = Acquired { source: if feeder { Source::Feeder } else { Source::Glass }, pages: pages.into_iter().take(limit).collect() };
+        let acquired = Acquired::new(if feeder { Source::Feeder } else { Source::Glass }, pages.into_iter().take(limit).collect());
         return Err(ScanError::Incomplete { message: error.to_string(), cause: error.cause(), acquired });
     }
     Ok(pages.into_iter().take(limit).collect())

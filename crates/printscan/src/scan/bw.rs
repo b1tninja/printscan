@@ -25,6 +25,7 @@ pub const DEFAULT_THRESHOLD: u8 = 128;
 
 /// What the page builder needs to know about a request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PageRule {
     /// The requested resolution (horizontal, and vertical too unless `dpi_y` is set).
     pub dpi: u32,
@@ -39,6 +40,7 @@ pub struct PageRule {
 
 /// What the backend decided about page length before the transfer, for [`page_for`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct LengthPlan {
     /// The source recorded on the page when nothing is inferred: [`LengthSource::Driver`] unless the backend
     /// wrote extents ([`LengthSource::Size`]) or the device detected the length ([`LengthSource::Device`]).
@@ -49,7 +51,19 @@ pub struct LengthPlan {
     pub infer: Option<InferOptions>,
 }
 
+impl LengthPlan {
+    /// Record `source` on the page, and infer the sheet end with `infer` when it is `Some`.
+    pub const fn new(source: LengthSource, infer: Option<InferOptions>) -> Self {
+        Self { source, infer }
+    }
+}
+
 impl PageRule {
+    /// Pages at `dpi` both ways, not thresholded, their length as the driver gives it.
+    pub const fn new(dpi: u32) -> Self {
+        Self { dpi, dpi_y: None, bw_threshold: None, length: LengthPlan::new(LengthSource::Driver, None) }
+    }
+
     /// The rule a request implies: its dpi (both axes), a threshold byte only for black-and-white, and no length plan.
     pub fn for_settings(settings: &ScanSettings) -> Self {
         let bw_threshold = (settings.color == Color::BlackAndWhite).then(|| threshold_byte(settings.threshold));
@@ -69,6 +83,7 @@ pub fn threshold_byte(threshold: Option<i32>) -> u8 {
 
 /// A 1-bit page made from a deeper one.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct OneBit {
     /// A 1-bpp BMP file.
     pub bytes: Vec<u8>,
@@ -79,6 +94,7 @@ pub struct OneBit {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Thresholded {
     /// The page is 1-bit already and stays as it is.
     AlreadyOneBit,

@@ -16,6 +16,7 @@ use crate::policy::DeviceUrl;
 
 /// One HTTP POST.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Request {
     pub content_type: String,
     /// The SOAP action URI, to be sent as `SOAPAction`.
@@ -24,6 +25,14 @@ pub struct Request {
     pub timeout: Duration,
     /// Read at most this many body bytes; more is an error ([`Error::TooLarge`]).
     pub max_response: usize,
+}
+
+impl Request {
+    /// A POST of `body` as `content_type` with the SOAP action `soap_action` (empty for none), answered
+    /// within `timeout` with at most `max_response` body bytes.
+    pub fn new(content_type: impl Into<String>, soap_action: impl Into<String>, body: Vec<u8>, timeout: Duration, max_response: usize) -> Self {
+        Self { content_type: content_type.into(), soap_action: soap_action.into(), body, timeout, max_response }
+    }
 }
 
 /// The reply: status, `Content-Type`, the (capped) body and the device's `Retry-After`.

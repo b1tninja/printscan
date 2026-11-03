@@ -16,31 +16,33 @@ use printscan::scan::{Connection, HandlingStatus, Reported, ScanSettings, Scanne
 
 /// A scanner row with nothing published but its identity; tests set what they need.
 pub fn scanner(id: &str, name: &str) -> Scanner {
-    Scanner {
-        id: id.to_string(),
-        name: name.to_string(),
-        feeder: false,
-        flatbed: true,
-        duplex: false,
-        feeder_ready: None,
-        handling_status: HandlingStatus::default(),
-        feeder_capacity: None,
-        connection: Connection::Unknown,
-        port: None,
-        optical_x: None,
-        optical_y: None,
-        pages: None,
-        bed: None,
-        sheet: None,
-        glass: None,
-        feeder_choices: None,
-        reported: Reported::default(),
+    {
+        let mut built = Scanner::default();
+        built.id = id.to_string();
+        built.name = name.to_string();
+        built.feeder = false;
+        built.flatbed = true;
+        built.duplex = false;
+        built.feeder_ready = None;
+        built.handling_status = HandlingStatus::default();
+        built.feeder_capacity = None;
+        built.connection = Connection::Unknown;
+        built.port = None;
+        built.optical_x = None;
+        built.optical_y = None;
+        built.pages = None;
+        built.bed = None;
+        built.sheet = None;
+        built.glass = None;
+        built.feeder_choices = None;
+        built.reported = Reported::default();
+        built
     }
 }
 
 /// Settings for `device` scanning `pages` pages from `source`, everything else default.
 pub fn request(device: &str, source: Source, pages: u32) -> ScanSettings {
-    ScanSettings { device: device.to_string(), source, pages, ..ScanSettings::default() }
+    ScanSettings::default().with_device(device).with_source(source).with_pages(pages)
 }
 
 /// A small uncompressed 24-bit BMP: left half black, right half white.

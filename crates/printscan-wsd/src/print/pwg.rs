@@ -31,12 +31,12 @@ mod tests {
 
     #[test]
     fn the_old_paths_still_encode_and_errors_keep_their_wsd_shape() {
-        let page = RasterPage { width: 2, height: 2, gray: true, pixels: vec![0, 1, 2, 3] };
-        let opts = PwgOptions { dpi: (300, 300), duplex: Duplex::Off };
+        let page = RasterPage::new(2, 2, true, vec![0, 1, 2, 3]);
+        let opts = PwgOptions::new((300, 300), Duplex::Off);
         let bytes = encode(std::slice::from_ref(&page), &opts).unwrap();
         assert_eq!(decode_for_tests(&bytes).unwrap(), [page]);
         assert!(matches!(encode(&[], &opts), Err(WsdError::Encode(_))));
-        let huge = RasterPage { width: MAX_SIDE, height: MAX_SIDE, gray: false, pixels: vec![] };
+        let huge = RasterPage::new(MAX_SIDE, MAX_SIDE, false, vec![]);
         assert!(matches!(encode(&[huge], &opts), Err(WsdError::TooLarge(..))));
     }
 }

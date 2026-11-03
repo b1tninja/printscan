@@ -127,6 +127,7 @@ pub trait Backend: Send + Sync {
 
 /// Why [`Registry::register`] refused a backend.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum RegisterError {
     /// A backend with this name is already registered; it stays in place.
     #[error("a scanner backend named {name:?} is already registered")]
@@ -138,6 +139,7 @@ pub enum RegisterError {
 
 /// One backend's failure inside a [`Listing`].
 #[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct BackendError {
     pub backend: &'static str,
     pub error: ScanError,
@@ -147,6 +149,7 @@ pub struct BackendError {
 /// ids; `errors` holds one entry for each backend that failed. A failing backend does not hide the
 /// others' devices.
 #[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Listing<T> {
     pub items: Vec<T>,
     pub errors: Vec<BackendError>,

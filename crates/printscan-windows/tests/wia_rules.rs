@@ -60,10 +60,7 @@ mod windows_rules {
         let empty = rules::status_from_bits(0);
         assert!(empty.feeder_ready == Some(false) && !empty.jam);
         assert_eq!(rules::acquire_block_reason(status), Some("The scanner has a paper jam."));
-        assert_eq!(
-            rules::acquire_block_reason(HandlingStatus { cover_open: true, ..HandlingStatus::default() }),
-            Some("A cover on the scanner is open.")
-        );
+        assert_eq!(rules::acquire_block_reason(HandlingStatus::default().with_cover_open(true)), Some("A cover on the scanner is open."));
         assert_eq!(rules::acquire_block_reason(rules::status_from_bits(0x10)), Some("A cover on the scanner is open."));
         assert_eq!(rules::acquire_block_reason(rules::status_from_bits(0x200)), Some("The feeder took more than one sheet."));
         assert_eq!(rules::acquire_block_reason(rules::status_from_bits(0x800)), Some("The scanner lamp is off."));
@@ -78,14 +75,14 @@ mod windows_rules {
     #[test]
     fn a_generic_download_error_uses_the_status_bit_when_one_is_set() {
         let generic = || ScanError::Failed("The scanner reported an error.".into());
-        let jam = HandlingStatus { jam: true, ..HandlingStatus::default() };
+        let jam = HandlingStatus::default().with_jam(true);
         assert!(rules::explain_transfer_failure(generic(), jam, true, 0, 0).to_string().contains("paper jam"));
         let unspecified = ScanError::Failed("Unspecified error".into());
-        let cover = HandlingStatus { cover_open: true, ..HandlingStatus::default() };
+        let cover = HandlingStatus::default().with_cover_open(true);
         assert!(rules::explain_transfer_failure(unspecified, cover, false, 0, 0).to_string().contains("cover"));
-        let multi = HandlingStatus { multiple_feed: true, ..HandlingStatus::default() };
+        let multi = HandlingStatus::default().with_multiple_feed(true);
         assert!(rules::explain_transfer_failure(generic(), multi, true, 0, 0).to_string().contains("more than one"));
-        let lamp = HandlingStatus { lamp_error: true, ..HandlingStatus::default() };
+        let lamp = HandlingStatus::default().with_lamp_error(true);
         assert!(
             rules::explain_transfer_failure(ScanError::Failed("The scan failed (0x80004005).".into()), lamp, false, 0, 0)
                 .to_string()
@@ -110,8 +107,8 @@ mod windows_rules {
     #[test]
     fn a_feeder_transfer_with_nothing_delivered_reads_as_an_empty_tray_unless_the_ready_bit_says_paper() {
         let generic = || ScanError::Failed("The scanner reported an error.".into());
-        let unknown = HandlingStatus { feeder_ready: None, ..HandlingStatus::default() };
-        let ready = HandlingStatus { feeder_ready: Some(true), ..HandlingStatus::default() };
+        let unknown = HandlingStatus::default().with_feeder_ready(None);
+        let ready = HandlingStatus::default().with_feeder_ready(Some(true));
         let empty = rules::explain_transfer_failure(generic(), unknown, true, 0, 0);
         assert!(empty.to_string().contains("no paper"), "{empty}");
         // A ready bit that says paper (a driver that reports the tray) keeps the generic sentence.
@@ -124,14 +121,14 @@ mod windows_rules {
     #[test]
     fn an_attention_bit_beats_the_empty_tray_inference() {
         // A door interlock sets the attention bit and clears FEED_READY; it is not an empty tray.
-        let interlock = HandlingStatus { attention: true, feeder_ready: Some(false), ..HandlingStatus::default() };
+        let interlock = HandlingStatus::default().with_attention(true).with_feeder_ready(Some(false));
         for (transferred, requested) in [(0, 0), (0, 4), (2, 4)] {
             let explained =
                 rules::explain_transfer_failure(ScanError::Failed("The scan failed (0x80004005).".into()), interlock, true, transferred, requested);
             assert_eq!(rules::wia_interrupt_kind(&explained.to_string()), printscan::scan::InterruptKind::Attention, "{explained}");
         }
         // Without the attention bit a clear FEED_READY is still an empty tray.
-        let empty = HandlingStatus { feeder_ready: Some(false), ..HandlingStatus::default() };
+        let empty = HandlingStatus::default().with_feeder_ready(Some(false));
         let explained = rules::explain_transfer_failure(ScanError::Failed("Unspecified error".into()), empty, true, 0, 0);
         assert!(explained.to_string().contains("no paper"), "{explained}");
     }
@@ -143,12 +140,12 @@ mod windows_rules {
         for text in ["The parameter is incorrect.", "Unspecified error", "The scan failed (0x80004005)."] {
             let restated = rules::after_transfer_checked(0, false, 0, false, Some(ScanError::Failed(text.into()))).unwrap_err();
             assert!(rules::no_usable_page(&restated), "{restated}");
-            let ready = HandlingStatus { feeder_ready: Some(true), ..HandlingStatus::default() };
+            let ready = HandlingStatus::default().with_feeder_ready(Some(true));
             let explained = rules::explain_transfer_failure(restated, ready, false, 0, 1);
             assert!(rules::retry_with_file_transfer(&explained), "{text}: {explained}");
         }
         // A named fault after a restated generic failure still wins and does not retry.
-        let jammed = HandlingStatus { jam: true, ..HandlingStatus::default() };
+        let jammed = HandlingStatus::default().with_jam(true);
         let restated = rules::after_transfer_checked(0, false, 0, false, Some(ScanError::Failed("Unspecified error".into()))).unwrap_err();
         let explained = rules::explain_transfer_failure(restated, jammed, false, 0, 1);
         assert!(!rules::retry_with_file_transfer(&explained), "{explained}");
@@ -197,7 +194,7 @@ mod windows_rules {
             assert!(!rules::retry_with_file_transfer(&ScanError::Failed(text.into())), "{text}");
         }
         // Generic HRESULT + clear FEED_READY on the feeder becomes paper-empty, so no file retry.
-        let empty_tray = HandlingStatus { feeder_ready: Some(false), ..HandlingStatus::default() };
+        let empty_tray = HandlingStatus::default().with_feeder_ready(Some(false));
         let explained = rules::explain_transfer_failure(ScanError::Failed("Unspecified error".into()), empty_tray, true, 0, 0);
         assert!(explained.to_string().contains("no paper"), "{explained}");
         assert!(!rules::retry_with_file_transfer(&explained));
@@ -210,11 +207,11 @@ mod windows_rules {
             0,
         )));
         // Still-ready feeder keeps the generic error so banded→file can retry.
-        let ready = HandlingStatus { feeder_ready: Some(true), ..HandlingStatus::default() };
+        let ready = HandlingStatus::default().with_feeder_ready(Some(true));
         let keep = rules::explain_transfer_failure(ScanError::Failed("The parameter is incorrect.".into()), ready, true, 0, 4);
         assert!(rules::retry_with_file_transfer(&keep));
         // Jam still outranks a clear ready bit.
-        let jammed = HandlingStatus { feeder_ready: Some(false), jam: true, ..HandlingStatus::default() };
+        let jammed = HandlingStatus::default().with_feeder_ready(Some(false)).with_jam(true);
         assert!(
             rules::explain_transfer_failure(ScanError::Failed("The scan failed (0x80004005).".into()), jammed, true, 2, 4)
                 .to_string()
@@ -260,7 +257,7 @@ mod windows_rules {
         assert!(rules::after_transfer(1, true, None).is_ok());
         assert!(rules::after_transfer(0, false, None).unwrap_err().to_string().contains("no pages"));
         // Explained empty-tray end with pages already streamed is success.
-        let empty_tray = HandlingStatus { feeder_ready: Some(false), ..HandlingStatus::default() };
+        let empty_tray = HandlingStatus::default().with_feeder_ready(Some(false));
         let explained = rules::explain_transfer_failure(ScanError::Failed("The scanner reported an error.".into()), empty_tray, true, 2, 2);
         assert!(rules::after_transfer(2, false, Some(explained)).is_ok());
         // Whole feeder (`pages_requested == 0`): empty tray after some pages is a normal end.
@@ -268,7 +265,7 @@ mod windows_rules {
         assert!(explained_whole.to_string().contains("no paper"), "{explained_whole}");
         assert!(rules::after_transfer(3, false, Some(explained_whole)).is_ok());
         // Sticky FEED_READY after the stack is gone still ends whole-stack acquire.
-        let sticky_ready = HandlingStatus { feeder_ready: Some(true), ..HandlingStatus::default() };
+        let sticky_ready = HandlingStatus::default().with_feeder_ready(Some(true));
         let explained_sticky = rules::explain_transfer_failure(ScanError::Failed("The scan failed (0x80004005).".into()), sticky_ready, true, 3, 0);
         assert!(explained_sticky.to_string().contains("no paper"), "{explained_sticky}");
         assert!(rules::after_transfer(3, false, Some(explained_sticky)).is_ok());
@@ -446,7 +443,7 @@ mod windows_rules {
         assert_eq!(info.hresult_hex().as_deref(), Some("0x80210006"));
         // A sentence chosen from a status read keeps the HRESULT that triggered it.
         let busy = rules::from_hresult(0x8021_0006, "");
-        let explained = rules::explain_transfer_failure(busy, HandlingStatus { feeder_ready: Some(true), ..HandlingStatus::default() }, true, 0, 1);
+        let explained = rules::explain_transfer_failure(busy, HandlingStatus::default().with_feeder_ready(Some(true)), true, 0, 1);
         let info = explained.info(printscan::scan::ErrorContext::default());
         assert_eq!((info.kind, info.code_name()), (InterruptKind::BusyOrFeederEmpty, Some("WIA_ERROR_BUSY")));
         let jam = rules::explain_transfer_failure(rules::from_hresult(0x8021_0004, ""), rules::status_from_bits(0x20), true, 0, 1);

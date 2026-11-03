@@ -38,6 +38,7 @@ pub const WIA_LONG_DOCUMENT_ENABLED: i32 = 1;
 
 /// One property of an item as the driver publishes it.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Prop {
     /// Only the current value, no list or range.
     Value {
@@ -107,6 +108,7 @@ impl PropTable {
 
 /// How an item can detect the sheet length itself, in the order they are preferred.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DeviceDetect {
     /// Write `WIA_IPS_AUTO_CROP = WIA_AUTO_CROP_SINGLE`.
     AutoCrop,
@@ -161,11 +163,12 @@ pub fn support(table: &PropTable) -> PageLengthSupport {
         Some(Prop::Value { value, .. }) => u32::try_from(*value).ok().filter(|mils| *mils > 0),
         _ => None,
     };
-    PageLengthSupport { device_detect, max_length_mils }
+    PageLengthSupport::new(device_detect, max_length_mils)
 }
 
 /// What a scan request asks of the length.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Request {
     pub mode: PageLength,
     pub page_size: Option<PageSize>,
@@ -177,6 +180,7 @@ pub struct Request {
 
 /// What to do about the length.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Action {
     /// Leave the extent to the driver.
     Driver,
@@ -190,6 +194,7 @@ pub enum Action {
 
 /// An [`Action`] and the sentence that says why (for the log and the trace).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Decision {
     pub action: Action,
     pub why: &'static str,
@@ -229,6 +234,7 @@ pub fn decide(request: &Request, table: &PropTable) -> Decision {
 
 /// Why a length does not fit the item's vertical range.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FitError {
     /// Shorter than the item's smallest vertical extent (rows).
     TooShort { min_rows: u32 },
@@ -299,7 +305,7 @@ mod tests {
 
     /// A range from `min` to `max` in steps of 1.
     fn span(min: i32, max: i32) -> ValueSpan {
-        ValueSpan { min, max, step: 1 }
+        ValueSpan::new(min, max, 1)
     }
 
     /// A length request of `mode` for a feeder or glass item, with `size` as the page size and no region.
@@ -443,7 +449,7 @@ mod tests {
         let text = FitError::TooLong { max_rows: 2338 }.sentence(14_000, 200);
         assert!(text.contains("14.00 in") && text.contains("11.69 in") && text.contains("200 dpi"), "{text}");
         // A step is honoured: rows snap down onto the grid (as regions do).
-        let stepped = ValueSpan { min: 16, max: 2800, step: 8 };
+        let stepped = ValueSpan::new(16, 2800, 8);
         assert_eq!(fit_height(5500, 200, Some(stepped)), Ok(1096));
     }
 

@@ -8,20 +8,16 @@ use printscan::devices::scan_jobs::{
 };
 use printscan::scan::ScanSettings;
 use printscan::scan::job::{ExitClass, ScanJob, ScanJobConfig, ScanJobState};
-use serde_json::Value;
 
 #[test]
 fn the_names_an_app_imports_exist_and_have_the_methods_it_calls() {
-    let settings = ScanSettings { pages: 2, ..ScanSettings::default() };
-    let record = JobRecord {
-        id: "scan-1".into(),
-        started: now_millis(),
-        updated: now_millis(),
-        request: request_json(&settings),
-        journal: ScanJob::new(settings.clone(), ScanJobConfig::default()).snapshot().into_journal(),
-        view: Value::Null,
-        attempts: Vec::new(),
-        manual_duplex: None,
+    let settings = ScanSettings::default().with_pages(2);
+    let record = {
+        let mut built =
+            JobRecord::new("scan-1", request_json(&settings), ScanJob::new(settings.clone(), ScanJobConfig::default()).snapshot().into_journal());
+        built.started = now_millis();
+        built.updated = now_millis();
+        built
     };
     assert_eq!(settings_from_request(&record.request).map(|s| s.pages), Ok(2));
     assert_eq!(record.effective_state(), ScanJobState::Preparing);

@@ -261,7 +261,7 @@ fn listing_opens_no_connection_and_details_read_the_scanner() {
 #[test]
 fn a_glass_scan_is_one_lossless_image() {
     let fake = Fake::new(lossless());
-    let got = backend(&fake).acquire(&ScanSettings { dpi: 300, color: Color::Rgb, ..ScanSettings::default() }).unwrap();
+    let got = backend(&fake).acquire(&ScanSettings::default().with_dpi(300).with_color(Color::Rgb)).unwrap();
     assert_eq!((got.source, got.pages.len()), (Source::Glass, 1));
     let page = &got.pages[0];
     assert_eq!((page.format, page.width, page.height, page.dpi), ("bmp", 2, 2, 300));
@@ -274,7 +274,7 @@ fn a_glass_scan_is_one_lossless_image() {
 #[test]
 fn an_open_ended_feeder_scan_runs_until_the_scanner_has_no_more() {
     let fake = Fake::new(lossless());
-    let settings = ScanSettings { source: Source::Feeder, pages: 0, ..ScanSettings::default() };
+    let settings = ScanSettings::default().with_source(Source::Feeder).with_pages(0);
     let got = backend(&fake).acquire(&settings).unwrap();
     assert_eq!(got.pages.len(), 3);
     assert_eq!(fake.actions().iter().filter(|a| *a == "RetrieveImage").count(), 4, "the fourth answers no images");
@@ -284,26 +284,26 @@ fn an_open_ended_feeder_scan_runs_until_the_scanner_has_no_more() {
 #[test]
 fn a_feeder_that_runs_short_keeps_the_pages_and_says_so() {
     let fake = Fake::new(lossless());
-    let err = backend(&fake).acquire(&ScanSettings { source: Source::Feeder, pages: 5, ..ScanSettings::default() }).unwrap_err();
+    let err = backend(&fake).acquire(&ScanSettings::default().with_source(Source::Feeder).with_pages(5)).unwrap_err();
     let ScanError::Incomplete { acquired, cause, .. } = err else { panic!("{err:?}") };
     assert_eq!(acquired.pages.len(), 3);
     assert_eq!(cause.unwrap().kind, InterruptKind::FeederEmpty);
 
     let empty = Fake::new(Script { sheets: 0, ..lossless() });
-    let err = backend(&empty).acquire(&ScanSettings { source: Source::Feeder, pages: 1, ..ScanSettings::default() }).unwrap_err();
+    let err = backend(&empty).acquire(&ScanSettings::default().with_source(Source::Feeder).with_pages(1)).unwrap_err();
     assert_eq!(err.interrupt_kind(), InterruptKind::FeederEmpty, "{err}");
 }
 
 #[test]
 fn a_refused_format_falls_back_like_the_windows_driver_unless_one_was_asked_for() {
     let fake = Fake::new(Script { formats: vec![], refuse: vec!["png", "exif"], ..lossless() });
-    backend(&fake).acquire(&ScanSettings { color: Color::Gray, ..ScanSettings::default() }).unwrap();
+    backend(&fake).acquire(&ScanSettings::default().with_color(Color::Gray)).unwrap();
     let formats: Vec<String> =
         fake.tickets().iter().map(|t| t.split("<wscn:Format>").nth(1).unwrap().split('<').next().unwrap().to_owned()).collect();
     assert_eq!(formats, ["png", "exif", "tiff-single-uncompressed"]);
 
     let fake = Fake::new(Script { formats: vec![], refuse: vec!["png"], ..lossless() });
-    let err = backend(&fake).acquire(&ScanSettings { format: Some("png".into()), ..ScanSettings::default() }).unwrap_err();
+    let err = backend(&fake).acquire(&ScanSettings::default().with_format("png")).unwrap_err();
     assert_eq!(err.native().unwrap().name, Some("ClientErrorFormatNotSupported"));
     assert_eq!(fake.tickets().len(), 1);
 }
@@ -311,7 +311,7 @@ fn a_refused_format_falls_back_like_the_windows_driver_unless_one_was_asked_for(
 #[test]
 fn a_failure_mid_stack_keeps_the_pages_and_names_the_jam_the_status_shows() {
     let fake = Fake::new(Script { fail_at: Some(2), ..lossless() });
-    let err = backend(&fake).acquire(&ScanSettings { source: Source::Feeder, pages: 3, ..ScanSettings::default() }).unwrap_err();
+    let err = backend(&fake).acquire(&ScanSettings::default().with_source(Source::Feeder).with_pages(3)).unwrap_err();
     let ScanError::Incomplete { acquired, cause, .. } = err else { panic!("{err:?}") };
     assert_eq!(acquired.pages.len(), 1);
     assert_eq!(cause.unwrap().kind, InterruptKind::Jam);
@@ -327,7 +327,7 @@ fn a_cancel_stops_between_images_and_cancels_the_job() {
     // As for every backend (`after_transfer`), a cancel with pages in hand returns them.
     let token = CancelToken::new();
     let fake = Fake::new(Script { cancel_after_first: Some(token.clone()), ..lossless() });
-    let settings = ScanSettings { source: Source::Feeder, pages: 3, cancel: Some(token), ..ScanSettings::default() };
+    let settings = ScanSettings::default().with_source(Source::Feeder).with_pages(3).with_cancel(token);
     let acquired = backend(&fake).acquire(&settings).unwrap();
     assert_eq!(acquired.pages.len(), 1);
     assert_eq!(fake.actions().iter().filter(|a| *a == "RetrieveImage").count(), 1);
@@ -346,7 +346,7 @@ fn the_cancel_key_on_the_scanner_ends_the_scan_as_cancelled_at_the_device() {
 
         // With pages in hand from the feeder, they are kept.
         let fake = Fake::new(Script { cut_at: Some((2, after)), ..lossless() });
-        let err = backend(&fake).acquire(&ScanSettings { source: Source::Feeder, pages: 3, ..ScanSettings::default() }).unwrap_err();
+        let err = backend(&fake).acquire(&ScanSettings::default().with_source(Source::Feeder).with_pages(3)).unwrap_err();
         let ScanError::Incomplete { acquired, cause, .. } = err else { panic!("{err:?}") };
         assert_eq!(acquired.pages.len(), 1);
         assert_eq!(cause.unwrap().kind, InterruptKind::Cancelled);
@@ -370,7 +370,7 @@ fn the_registry_routes_wsd_ids_to_the_backend() {
     registry.register(Box::new(backend(&fake))).unwrap();
     let listing = registry.scanner_list().unwrap();
     assert_eq!(listing.items[0].id, format!("wsd:{URL}"));
-    let got = registry.acquire(&ScanSettings { device: format!("wsd:{URL}"), ..ScanSettings::default() }).unwrap();
+    let got = registry.acquire(&ScanSettings::default().with_device(format!("wsd:{URL}"))).unwrap();
     assert_eq!(got.pages.len(), 1);
 }
 
@@ -380,19 +380,19 @@ fn a_scan_over_loopback_http_reads_the_mtom_image() {
     let fake = Fake::new(lossless());
     let inner = Arc::clone(&fake);
     let server = Server::start(move |req| {
-        let request = Request {
-            content_type: req.header("content-type").unwrap_or_default().to_owned(),
-            soap_action: req.header("soapaction").unwrap_or_default().trim_matches('"').to_owned(),
-            body: req.body.clone(),
-            timeout: std::time::Duration::from_secs(5),
-            max_response: usize::MAX,
-        };
+        let request = Request::new(
+            req.header("content-type").unwrap_or_default().to_owned(),
+            req.header("soapaction").unwrap_or_default().trim_matches('"').to_owned(),
+            req.body.clone(),
+            std::time::Duration::from_secs(5),
+            usize::MAX,
+        );
         let response = inner.answer(&request);
         raw_response(response.status, response.content_type.as_deref().unwrap_or(""), &response.body)
     });
     let b = WsdScanBackend::new();
     let url = format!("http://127.0.0.1:{}/ScannerService", server.port);
     b.add(&url).unwrap();
-    let got = b.acquire(&ScanSettings { device: url, ..ScanSettings::default() }).unwrap();
+    let got = b.acquire(&ScanSettings::default().with_device(url)).unwrap();
     assert_eq!((got.pages.len(), got.pages[0].width), (1, 2));
 }

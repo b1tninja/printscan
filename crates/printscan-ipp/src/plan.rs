@@ -17,18 +17,20 @@ pub const MAX_COPIES: u32 = 9999;
 
 /// The settings of one job after planning.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Plan {
     pub request: JobRequest,
     /// What was dropped or changed, as sentences for people.
     pub warnings: Vec<String>,
 }
 
-/// `sides` keyword of the neutral duplex setting.
-pub fn sides_keyword(duplex: Duplex) -> &'static str {
+/// `sides` keyword of the neutral duplex setting; `None` for a setting this crate does not know.
+pub fn sides_keyword(duplex: Duplex) -> Option<&'static str> {
     match duplex {
-        Duplex::Off => "one-sided",
-        Duplex::LongEdge => "two-sided-long-edge",
-        Duplex::ShortEdge => "two-sided-short-edge",
+        Duplex::Off => Some("one-sided"),
+        Duplex::LongEdge => Some("two-sided-long-edge"),
+        Duplex::ShortEdge => Some("two-sided-short-edge"),
+        _ => None,
     }
 }
 
@@ -54,17 +56,18 @@ pub fn quality_value(q: Quality) -> i32 {
 /// The `print-scaling` keyword (PWG 5100.13 section 5.2.7) of the neutral scaling: `auto-fit` for
 /// [`Scaling::ShrinkToFit`] (oversized pages are fitted, pages that already fit stay as they are,
 /// the meaning of the neutral setting; `fit` would also enlarge, so it is not substituted) and
-/// `none` for [`Scaling::Exact`] (the actual size).
-pub fn scaling_keyword(scaling: Scaling) -> &'static str {
+/// `none` for [`Scaling::Exact`] (the actual size); `None` for a setting this crate does not know.
+pub fn scaling_keyword(scaling: Scaling) -> Option<&'static str> {
     match scaling {
-        Scaling::Exact => "none",
-        Scaling::ShrinkToFit => "auto-fit",
+        Scaling::Exact => Some("none"),
+        Scaling::ShrinkToFit => Some("auto-fit"),
+        _ => None,
     }
 }
 
 /// Whether the printer says it takes [`Scaling::ShrinkToFit`] (lists `auto-fit`).
 pub fn scaling_advertised(printer: &PrinterAttrs) -> bool {
-    printer.supports_scaling(scaling_keyword(Scaling::ShrinkToFit)) == Some(true)
+    scaling_keyword(Scaling::ShrinkToFit).and_then(|keyword| printer.supports_scaling(keyword)) == Some(true)
 }
 
 /// The scaling attribute to send, if any. Nothing is sent to a printer that has not said it takes
@@ -75,7 +78,10 @@ pub fn scaling_advertised(printer: &PrinterAttrs) -> bool {
 /// default included (an omitted attribute means the printer's own default, which may resize). A
 /// printer that does not list `none` and has a different default gets a warning, not an attribute.
 fn plan_scaling(scaling: Scaling, strict: bool, printer: &PrinterAttrs, warnings: &mut Vec<String>) -> Result<Option<&'static str>> {
-    let keyword = scaling_keyword(scaling);
+    let Some(keyword) = scaling_keyword(scaling) else {
+        warnings.push(format!("scaling is not applied: {scaling:?} is not a setting this backend knows; the document is sent as it is"));
+        return Ok(None);
+    };
     match scaling {
         Scaling::ShrinkToFit => match printer.supports_scaling(keyword) {
             Some(true) => Ok(Some(keyword)),
@@ -113,6 +119,8 @@ fn plan_scaling(scaling: Scaling, strict: bool, printer: &PrinterAttrs, warnings
                 }
             }
         }
+        // Only the settings above have a keyword; any other returned early.
+        _ => Ok(None),
     }
 }
 
@@ -166,9 +174,16 @@ pub fn plan(job_name: String, document_mime: &str, job: &Job, per_job: &JobOptio
         }
     }
     if let Some(duplex) = job.duplex {
-        let keyword = sides_keyword(duplex);
-        if keep(strict, &format!("sides {keyword}"), printer.supports_sides(keyword), &mut warnings)? {
-            attributes.push(Attribute::keyword("sides", keyword));
+        match sides_keyword(duplex) {
+            Some(keyword) => {
+                if keep(strict, &format!("sides {keyword}"), printer.supports_sides(keyword), &mut warnings)? {
+                    attributes.push(Attribute::keyword("sides", keyword));
+                }
+            }
+            // Not a setting this backend can name: refused in strict mode, a warning otherwise.
+            None => {
+                keep(strict, &format!("sides {duplex:?}"), Some(false), &mut warnings)?;
+            }
         }
     }
     if let Some(o) = per_job.orientation {
@@ -301,7 +316,7 @@ mod tests {
 
     #[test]
     fn every_setting_becomes_its_attribute() {
-        let job = Job { copies: 3, duplex: Some(Duplex::ShortEdge), grayscale: false, ..Job::default() };
+        let job = Job::default().with_copies(3).with_duplex(Duplex::ShortEdge).with_grayscale(false);
         let options = JobOptions::new()
             .with_orientation(Orientation::Landscape)
             .with_quality(Quality::High)
@@ -332,13 +347,13 @@ mod tests {
 
     #[test]
     fn scaling_keywords_follow_pwg_5100_13() {
-        assert_eq!(scaling_keyword(Scaling::ShrinkToFit), "auto-fit");
-        assert_eq!(scaling_keyword(Scaling::Exact), "none");
+        assert_eq!(scaling_keyword(Scaling::ShrinkToFit), Some("auto-fit"));
+        assert_eq!(scaling_keyword(Scaling::Exact), Some("none"));
     }
 
     #[test]
     fn shrink_to_fit_is_sent_as_auto_fit_to_a_printer_that_lists_it() {
-        let shrink = Job { scaling: Scaling::ShrinkToFit, ..Job::default() };
+        let shrink = Job::default().with_scaling(Scaling::ShrinkToFit);
         for strict in [false, true] {
             let p = run(&shrink, &JobOptions::new(), strict, &scaled(Some(&["auto", "auto-fit", "fit", "fill", "none"]), Some("auto"))).unwrap();
             assert_eq!(scaling_of(&p), Some(vec![Value::Keyword("auto-fit".into())]));
@@ -351,7 +366,7 @@ mod tests {
 
     #[test]
     fn shrink_to_fit_without_the_keyword_is_dropped_with_a_warning_or_refused_when_strict() {
-        let shrink = Job { scaling: Scaling::ShrinkToFit, ..Job::default() };
+        let shrink = Job::default().with_scaling(Scaling::ShrinkToFit);
         // Published list without auto-fit; `fit` is not a substitute (it enlarges).
         let listed = scaled(Some(&["none", "fit"]), Some("none"));
         let p = run(&shrink, &JobOptions::new(), false, &listed).unwrap();
@@ -362,7 +377,7 @@ mod tests {
 
     #[test]
     fn shrink_to_fit_is_not_sent_to_a_printer_that_never_said_it_takes_it() {
-        let shrink = Job { scaling: Scaling::ShrinkToFit, ..Job::default() };
+        let shrink = Job::default().with_scaling(Scaling::ShrinkToFit);
         for strict in [false, true] {
             let p = run(&shrink, &JobOptions::new(), strict, &scaled(None, None)).unwrap();
             assert_eq!(scaling_of(&p), None);
@@ -409,8 +424,8 @@ mod tests {
             (quality_value(Quality::Draft), quality_value(Quality::Normal), quality_value(Quality::High), quality_value(Quality::Photo)),
             (3, 4, 5, 5)
         );
-        assert_eq!(sides_keyword(Duplex::Off), "one-sided");
-        assert_eq!(sides_keyword(Duplex::LongEdge), "two-sided-long-edge");
+        assert_eq!(sides_keyword(Duplex::Off), Some("one-sided"));
+        assert_eq!(sides_keyword(Duplex::LongEdge), Some("two-sided-long-edge"));
     }
 
     #[test]
@@ -430,7 +445,7 @@ mod tests {
 
     #[test]
     fn unlisted_settings_are_dropped_with_a_warning_or_refused_when_strict() {
-        let job = Job { copies: 9, duplex: Some(Duplex::ShortEdge), ..Job::default() };
+        let job = Job::default().with_copies(9).with_duplex(Duplex::ShortEdge);
         let options = JobOptions::new()
             .with_media("iso_a3_297x420mm")
             .with_resolution(Resolution::new(1200, 1200))
@@ -440,15 +455,15 @@ mod tests {
         assert_eq!(lenient.request.attributes[0].values, [Value::Integer(5)], "lowered to what the printer takes");
         assert_eq!(lenient.warnings.len(), 5, "{:?}", lenient.warnings);
         for (j, o) in [
-            (Job { copies: 9, ..Job::default() }, JobOptions::new()),
-            (Job { duplex: Some(Duplex::ShortEdge), ..Job::default() }, JobOptions::new()),
+            (Job::default().with_copies(9), JobOptions::new()),
+            (Job::default().with_duplex(Duplex::ShortEdge), JobOptions::new()),
             (Job::default(), JobOptions::new().with_media("iso_a3_297x420mm")),
             (Job::default(), JobOptions::new().with_resolution(Resolution::new(1200, 1200))),
             (Job::default(), JobOptions::new().with_orientation(Orientation::ReversePortrait)),
         ] {
             assert!(matches!(run(&j, &o, true, &printer()), Err(IppError::Unsupported(_))), "{j:?} {o:?}");
         }
-        let ok = run(&Job { copies: 2, ..Job::default() }, &JobOptions::new(), true, &printer()).unwrap();
+        let ok = run(&Job::default().with_copies(2), &JobOptions::new(), true, &printer()).unwrap();
         assert!(ok.request.fidelity && ok.warnings.is_empty());
     }
 
@@ -456,7 +471,7 @@ mod tests {
     fn copies_below_the_published_minimum_are_refused_and_above_the_maximum_are_lowered() {
         let with = |range: Option<(i32, i32)>, n: u32, strict: bool| {
             let p = PrinterAttrs { copies: range, ..PrinterAttrs::default() };
-            run(&Job { copies: n, ..Job::default() }, &JobOptions::new(), strict, &p)
+            run(&Job::default().with_copies(n), &JobOptions::new(), strict, &p)
         };
         for range in [Some((1, 99)), Some((3, 9)), None] {
             for strict in [false, true] {
@@ -478,7 +493,7 @@ mod tests {
     #[test]
     fn unpublished_dimensions_are_not_checked() {
         let bare = PrinterAttrs::default();
-        let job = Job { copies: 7, duplex: Some(Duplex::LongEdge), ..Job::default() };
+        let job = Job::default().with_copies(7).with_duplex(Duplex::LongEdge);
         let options = JobOptions::new().with_media("anything_1x1mm").with_quality(Quality::Draft);
         let p = run(&job, &options, true, &bare).unwrap();
         assert_eq!(names(&p), ["copies", "sides", "print-quality", "media"]);
@@ -488,7 +503,7 @@ mod tests {
     #[test]
     fn colour_resolves_against_the_printer() {
         let colour =
-            |c, gray: bool, p: &PrinterAttrs, strict| run(&Job { grayscale: gray, ..Job::default() }, &JobOptions::new().with_colour(c), strict, p);
+            |c, gray: bool, p: &PrinterAttrs, strict| run(&Job::default().with_grayscale(gray), &JobOptions::new().with_colour(c), strict, p);
         let mode = |p: &Plan| p.request.attributes.first().map(|a| a.values.clone());
         assert_eq!(mode(&colour(ColourMode::Mono, false, &printer(), false).unwrap()), Some(vec![Value::Keyword("monochrome".into())]));
         assert_eq!(mode(&colour(ColourMode::Auto, true, &printer(), false).unwrap()), Some(vec![Value::Keyword("monochrome".into())]));
@@ -509,8 +524,8 @@ mod tests {
     #[test]
     fn bad_input_and_foreign_formats_are_refused() {
         let p = printer();
-        assert!(matches!(run(&Job { copies: 0, ..Job::default() }, &JobOptions::new(), false, &p), Err(IppError::Invalid(_))));
-        assert!(matches!(run(&Job { copies: 10_000, ..Job::default() }, &JobOptions::new(), false, &p), Err(IppError::Invalid(_))));
+        assert!(matches!(run(&Job::default().with_copies(0), &JobOptions::new(), false, &p), Err(IppError::Invalid(_))));
+        assert!(matches!(run(&Job::default().with_copies(10_000), &JobOptions::new(), false, &p), Err(IppError::Invalid(_))));
         assert!(matches!(run(&Job::default(), &JobOptions::new().with_resolution(Resolution::new(0, 300)), false, &p), Err(IppError::Invalid(_))));
         assert!(matches!(run(&Job::default(), &JobOptions::new().with_media("a b"), false, &p), Err(IppError::Invalid(_))));
         let e = plan("x".into(), "image/jpeg", &Job::default(), &JobOptions::new(), false, &p).unwrap_err();
@@ -521,7 +536,7 @@ mod tests {
 
     #[test]
     fn scaling_and_driver_options_are_noted() {
-        let job = Job { scaling: Scaling::ShrinkToFit, options: vec![("InputSlot".into(), "Tray2".into())], ..Job::default() };
+        let job = Job::default().with_scaling(Scaling::ShrinkToFit).with_options(vec![("InputSlot".into(), "Tray2".into())]);
         let p = run(&job, &JobOptions::new(), false, &printer()).unwrap();
         assert_eq!(p.warnings.len(), 2);
     }

@@ -13,6 +13,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 /// One request as the server read it.
+#[non_exhaustive]
 pub struct HttpRequest {
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
@@ -141,6 +142,7 @@ pub mod device {
 
     /// One request the device received.
     #[derive(Clone, Debug, PartialEq, Eq)]
+    #[non_exhaustive]
     pub struct Logged {
         pub path: String,
         pub action: String,

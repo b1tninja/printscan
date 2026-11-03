@@ -20,6 +20,7 @@ use super::adapter::Transport;
 
 /// How to poll for the end of a job.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PollPolicy {
     pub interval: Duration,
     /// Give up waiting (the job keeps going on the printer) after this long.
@@ -34,6 +35,7 @@ impl Default for PollPolicy {
 
 /// What the person asked for.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PrintOptions {
     pub job_name: String,
     /// `JobOriginatingUserName`. Defaults to a fixed `printscan` rather than the account name.
@@ -63,6 +65,24 @@ pub struct PrintOptions {
     pub poll: PollPolicy,
 }
 
+setters!(PrintOptions {
+    into with_job_name => job_name: String,
+    into with_user_name => user_name: String,
+    some_into with_document_name => document_name: String,
+    some with_copies => copies: u32,
+    some with_sides => sides: Sides,
+    some with_orientation => orientation: Orientation,
+    some_into with_media_size => media_size: String,
+    some with_quality => quality: Quality,
+    some with_resolution => resolution: (u32, u32),
+    set with_color => color: ColorMode,
+    set with_strict => strict: bool,
+    set with_ticket_shape => ticket_shape: TicketShape,
+    set with_drop_ticket_settings => drop_ticket_settings: bool,
+    set with_transfer => transfer: Transfer,
+    set with_poll => poll: PollPolicy,
+});
+
 impl Default for PrintOptions {
     fn default() -> Self {
         Self {
@@ -87,6 +107,7 @@ impl Default for PrintOptions {
 
 /// How the job ended (or why we stopped watching).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum JobOutcome {
     Completed,
     CompletedWithWarnings,
@@ -124,6 +145,7 @@ impl JobOutcome {
 
 /// The result of [`print_document`].
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct JobResult {
     pub job_id: u32,
     pub outcome: JobOutcome,
@@ -150,6 +172,7 @@ pub fn negotiate_format(offered: &[String], caps: &Capabilities) -> Result<Strin
 
 /// The ticket and picture settings for this printer, with the changes made along the way.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Plan {
     pub ticket: PrintTicket,
     pub color: bool,
@@ -307,6 +330,7 @@ pub const PHASES: usize = 4;
 /// What a printer accepted: the result of [`submit_document`], before anything is known about the
 /// printing itself.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Accepted {
     pub job_id: u32,
     /// The format the document was sent in, as the printer spells it.

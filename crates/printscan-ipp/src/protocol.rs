@@ -2,6 +2,7 @@
 
 /// The operations this backend sends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Operation {
     PrintJob,
     ValidateJob,

@@ -4,6 +4,7 @@ use super::ticket::{Compression, Orientation, Quality, Sides};
 
 /// A job state (`JobState`); vendor states arrive as `Other`.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum JobState {
     Pending,
     PendingHeld,
@@ -58,6 +59,7 @@ impl JobState {
 
 /// A job state reason (`JobStateReason`).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum JobReason {
     None,
     CompressionError,
@@ -133,6 +135,7 @@ impl JobReason {
 
 /// `JobStatus` (also the shape of a `JobSummary`'s counters).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct JobStatus {
     pub job_id: u32,
     pub state: JobState,
@@ -144,6 +147,7 @@ pub struct JobStatus {
 
 /// One row of GetActiveJobs / GetJobHistory.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct JobSummary {
     pub status: JobStatus,
     pub job_name: String,
@@ -152,6 +156,7 @@ pub struct JobSummary {
 
 /// The answer to GetJobElements for the requested sections.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct JobElements {
     pub status: Option<JobStatus>,
     /// The printer returned a `PrintTicket` section (its effective ticket).
@@ -164,6 +169,7 @@ pub struct JobElements {
 
 /// `PrinterDescription`.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct PrinterDescription {
     pub name: String,
     pub color_supported: Option<bool>,
@@ -173,6 +179,7 @@ pub struct PrinterDescription {
 
 /// `PrinterStatus`.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct PrinterStatus {
     /// `Idle`, `Processing`, `Stopped` or a vendor value.
     pub state: String,
@@ -183,6 +190,7 @@ pub struct PrinterStatus {
 /// What the printer says it accepts (`PrinterCapabilities`). An empty list means the printer did
 /// not state that dimension, which is different from "nothing is allowed".
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct Capabilities {
     /// Document formats, spelled as listed.
     pub formats: Vec<String>,
@@ -251,6 +259,7 @@ fn listed(list: &[String], token: &str) -> Option<bool> {
 
 /// Which sections GetPrinterElements asked for and which the printer knew.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct PrinterElements {
     pub description: Option<PrinterDescription>,
     pub status: Option<PrinterStatus>,
@@ -261,6 +270,7 @@ pub struct PrinterElements {
 
 /// The sections of GetPrinterElements.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Section {
     Description,
     Configuration,

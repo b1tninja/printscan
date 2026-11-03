@@ -89,7 +89,7 @@ fn a_pdf_prints_to_completed_and_reaches_the_printer() {
     let Some((_turn, addr, registry, id)) = fake() else { return };
     let before = captured(&addr);
     let pdf = one_page_pdf();
-    let job = Job { printer: Some(id), title: "printscan live IPP test".into(), ..Job::default() };
+    let job = Job::default().with_printer(id).with_title("printscan live IPP test");
     let request = SubmitRequest::new(Document::pdf(&pdf), job).with_consent(UserConfirmed::attest(Some(true)).unwrap());
     let submitted = registry.submit_job(request).expect("Print-Job");
     let job = submitted.job.expect("IPP gives a job to follow");

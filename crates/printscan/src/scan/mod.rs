@@ -51,6 +51,7 @@ pub use length::{
 
 /// Where the page sits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Source {
     /// Feeder when [`Scanner::feeder_ready`] is set, otherwise the bed. Resolved at acquire time
     /// from a fresh status read. Some drivers leave the ready bit on after the tray is empty.
@@ -65,6 +66,7 @@ pub enum Source {
 
 /// The pixels the driver is asked for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Color {
     /// 8-bit grey. The usual input for a text page.
     #[default]
@@ -168,6 +170,7 @@ impl Color {
 
 /// How the page is turned. The values are the driver's rotation codes, not degrees.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Rotation {
     #[default]
     Portrait,
@@ -222,6 +225,7 @@ impl Rotation {
 
 /// A WIA range: `min`, `max`, and `step`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ValueSpan {
     pub min: i32,
     pub max: i32,
@@ -229,6 +233,11 @@ pub struct ValueSpan {
 }
 
 impl ValueSpan {
+    /// The range `min..=max` in steps of `step`.
+    pub const fn new(min: i32, max: i32, step: i32) -> Self {
+        Self { min, max, step }
+    }
+
     /// Whether `value` lies in `min..=max` and is a whole number of steps above `min` (a `step` of 0 counts as 1).
     pub fn contains(self, value: i32) -> bool {
         if value < self.min || value > self.max {
@@ -242,6 +251,7 @@ impl ValueSpan {
 
 /// Driver intent presets (`WIA_IPS_CUR_INTENT`). Fine controls still override after intent is set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Intent {
     None,
     Color,
@@ -311,6 +321,7 @@ impl Intent {
 
 /// Named page size (`WIA_IPS_PAGE_SIZE`). A region still overrides extent after this is written.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PageSize {
     A4,
     Letter,
@@ -375,6 +386,7 @@ impl PageSize {
 /// How a scanner is attached. Derived from the driver's port string; the same hardware can appear
 /// once per transport (USB minidriver vs inbox WSD) with different published capabilities.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Connection {
     Usb,
     /// Web Services for Devices / WS-Scan (network).
@@ -428,6 +440,7 @@ impl Connection {
 /// `None` it cannot tell. A backend whose conditions are only known after the fact (SANE) reports
 /// them as errors instead ([`ScanError::Native`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct HandlingStatus {
     /// Paper is loaded in the feeder; `None` when not reported.
     pub feeder_ready: Option<bool>,
@@ -443,6 +456,18 @@ pub struct HandlingStatus {
     /// The lamp or another device fault.
     pub lamp_error: bool,
 }
+
+setters!(HandlingStatus {
+    set with_feeder_ready => feeder_ready: Option<bool>,
+    set with_flat_ready => flat_ready: bool,
+    set with_duplex_ready => duplex_ready: bool,
+    set with_cover_open => cover_open: bool,
+    set with_path_cover_open => path_cover_open: bool,
+    set with_jam => jam: bool,
+    set with_multiple_feed => multiple_feed: bool,
+    set with_attention => attention: bool,
+    set with_lamp_error => lamp_error: bool,
+});
 
 impl HandlingStatus {
     /// The cause that should stop `acquire` before it starts, if any. The first match wins: a jam
@@ -804,6 +829,7 @@ impl ProgressToken {
 
 /// What one source (the bed or the feeder) offers. Empty means the driver did not publish a list.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct ImageChoices {
     pub dpi: Vec<u32>,
     /// Y resolutions when the driver lists them separately from [`Self::dpi`].
@@ -850,7 +876,10 @@ pub fn spanned_values(raw: &[i32]) -> Option<ValueSpan> {
 }
 
 /// What the driver says it can do. Flags are the WIA document-handling bits.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// A backend starts from [`Self::new`] and sets what the device published.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Scanner {
     pub id: String,
     pub name: String,
@@ -886,6 +915,7 @@ pub struct Scanner {
 
 /// Whether a device has something. A plain `false` or empty list cannot say which of the last two.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Presence {
     /// The driver did not say (or the read failed).
     #[default]
@@ -963,6 +993,11 @@ impl ImageChoices {
 }
 
 impl Scanner {
+    /// A scanner called `name` with nothing known about it yet: every capability reads as unknown.
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self { id: id.into(), name: name.into(), ..Self::default() }
+    }
+
     /// `Present` when the unit exists, `Absent` when the capability bits were read without it, otherwise `Unknown`.
     fn unit_presence(&self, present: bool) -> Presence {
         match (present, self.reported.units) {
@@ -1017,6 +1052,7 @@ impl Scanner {
 
 /// A scanner as the device list shows it. Read without opening the device.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ScannerRef {
     pub id: String,
     pub name: String,
@@ -1046,6 +1082,7 @@ impl ScannerRef {
 
 /// A request that pulls paper when `acquire` runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ScanSettings {
     /// Device id or a unique substring of the name. Empty uses the only scanner, or the first.
     pub device: String,
@@ -1095,6 +1132,7 @@ pub struct ScanSettings {
 
 /// Origin and size on the bed or the sheet, in thousandths of an inch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Region {
     pub left: u32,
     pub top: u32,
@@ -1102,8 +1140,16 @@ pub struct Region {
     pub height: u32,
 }
 
+impl Region {
+    /// The window at (`left`, `top`) of `width` by `height`, in thousandths of an inch.
+    pub const fn new(left: u32, top: u32, width: u32, height: u32) -> Self {
+        Self { left, top, width, height }
+    }
+}
+
 /// Where that window falls in pixels at one resolution.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct RegionPixels {
     pub x: u32,
     pub y: u32,
@@ -1113,6 +1159,7 @@ pub struct RegionPixels {
 
 /// The rectangle `acquire` will ask for. A full page leaves the driver's origin alone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PlannedFrame {
     pub x: u32,
     pub y: u32,
@@ -1127,6 +1174,7 @@ pub struct PlannedFrame {
 /// Bindings and the app consume [`Self::bytes`] directly (create a PDF, OCR, write elsewhere).
 /// There is no associated path on disk unless a caller separately uses [`write_pages`].
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Page {
     pub bytes: Vec<u8>,
     /// `bmp`, `png`, `jpeg`, or `tiff`, from the file header.
@@ -1152,13 +1200,29 @@ pub struct Page {
     pub length: LengthRecord,
 }
 
+impl Page {
+    /// A `width` by `height` image in `format` (`bmp`, `png`, `jpeg`, `tiff`) at `dpi` both ways, as
+    /// delivered and as asked for, not thresholded, its length as the driver gave it.
+    pub fn new(bytes: Vec<u8>, format: &'static str, width: u32, height: u32, dpi: u32) -> Self {
+        Self { bytes, format, width, height, dpi, dpi_y: dpi, requested_dpi: dpi, thresholded: false, length: LengthRecord::default() }
+    }
+}
+
 /// Pages from `acquire`, with the source that was actually used (never [`Source::Auto`]).
 ///
 /// Always in-memory. Spilling to files is the caller's choice ([`write_pages`]), not part of acquire.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Acquired {
     pub source: Source,
     pub pages: Vec<Page>,
+}
+
+impl Acquired {
+    /// `pages` scanned from `source`.
+    pub fn new(source: Source, pages: Vec<Page>) -> Self {
+        Self { source, pages }
+    }
 }
 
 pub const MAX_PAGES: u32 = 200;
@@ -1201,12 +1265,21 @@ impl Default for ScanSettings {
 /// Why a scan stopped, as the backend decided it, kept on an [`ScanError::Incomplete`] beside the
 /// pages that did arrive.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Cause {
     pub kind: InterruptKind,
     pub native: Option<NativeCode>,
 }
 
+impl Cause {
+    /// What stopped the scan, with the backend's own code when it has one.
+    pub const fn new(kind: InterruptKind, native: Option<NativeCode>) -> Self {
+        Self { kind, native }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ScanError {
     /// No backend can do this. The text is kept for compatibility with the Windows-only releases.
     #[error("scanning is only supported on Windows (WIA) in this version")]
@@ -1391,7 +1464,40 @@ impl ScanError {
     }
 }
 
+setters!(ScanSettings {
+    into with_device => device: String,
+    set with_source => source: Source,
+    set with_dpi => dpi: u32,
+    some with_dpi_y => dpi_y: u32,
+    set with_color => color: Color,
+    set with_pages => pages: u32,
+    some with_brightness => brightness: i32,
+    some with_contrast => contrast: i32,
+    some with_threshold => threshold: i32,
+    some with_rotation => rotation: Rotation,
+    some with_region => region: Region,
+    some_into with_format => format: String,
+    some_into with_compression => compression: String,
+    some with_intent => intent: Intent,
+    some with_page_size => page_size: PageSize,
+    set with_page_length => page_length: PageLength,
+    some with_auto_deskew => auto_deskew: bool,
+    some with_orientation => orientation: i32,
+    some with_photometric => photometric: i32,
+    some with_invert => invert: bool,
+    some with_mirror => mirror: bool,
+    some with_lamp => lamp: bool,
+    set with_duplex => duplex: bool,
+    some with_cancel => cancel: CancelToken,
+    some with_progress => progress: ProgressToken,
+});
+
 impl ScanSettings {
+    /// The default settings (see [`Default`]) for the scanner `device`.
+    pub fn new(device: impl Into<String>) -> Self {
+        Self::default().with_device(device)
+    }
+
     /// `self` when the resolution, page count and region are within the crate's limits (`MIN_DPI`..=`MAX_DPI`,
     /// `MAX_PAGES`, a region with a size); otherwise `Failed` naming the first one that is not. Nothing is sent to a
     /// scanner.

@@ -39,6 +39,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// What the fake does with a job as it is polled.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Ending {
     /// Pending, Processing, then Completed with the given reason.
     Completes(&'static str),
@@ -53,6 +54,7 @@ pub enum Ending {
 /// How the fake printer behaves; the default is a colour printer that accepts every job and completes it
 /// after two polls.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct FakeConfig {
     pub formats: Vec<&'static str>,
     pub compressions: Vec<&'static str>,
@@ -86,6 +88,28 @@ pub struct FakeConfig {
     /// Resolutions the printer lists; empty lists none.
     pub resolutions: Vec<(u32, u32)>,
 }
+
+setters!(FakeConfig {
+    set with_formats => formats: Vec<&'static str>,
+    set with_compressions => compressions: Vec<&'static str>,
+    set with_sides => sides: Vec<&'static str>,
+    set with_max_copies => max_copies: u32,
+    set with_color => color: bool,
+    set with_accept_jobs => accept_jobs: bool,
+    set with_ending => ending: Ending,
+    set with_polls_to_finish => polls_to_finish: u32,
+    some with_http_error => http_error: u16,
+    set with_fail_send => fail_send: bool,
+    set with_cancel_ended_is_operation_failed => cancel_ended_is_operation_failed: bool,
+    some with_history_fault => history_fault: &'static str,
+    set with_history_filler => history_filler: u32,
+    set with_first_job_id => first_job_id: u32,
+    set with_state => state: &'static str,
+    set with_state_reasons => state_reasons: Vec<&'static str>,
+    set with_media => media: Vec<&'static str>,
+    set with_qualities => qualities: Vec<&'static str>,
+    set with_resolutions => resolutions: Vec<(u32, u32)>,
+});
 
 impl Default for FakeConfig {
     fn default() -> Self {
@@ -130,6 +154,7 @@ pub struct FakeJob {
 
 /// One request the fake received.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Recorded {
     pub action: String,
     pub content_type: String,

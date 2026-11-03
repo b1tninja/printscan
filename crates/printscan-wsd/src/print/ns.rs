@@ -9,6 +9,7 @@ pub const WPRT: &str = "http://schemas.microsoft.com/windows/2006/08/wdp/print";
 
 /// The operations this client sends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Action {
     GetPrinterElements,
     CreatePrintJob,
@@ -47,6 +48,7 @@ impl Action {
 
 /// The events a WS-Print service pushes (each is also its `wsa:Action` and its body element).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Event {
     PrinterElementsChange,
     PrinterStatusSummary,

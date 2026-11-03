@@ -11,6 +11,7 @@ use super::adapter::{base64, xop_include_ref};
 
 /// How the document bytes travel inside SendDocument.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Transfer {
     /// A `multipart/related` request with the bytes as a binary part (no 33 % base64 growth).
     #[default]

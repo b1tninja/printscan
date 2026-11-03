@@ -60,6 +60,7 @@ impl ExpectedTotalsExt for ExpectedTotals {
 
 /// One reading of a job's status. Counters are `None` when the backend does not publish them.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct JobStatus {
     pub state: JobState,
     /// The device's reasons, as reported (`"JobPrinting"`, `"media-empty"`); empty when none.
@@ -155,6 +156,7 @@ impl WatchSupport {
 /// The call that produced it is bounded by the backend's per-request timeouts only; it never waits
 /// for the job to print.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Submitted {
     /// The backend's registry name.
     pub backend: &'static str,

@@ -60,14 +60,18 @@ fn rig(backend: &FakeBackend) -> Rig {
 }
 
 fn job_for(printer: &str) -> Job {
-    Job { printer: Some(printer.into()), title: "Quarterly report".into(), ..Job::default() }
+    Job::default().with_printer(printer).with_title("Quarterly report")
 }
 
 fn print_job(rig: &Rig, printer: &str) -> PrintJob {
     PrintJob::new(job_for(printer), source())
         .with_clock(Arc::new(rig.clock.clone()))
         .with_wall_clock(|| at(1_000))
-        .with_config(PrintJobConfig { staleness: Staleness::disabled(), ..PrintJobConfig::default() })
+        .with_config({
+            let mut built = PrintJobConfig::default();
+            built.staleness = Staleness::disabled();
+            built
+        })
         .with_consent(UserConfirmed::interactive())
 }
 
@@ -173,7 +177,11 @@ fn status_readings_are_deduplicated_and_the_trail_is_bounded() {
     assert!(times.windows(2).all(|pair| pair[0] <= pair[1]), "timestamps never go back");
 
     let rig2 = rig_with(&local(vec![Ok(status(JobState::Completed))]));
-    let config = PrintJobConfig { trail_cap: 3, ..PrintJobConfig::default() };
+    let config = {
+        let mut built = PrintJobConfig::default();
+        built.trail_cap = 3;
+        built
+    };
     let mut bounded = print_job(&rig2, "net:p1").with_config(config);
     drive(&mut bounded, &rig2);
     let snapshot = bounded.snapshot();
@@ -257,7 +265,11 @@ fn automatic_retry_can_be_turned_off_and_a_hard_refusal_is_never_retried() {
     assert_eq!((job.state(), refusing.submissions().len()), (LifecycleState::Terminal(Outcome::Failed), 1));
     assert_eq!(job.snapshot().advice, RetryAdvice::DoNotRetry, "it will not get better by itself");
 
-    let custom = RetryPolicy { max_attempts: 2, ..RetryPolicy::default() };
+    let custom = {
+        let mut built = RetryPolicy::default();
+        built.max_attempts = 2;
+        built
+    };
     let fake = local(vec![]).failing_submit(busy());
     let rig = self::rig(&fake);
     let mut job = print_job(&rig, "net:p1").with_retry(Some(custom));
@@ -557,7 +569,11 @@ fn reconcile_reports_not_found_and_advises_a_retry_only_where_finished_jobs_are_
     // The same answer where finished jobs vanish proves less.
     let forgetful = FakeBackend::ipp_like("net")
         .with_printer("p1", true)
-        .with_query_caps(JobQueryCaps { history: false, ..JobQueryCaps::ALL })
+        .with_query_caps({
+            let mut built = JobQueryCaps::ALL;
+            built.history = false;
+            built
+        })
         .with_submit_script(vec![SubmitStep::Fail(lost())]);
     let rig_b = rig(&forgetful);
     let mut job = print_job(&rig_b, "net:p1");

@@ -12,6 +12,7 @@ pub const HRESULT_DOMAIN: &str = "hresult";
 /// is the symbolic name when the backend knows one (`WIA_ERROR_BUSY`, `SANE_STATUS_NO_DOCS`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[non_exhaustive]
 pub struct NativeCode {
     pub domain: &'static str,
     pub code: i64,

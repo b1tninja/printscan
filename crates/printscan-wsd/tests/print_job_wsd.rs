@@ -81,7 +81,7 @@ fn rig(lose_send_replies: u32) -> Rig {
 }
 
 fn print_job(rig: &Rig, title: &str) -> PrintJob {
-    let job = Job { printer: Some(format!("wsd:{URL}")), title: title.into(), ..Job::default() };
+    let job = Job::default().with_printer(format!("wsd:{URL}")).with_title(title);
     PrintJob::new(job, BytesSource::new(DocumentFormat::Pdf, PDF.to_vec()))
         .with_clock(Arc::new(rig.clock.clone()))
         .with_consent(UserConfirmed::interactive())
@@ -99,7 +99,7 @@ fn drive(job: &mut PrintJob, rig: &Rig) {
 
 /// A job somebody else sent: same printer, same user name, no tag.
 fn foreign(registry: &Registry, title: &str) {
-    let job = Job { printer: Some(format!("wsd:{URL}")), title: title.into(), ..Job::default() };
+    let job = Job::default().with_printer(format!("wsd:{URL}")).with_title(title);
     registry.submit_job(SubmitRequest::new(Document::pdf(PDF), job).with_consent(UserConfirmed::interactive())).unwrap();
 }
 
@@ -134,7 +134,7 @@ fn a_long_title_is_cut_so_that_the_tag_survives_the_255_character_limit() {
 #[test]
 fn zero_copies_end_failed_with_do_not_retry_and_nothing_is_sent() {
     let rig = rig(0);
-    let job = Job { printer: Some(format!("wsd:{URL}")), title: "Zero".into(), copies: 0, ..Job::default() };
+    let job = Job::default().with_printer(format!("wsd:{URL}")).with_title("Zero").with_copies(0);
     let mut job = PrintJob::new(job, BytesSource::new(DocumentFormat::Pdf, PDF.to_vec()))
         .with_clock(Arc::new(rig.clock.clone()))
         .with_consent(UserConfirmed::interactive());

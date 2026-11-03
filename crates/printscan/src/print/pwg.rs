@@ -61,6 +61,7 @@ const HEADER: usize = 1796;
 /// (device colour of other channel counts, one bit) are not written here and [`Self::from_keyword`]
 /// does not know them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum RasterType {
     Sgray8,
     Sgray16,
@@ -151,6 +152,7 @@ impl RasterType {
 /// One page of pixels in a [`RasterType`], top row first, rows tightly packed, 16-bit samples most
 /// significant byte first.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct TypedPage {
     pub width: u32,
     pub height: u32,
@@ -158,14 +160,29 @@ pub struct TypedPage {
     pub data: Vec<u8>,
 }
 
+impl TypedPage {
+    /// A `width` by `height` page of `kind` pixels, row by row.
+    pub fn new(width: u32, height: u32, kind: RasterType, data: Vec<u8>) -> Self {
+        Self { width, height, kind, data }
+    }
+}
+
 /// One page of 8-bit pixels, top row first, rows tightly packed.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct RasterPage {
     pub width: u32,
     pub height: u32,
     /// `true`: one byte per pixel (sGray); `false`: three (sRGB).
     pub gray: bool,
     pub pixels: Vec<u8>,
+}
+
+impl RasterPage {
+    /// A `width` by `height` page of 8-bit grey (`gray`) or RGB pixels, row by row.
+    pub fn new(width: u32, height: u32, gray: bool, pixels: Vec<u8>) -> Self {
+        Self { width, height, gray, pixels }
+    }
 }
 
 /// A page as the writer reads it, whichever public type it came from.
@@ -190,6 +207,7 @@ impl<'a> From<&'a TypedPage> for View<'a> {
 
 /// Two-sided printing as the raster header states it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Duplex {
     Off,
     LongEdge,
@@ -197,9 +215,17 @@ pub enum Duplex {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct PwgOptions {
     pub dpi: (u32, u32),
     pub duplex: Duplex,
+}
+
+impl PwgOptions {
+    /// Pages at `dpi` (horizontal, vertical), two-sided as `duplex` says.
+    pub const fn new(dpi: (u32, u32), duplex: Duplex) -> Self {
+        Self { dpi, duplex }
+    }
 }
 
 /// A [`PwgError::Invalid`] error saying `why`.

@@ -68,16 +68,13 @@ fn contents(dir: &Path) -> Vec<String> {
 #[test]
 fn fronts_in_two_loads_then_backs_in_two_parts_end_in_document_order() {
     let dir = folder("pile");
-    let settings = ScanSettings { pages: 0, ..ScanSettings::default() };
-    let mut record = JobRecord {
-        id: "scan-pile".into(),
-        started: 1,
-        updated: 1,
-        request: request_json(&settings),
-        journal: ScanJob::new(settings, ScanJobConfig::default()).snapshot().into_journal(),
-        view: Value::Null,
-        attempts: Vec::new(),
-        manual_duplex: None,
+    let settings = ScanSettings::default().with_pages(0);
+    let mut record = {
+        let mut built =
+            JobRecord::new("scan-pile", request_json(&settings), ScanJob::new(settings, ScanJobConfig::default()).snapshot().into_journal());
+        built.started = 1;
+        built.updated = 1;
+        built
     };
     // Two feeder loads of fronts; each load finishes the whole-feeder job, which can then take more sheets.
     feed(&dir, &mut record, &["front 1", "front 2"]);
@@ -111,16 +108,13 @@ fn fronts_in_two_loads_then_backs_in_two_parts_end_in_document_order() {
 #[test]
 fn a_backs_pass_that_ran_the_feeder_empty_still_says_the_backs_are_not_finished() {
     let dir = folder("backs-left");
-    let settings = ScanSettings { pages: 0, ..ScanSettings::default() };
-    let mut record = JobRecord {
-        id: "scan-backs-left".into(),
-        started: 1,
-        updated: 1,
-        request: request_json(&settings),
-        journal: ScanJob::new(settings, ScanJobConfig::default()).snapshot().into_journal(),
-        view: Value::Null,
-        attempts: Vec::new(),
-        manual_duplex: None,
+    let settings = ScanSettings::default().with_pages(0);
+    let mut record = {
+        let mut built =
+            JobRecord::new("scan-backs-left", request_json(&settings), ScanJob::new(settings, ScanJobConfig::default()).snapshot().into_journal());
+        built.started = 1;
+        built.updated = 1;
+        built
     };
     feed(&dir, &mut record, &["front 1", "front 2", "front 3"]);
     record.manual_duplex = Some(ManualDuplex::backs_of(3));
@@ -150,15 +144,13 @@ fn a_backs_pass_that_ran_the_feeder_empty_still_says_the_backs_are_not_finished(
 fn a_journal_with_no_sheets_is_refused_and_the_numbering_is_total() {
     let dir = folder("no-sheets");
     let settings = ScanSettings::default();
-    let record = JobRecord {
-        id: "scan-no-sheets".into(),
-        started: 1,
-        updated: 1,
-        request: request_json(&settings),
-        journal: ScanJob::new(settings, ScanJobConfig::default()).snapshot().into_journal(),
-        view: Value::Null,
-        attempts: Vec::new(),
-        manual_duplex: Some(ManualDuplex::backs_of(1)),
+    let record = {
+        let mut built =
+            JobRecord::new("scan-no-sheets", request_json(&settings), ScanJob::new(settings, ScanJobConfig::default()).snapshot().into_journal());
+        built.started = 1;
+        built.updated = 1;
+        built.manual_duplex = Some(ManualDuplex::backs_of(1));
+        built
     };
     write_record(&dir, &record).expect("journal");
     // Hand-edit the file to {"sheets": 0, ...}: reading it is an error, not a panic in the listing.

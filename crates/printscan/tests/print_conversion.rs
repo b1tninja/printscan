@@ -87,12 +87,21 @@ impl Backend for Device {
     }
     /// The one default printer, `p`.
     fn list_printers(&self) -> Result<Vec<PrinterRef>, PrintError> {
-        Ok(vec![PrinterRef { id: "p".into(), name: "P".into(), default: true, two_sided: None }])
+        Ok(vec![{
+            let mut built = PrinterRef::new("p", "P");
+            built.default = true;
+            built
+        }])
     }
     /// The configured details under the asked-for id; each call is counted.
     fn printer_details(&self, native_id: &str) -> Result<PrinterDetails, PrintError> {
         self.detail_calls.fetch_add(1, Ordering::SeqCst);
-        Ok(PrinterDetails { id: native_id.into(), name: native_id.into(), ..self.details.clone() })
+        Ok({
+            let mut built = self.details.clone();
+            built.id = native_id.into();
+            built.name = native_id.into();
+            built
+        })
     }
     /// Record the format, bytes and resolution that arrived, and accept.
     fn submit(&self, request: SubmitRequest<'_>) -> Result<Submitted, PrintError> {
@@ -158,17 +167,18 @@ fn registry_with(device: &Device, converter: Option<Arc<Converter>>) -> Registry
 
 /// A PDF submit to `dev:p` with no consent attached.
 fn pdf_request<'a>() -> SubmitRequest<'a> {
-    SubmitRequest::new(Document::pdf(b"%PDF-1.7"), Job { printer: Some("dev:p".into()), ..Job::default() })
+    SubmitRequest::new(Document::pdf(b"%PDF-1.7"), Job::default().with_printer("dev:p"))
 }
 
 use DocumentFormat::{Jpeg, Pdf, PwgRaster};
 
 /// Colour printer details advertising these square resolutions (dpi).
 fn res(details_resolutions: &[u32]) -> PrinterDetails {
-    PrinterDetails {
-        resolutions: details_resolutions.iter().map(|d| Resolution::square(*d)).collect(),
-        colour: Some(true),
-        ..PrinterDetails::default()
+    {
+        let mut built = PrinterDetails::default();
+        built.resolutions = details_resolutions.iter().map(|d| Resolution::square(*d)).collect();
+        built.colour = Some(true);
+        built
     }
 }
 
@@ -230,7 +240,12 @@ fn the_policy_sets_the_preferred_format_and_the_target_dpi() {
     registry.submit_job(pdf_request()).unwrap();
     assert_eq!(converter.calls()[0].1, PwgRaster, "the default preference puts raster before JPEG");
 
-    registry.set_conversion_policy(ConversionPolicy { preference: vec![Jpeg, PwgRaster], target_dpi: 600 });
+    registry.set_conversion_policy({
+        let mut built = ConversionPolicy::default();
+        built.preference = vec![Jpeg, PwgRaster];
+        built.target_dpi = 600;
+        built
+    });
     registry.submit_job(pdf_request()).unwrap();
     let calls = converter.calls();
     assert_eq!((calls[1].1, calls[1].2.resolution), (Jpeg, Resolution::square(600)));
@@ -245,7 +260,11 @@ fn colour_is_off_for_a_mono_request_or_a_mono_printer() {
     registry.submit_job(pdf_request().with_options(JobOptions::new().with_colour(ColourMode::Mono))).unwrap();
     assert!(!converter.calls()[0].2.colour);
 
-    let mono_printer = Device::new(&[PwgRaster]).with_details(PrinterDetails { colour: Some(false), ..PrinterDetails::default() });
+    let mono_printer = Device::new(&[PwgRaster]).with_details({
+        let mut built = PrinterDetails::default();
+        built.colour = Some(false);
+        built
+    });
     let converter = Converter::making(&[PwgRaster]);
     registry_with(&mono_printer, Some(converter.clone())).submit_job(pdf_request()).unwrap();
     assert!(!converter.calls()[0].2.colour);
@@ -253,7 +272,12 @@ fn colour_is_off_for_a_mono_request_or_a_mono_printer() {
 
 #[test]
 fn a_backend_with_per_printer_formats_is_asked_once_and_not_when_details_are_passed() {
-    let details = PrinterDetails { formats: vec![PwgRaster], resolutions: vec![Resolution::square(600)], ..PrinterDetails::default() };
+    let details = {
+        let mut built = PrinterDetails::default();
+        built.formats = vec![PwgRaster];
+        built.resolutions = vec![Resolution::square(600)];
+        built
+    };
     let device = Device::new(&[Pdf, PwgRaster, Jpeg]).per_printer().with_details(details.clone());
     let converter = Converter::making(&[PwgRaster]);
     let registry = registry_with(&device, Some(converter.clone()));
@@ -270,7 +294,11 @@ fn a_backend_with_per_printer_formats_is_asked_once_and_not_when_details_are_pas
     assert_eq!(device.submitted().len(), 2);
 
     // A printer that lists PDF takes it as it is (still one request to know).
-    let pdf_printer = Device::new(&[Pdf, PwgRaster]).per_printer().with_details(PrinterDetails { formats: vec![Pdf], ..PrinterDetails::default() });
+    let pdf_printer = Device::new(&[Pdf, PwgRaster]).per_printer().with_details({
+        let mut built = PrinterDetails::default();
+        built.formats = vec![Pdf];
+        built
+    });
     let converter = Converter::making(&[PwgRaster]);
     let registry = registry_with(&pdf_printer, Some(converter.clone()));
     assert_eq!(registry.submit_job(pdf_request()).unwrap().conversion, None);
@@ -300,7 +328,7 @@ fn no_common_format_is_a_typed_error_that_lists_both_sides() {
 
     // The converter cannot start from this format at all.
     let error = registry_with(&device, Some(Converter::making(&[PwgRaster])))
-        .submit_job(SubmitRequest::new(Document::new(DocumentFormat::Tiff, b"II*\0"), Job { printer: Some("dev:p".into()), ..Job::default() }))
+        .submit_job(SubmitRequest::new(Document::new(DocumentFormat::Tiff, b"II*\0"), Job::default().with_printer("dev:p")))
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::UnsupportedFormat);
     assert!(error.message().contains("nothing from this format") && error.message().contains("image/tiff"), "{}", error.message());
@@ -342,7 +370,11 @@ fn a_job_cancelled_during_the_conversion_is_not_sent() {
 
 #[test]
 fn a_network_backend_is_not_contacted_or_converted_for_without_consent() {
-    let details = PrinterDetails { formats: vec![PwgRaster], ..PrinterDetails::default() };
+    let details = {
+        let mut built = PrinterDetails::default();
+        built.formats = vec![PwgRaster];
+        built
+    };
     let device = Device::new(&[Pdf, PwgRaster]).network().per_printer().with_details(details);
     let converter = Converter::making(&[PwgRaster]);
     let registry = registry_with(&device, Some(converter.clone()));
@@ -383,16 +415,9 @@ impl DocumentConverter for BlankPages {
     /// packed with the public PWG encoder.
     fn convert(&self, _document: Document<'_>, target: DocumentFormat, context: &ConvertContext) -> Result<OwnedDocument, PrintError> {
         let (w, h) = (context.resolution.x_dpi / 10, context.resolution.y_dpi / 10);
-        let page = printscan::print::pwg::RasterPage {
-            width: w,
-            height: h,
-            gray: !context.colour,
-            pixels: vec![255; (w * h) as usize * if context.colour { 3 } else { 1 }],
-        };
-        let options = printscan::print::pwg::PwgOptions {
-            dpi: (context.resolution.x_dpi, context.resolution.y_dpi),
-            duplex: printscan::print::pwg::Duplex::Off,
-        };
+        let page = printscan::print::pwg::RasterPage::new(w, h, !context.colour, vec![255; (w * h) as usize * if context.colour { 3 } else { 1 }]);
+        let options =
+            printscan::print::pwg::PwgOptions::new((context.resolution.x_dpi, context.resolution.y_dpi), printscan::print::pwg::Duplex::Off);
         let bytes = printscan::print::pwg::encode(&[page], &options).map_err(|e| PrintError::new(ErrorKind::Failed, e.to_string()))?;
         Ok(OwnedDocument::new(target, bytes))
     }
@@ -423,7 +448,11 @@ fn the_default_printers_details_are_used_when_the_request_names_no_printer() {
 
 #[test]
 fn per_printer_formats_are_read_for_the_default_printer_too() {
-    let details = PrinterDetails { formats: vec![PwgRaster], ..PrinterDetails::default() };
+    let details = {
+        let mut built = PrinterDetails::default();
+        built.formats = vec![PwgRaster];
+        built
+    };
     let device = Device::new(&[Pdf, PwgRaster]).per_printer().with_details(details);
     let converter = Converter::making(&[PwgRaster]);
     let registry = registry_with(&device, Some(converter.clone()));

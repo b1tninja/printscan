@@ -146,6 +146,7 @@ impl ColourMode {
 
 /// A print resolution in dots per inch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct Resolution {
     pub x_dpi: u32,
     pub y_dpi: u32,

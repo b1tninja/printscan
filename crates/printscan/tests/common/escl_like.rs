@@ -39,13 +39,11 @@ impl EsclLike {
 
     /// The handling status the feeder state implies.
     fn handling(&self) -> HandlingStatus {
-        HandlingStatus {
-            feeder_ready: Some(self.adf == AdfState::Loaded),
-            jam: self.adf == AdfState::Jam,
-            cover_open: self.adf == AdfState::DoorOpen,
-            multiple_feed: self.adf == AdfState::Multipick,
-            ..HandlingStatus::default()
-        }
+        HandlingStatus::default()
+            .with_feeder_ready(Some(self.adf == AdfState::Loaded))
+            .with_jam(self.adf == AdfState::Jam)
+            .with_cover_open(self.adf == AdfState::DoorOpen)
+            .with_multiple_feed(self.adf == AdfState::Multipick)
     }
 }
 
@@ -105,26 +103,16 @@ impl Backend for EsclLike {
                 }
                 return Err(ScanError::Incomplete {
                     message: jam.to_string(),
-                    acquired: Acquired { source, pages },
-                    cause: Some(Cause { kind: InterruptKind::Jam, native: Some(SERVICE_UNAVAILABLE) }),
+                    acquired: Acquired::new(source, pages),
+                    cause: Some(Cause::new(InterruptKind::Jam, Some(SERVICE_UNAVAILABLE))),
                 });
             }
-            let page = Page {
-                bytes: jpeg_gray(16, 8),
-                format: "jpeg",
-                width: 16,
-                height: 8,
-                dpi: settings.dpi,
-                dpi_y: settings.dpi,
-                requested_dpi: settings.dpi,
-                thresholded: false,
-                length: Default::default(),
-            };
+            let page = Page::new(jpeg_gray(16, 8), "jpeg", 16, 8, settings.dpi);
             if let Some(progress) = &settings.progress {
                 progress.push_page(page.clone());
             }
             pages.push(page);
         }
-        Ok(Acquired { source, pages })
+        Ok(Acquired::new(source, pages))
     }
 }

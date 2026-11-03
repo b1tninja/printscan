@@ -49,7 +49,12 @@ impl Backend for SaneLike {
         scanner.connection = Connection::Usb;
         // The feeder's paper cannot be read before a scan: not reported, which is not "empty".
         scanner.feeder_ready = None;
-        let choices = ImageChoices { dpi: vec![100, 200, 300, 600], colors: vec![Color::Gray, Color::Rgb], ..ImageChoices::default() };
+        let choices = {
+            let mut built = ImageChoices::default();
+            built.dpi = vec![100, 200, 300, 600];
+            built.colors = vec![Color::Gray, Color::Rgb];
+            built
+        };
         // The flatbed publishes a resolution list; the feeder's options are not listed at all.
         scanner.glass = Some(choices);
         scanner.feeder_choices = None;
@@ -76,17 +81,7 @@ impl Backend for SaneLike {
         let mut pages = Vec::new();
         for _ in 0..wanted.min(available) {
             // One JPEG per frame, line by line on the wire in a real driver.
-            let page = Page {
-                bytes: jpeg_gray(16, 8),
-                format: "jpeg",
-                width: 16,
-                height: 8,
-                dpi: settings.dpi,
-                dpi_y: settings.dpi,
-                requested_dpi: settings.dpi,
-                thresholded: false,
-                length: Default::default(),
-            };
+            let page = Page::new(jpeg_gray(16, 8), "jpeg", 16, 8, settings.dpi);
             if let Some(progress) = &settings.progress {
                 progress.push_page(page.clone());
             }
@@ -96,7 +91,7 @@ impl Backend for SaneLike {
         // some pages is the normal end of a whole-feeder request and a shortfall of a counted one.
         let ran_out = feeder && (pages.is_empty() || (settings.pages != 0 && pages.len() < wanted));
         if !ran_out {
-            return Ok(Acquired { source: if feeder { Source::Feeder } else { Source::Glass }, pages });
+            return Ok(Acquired::new(if feeder { Source::Feeder } else { Source::Glass }, pages));
         }
         // The next frame fails with NO_DOCS: that is how this backend learns the feeder is empty.
         let no_docs = ScanError::native_error(InterruptKind::FeederEmpty, NO_DOCS, "Document feeder out of documents");
@@ -105,8 +100,8 @@ impl Backend for SaneLike {
         }
         Err(ScanError::Incomplete {
             message: printscan::scan::feeder_shortfall_message(wanted, pages.len()),
-            acquired: Acquired { source: Source::Feeder, pages },
-            cause: Some(Cause { kind: InterruptKind::FeederEmpty, native: Some(NO_DOCS) }),
+            acquired: Acquired::new(Source::Feeder, pages),
+            cause: Some(Cause::new(InterruptKind::FeederEmpty, Some(NO_DOCS))),
         })
     }
 }

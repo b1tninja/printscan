@@ -343,6 +343,7 @@ fn the_page_size_plan_tries_the_asked_size_then_only_covering_sizes_smallest_fir
                         last_area = area;
                     }
                 }
+                other => panic!("{case}: a plan this test does not know: {other:?}"),
             }
         }
     }
@@ -352,7 +353,7 @@ fn the_page_size_plan_tries_the_asked_size_then_only_covering_sizes_smallest_fir
 fn a_status_with_nothing_set_reads_as_an_unready_feeder_not_an_unknown_one() {
     // The WIA property always has a value; zero means "nothing ready", which is a reading, not a gap.
     let status = rules::status_from_bits(0);
-    assert_eq!(status, HandlingStatus { feeder_ready: Some(false), ..HandlingStatus::default() });
+    assert_eq!(status, HandlingStatus::default().with_feeder_ready(Some(false)));
 }
 
 // ---- duplex on the feeder item -----------------------------------------------------------------

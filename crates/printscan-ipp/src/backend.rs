@@ -45,6 +45,7 @@ const HONOURED: &[JobHint] =
 
 /// How a document gets to the printer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum JobFlow {
     /// `Print-Job` for documents up to [`IppBackend::with_large_document`], `Create-Job` and
     /// `Send-Document` above that (and for a printer that does not list `Print-Job`).
@@ -128,6 +129,7 @@ impl Default for IppBackend {
 
 /// The printer and job number an `ipp` job id names; see [`IppBackend::parse_native`].
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct IppJob {
     /// The canonical printer URI, the native id of the printer.
     pub printer_uri: String,
@@ -451,7 +453,10 @@ fn details_of(entry: &Entry, attrs: &PrinterAttrs) -> PrinterDetails {
     let id = entry.uri.canonical();
     let name =
         [attrs.name.as_deref(), entry.name.as_deref(), attrs.info.as_deref()].into_iter().flatten().find(|n| !n.is_empty()).unwrap_or(&id).to_owned();
-    let mut details = PrinterDetails { id: id.clone(), name, default: false, honoured: Some(honoured_for(attrs)), ..PrinterDetails::default() };
+    let mut details = PrinterDetails::default();
+    details.id = id.clone();
+    details.name = name;
+    details.honoured = Some(honoured_for(attrs));
     for format in attrs.formats.iter().filter_map(|f| DocumentFormat::from_mime(f)) {
         if !details.formats.contains(&format) {
             details.formats.push(format);
@@ -477,14 +482,14 @@ fn details_of(entry: &Entry, attrs: &PrinterAttrs) -> PrinterDetails {
         .iter()
         .flatten()
         .filter(|(_, uri)| uri.starts_with("http://") || uri.starts_with("https://"))
-        .map(|(name, uri)| IccProfile { name: name.clone(), uri: uri.clone() })
+        .map(|(name, uri)| IccProfile::new(name.clone(), uri.clone()))
         .collect();
     details.status = model::neutral_printer_state(attrs).map(|state| {
         let mut reasons: Vec<String> = attrs.state_reasons.iter().filter(|r| r.as_str() != "none").cloned().collect();
         if attrs.accepting_jobs == Some(false) {
             reasons.push("not-accepting-jobs".to_owned());
         }
-        PrinterStatus { state, reasons }
+        PrinterStatus::new(state, reasons)
     });
     details
 }
@@ -558,7 +563,7 @@ enum Probe {
 
 /// The native code of the IPP `client-error-not-found` status.
 fn not_found_native() -> NativeCode {
-    NativeCode { domain: "ipp", code: i64::from(StatusCode::NOT_FOUND.0), name: StatusCode::NOT_FOUND.name() }
+    NativeCode::new("ipp", i64::from(StatusCode::NOT_FOUND.0), StatusCode::NOT_FOUND.name())
 }
 
 /// The printer is not at that address: a "not found" for the printer, not for a job.
@@ -630,7 +635,7 @@ impl Backend for IppBackend {
             .into_iter()
             .map(|e| {
                 let id = e.uri.canonical();
-                PrinterRef { name: e.name.unwrap_or_else(|| id.clone()), id, default: false, two_sided: None }
+                PrinterRef::new(id.clone(), e.name.unwrap_or(id))
             })
             .collect())
     }
@@ -656,7 +661,7 @@ impl Backend for IppBackend {
     /// (the job may exist) and the backend then leaves any created job alone; find it with the
     /// registry's `find_job` before submitting again.
     fn submit(&self, request: SubmitRequest<'_>) -> Result<Submitted, PrintError> {
-        let SubmitRequest { document, job, options: per_job, consent, cancel, mut progress, tag } = request;
+        let SubmitRequest { document, job, options: per_job, consent, cancel, mut progress, tag, .. } = request;
         if consent.is_none() {
             return Err(PrintError::new(
                 ErrorKind::ConsentRequired,
@@ -830,7 +835,13 @@ impl Backend for IppBackend {
     /// Active jobs and history, with the user and the creation time (`date-time-at-creation`, else
     /// `time-at-creation` against `printer-up-time`).
     fn job_query_caps(&self) -> JobQueryCaps {
-        JobQueryCaps { list: true, created_time: true, user: true, tag: true, history: true }
+        let mut caps = JobQueryCaps::default();
+        caps.list = true;
+        caps.created_time = true;
+        caps.user = true;
+        caps.tag = true;
+        caps.history = true;
+        caps
     }
 
     /// `Get-Jobs` for `not-completed` and for `completed` jobs (a printer that does not keep the

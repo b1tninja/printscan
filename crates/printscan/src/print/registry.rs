@@ -28,6 +28,7 @@ use crate::print::watch::{JobWatch, WaitPolicy};
 
 /// Why [`Registry::register`] refused a backend.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RegisterError {
     /// A backend with this name is already registered; it stays in place.
     DuplicateName { name: &'static str },
@@ -48,6 +49,7 @@ impl std::error::Error for RegisterError {}
 
 /// One backend's failure inside a [`Listing`].
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct BackendError {
     pub backend: &'static str,
     pub error: PrintError,
@@ -56,6 +58,7 @@ pub struct BackendError {
 /// What the registered backends found: every printer that was found (namespaced ids) and one
 /// [`BackendError`] per backend that failed.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Listing<T> {
     pub items: Vec<T>,
     pub errors: Vec<BackendError>,

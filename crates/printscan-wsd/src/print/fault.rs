@@ -8,12 +8,11 @@
 
 use std::fmt;
 
-use roxmltree::Node;
-
 use super::ns;
 
 /// The sub-code of a fault.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FaultCode {
     /// `wsa:ActionNotSupported`: the endpoint does not know the action.
     ActionNotSupported,
@@ -104,6 +103,7 @@ pub use super::adapter::Role;
 
 /// A parsed fault.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Fault {
     pub role: Role,
     pub code: FaultCode,
@@ -142,8 +142,9 @@ impl From<super::adapter::WireFault> for Fault {
 }
 
 /// Read a `soap:Fault` element. Missing parts degrade to `Other`/empty; this never fails.
-pub fn parse_fault(fault: Node<'_, '_>) -> Fault {
-    super::adapter::parse_fault(fault).into()
+#[cfg(test)]
+fn parse_fault(fault: roxmltree::Node<'_, '_>) -> Fault {
+    crate::fault::parse_fault(fault).into()
 }
 
 #[cfg(test)]

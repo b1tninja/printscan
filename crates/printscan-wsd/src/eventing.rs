@@ -25,7 +25,7 @@ use crate::error::{Error, Result};
 use crate::fault::parse_fault;
 use crate::soap::{Call, SoapClient};
 use crate::transport::Transport;
-use crate::xml::{self, QName};
+use crate::xml::{self, Element, QName};
 use crate::{SubCode, ns};
 
 pub const ACTION_SUBSCRIBE: &str = "http://schemas.xmlsoap.org/ws/2004/08/eventing/Subscribe";
@@ -51,6 +51,7 @@ const MAX_HEADERS: usize = 16;
 
 /// A subscription lifetime as the protocol writes it: a duration (`PT1H`) or an absolute UTC time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Expiry {
     /// Relative to now.
     After(Duration),
@@ -215,6 +216,7 @@ fn format_datetime(secs: i64) -> String {
 
 /// A `wse:Filter`: a dialect URI and its text.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Filter {
     pub dialect: String,
     pub text: String,
@@ -236,6 +238,7 @@ impl Filter {
 
 /// What to put in a `Subscribe`.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SubscribeRequest {
     /// Where the device pushes events. Must be an address the connection policy allows.
     pub notify_to: EndpointRef,
@@ -292,12 +295,18 @@ impl SubscribeRequest {
 
 /// A live subscription: where to manage it and when it ends.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Subscription {
     pub manager: EndpointRef,
     pub expires: Option<Expiry>,
 }
 
 impl Subscription {
+    /// The subscription managed at `manager`, ending at `expires`.
+    pub fn new(manager: EndpointRef, expires: Option<Expiry>) -> Self {
+        Self { manager, expires }
+    }
+
     /// The `wse:Identifier` reference parameter of the manager reference, if the device gave one.
     pub fn identifier(&self) -> Option<&str> {
         self.manager.parameter(ns::WSE, "Identifier")
@@ -305,7 +314,7 @@ impl Subscription {
 }
 
 /// Read a `wse:SubscribeResponse`.
-pub fn parse_subscribe_response(node: Node<'_, '_>) -> Result<Subscription> {
+pub(crate) fn parse_subscribe_response(node: Node<'_, '_>) -> Result<Subscription> {
     let mut managers = xml::children(node, ns::WSE, "SubscriptionManager");
     let manager = managers.next().ok_or_else(|| Error::Protocol("SubscribeResponse has no SubscriptionManager".into()))?;
     if managers.next().is_some() {
@@ -337,9 +346,9 @@ pub fn subscribe<T: Transport>(client: &SoapClient<T>, request: &SubscribeReques
 pub fn subscribe_with<T: Transport, X>(
     client: &SoapClient<T>,
     request: &SubscribeRequest,
-    extra: impl FnOnce(Node<'_, '_>) -> Result<X>,
+    extra: impl FnOnce(Element<'_, '_>) -> Result<X>,
 ) -> Result<(Subscription, X)> {
-    client.call(&request.call()?, |node| Ok((parse_subscribe_response(node)?, extra(node)?)))
+    client.call_node(&request.call()?, |node| Ok((parse_subscribe_response(node)?, extra(Element::new(node))?)))
 }
 
 /// A manager-addressed call: reference parameters become headers, and the manager's address (which
@@ -360,7 +369,7 @@ pub fn renew<T: Transport>(client: &SoapClient<T>, sub: &Subscription, expires: 
         .namespace("wse", ns::WSE)
         .headers(sub.manager.header_xml())
         .body(body);
-    manager_call(client, sub)?.call(&call, read_expires)
+    manager_call(client, sub)?.call_node(&call, read_expires)
 }
 
 /// GetStatus; the remaining lifetime if the device states one.
@@ -370,7 +379,7 @@ pub fn get_status<T: Transport>(client: &SoapClient<T>, sub: &Subscription) -> R
         .namespace("wse", ns::WSE)
         .headers(sub.manager.header_xml())
         .body("<wse:GetStatus/>");
-    manager_call(client, sub)?.call(&call, read_expires)
+    manager_call(client, sub)?.call_node(&call, read_expires)
 }
 
 /// Unsubscribe.
@@ -384,6 +393,7 @@ pub fn unsubscribe<T: Transport>(client: &SoapClient<T>, sub: &Subscription) -> 
 
 /// The WS-Eventing fault sub-codes, for services that want to react to a specific refusal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum EventingFault {
     DeliveryModeRequestedUnavailable,
     InvalidExpirationTime,
@@ -419,6 +429,7 @@ impl EventingFault {
 
 /// Why a subscription ended, from a `SubscriptionEnd`.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum EndStatus {
     DeliveryFailure,
     SourceShuttingDown,
@@ -428,6 +439,7 @@ pub enum EndStatus {
 
 /// A `wse:SubscriptionEnd` message sent to the `EndTo` sink.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SubscriptionEnd {
     pub manager: EndpointRef,
     pub status: EndStatus,
@@ -462,17 +474,18 @@ impl Notification {
     }
 
     /// Read the payload element (re-parsed from the bounded message) with a service-specific reader.
-    pub fn with_body<R, E: From<Error>>(&self, read: impl FnOnce(Node<'_, '_>) -> std::result::Result<R, E>) -> std::result::Result<R, E> {
+    pub fn with_body<R, E: From<Error>>(&self, read: impl FnOnce(Element<'_, '_>) -> std::result::Result<R, E>) -> std::result::Result<R, E> {
         let text = xml::checked_text(&self.raw)?;
         let doc = xml::parse(text)?;
         let body = xml::child(doc.root_element(), ns::SOAP, "Body").ok_or_else(|| Error::Protocol("the envelope has no Body".into()))?;
         let payload = body.children().find(|c| c.is_element()).ok_or_else(|| Error::Protocol("the Body is empty".into()))?;
-        read(payload)
+        read(Element::new(payload))
     }
 }
 
 /// Something a device pushed.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Incoming {
     Event(Notification),
     SubscriptionEnd(SubscriptionEnd),
@@ -811,7 +824,7 @@ mod tests {
         assert_eq!(n.body, QName::new("urn:ev", "Changed"));
         assert_eq!(n.header("urn:x", "Ctx"), Some("c1"));
         assert_eq!(n.header("urn:x", "Nested"), None, "only plain-text blocks are kept");
-        let v = n.with_body(|b| Ok::<_, Error>(xml::child_text(b, "urn:ev", "Value"))).unwrap();
+        let v = n.with_body(|b| Ok::<_, Error>(b.child_text("urn:ev", "Value"))).unwrap();
         assert_eq!(v.as_deref(), Some("9"));
     }
 

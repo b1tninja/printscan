@@ -483,6 +483,7 @@ fn is_plain_text(bytes: &[u8]) -> bool {
 /// [`DocumentFormat::sniff`] and [`Document::detect`]) and nothing here converts them (see
 /// [`DocumentConverter`](crate::print::DocumentConverter)).
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct Document<'a> {
     pub format: DocumentFormat,
     pub bytes: &'a [u8],
@@ -508,6 +509,7 @@ impl<'a> Document<'a> {
 
 /// Whether a backend stays on this machine or talks to devices over a network.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum BackendClass {
     /// The system spooler: the user already chose the queue.
     #[default]
@@ -567,7 +569,8 @@ impl CancelToken {
 
 /// A printer in a list. In a [`Registry`](crate::print::Registry) result `id` is namespaced
 /// (`"<backend>:<native id>"`); a backend returns its native id.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PrinterRef {
     pub id: String,
     /// What a person sees.
@@ -575,6 +578,13 @@ pub struct PrinterRef {
     pub default: bool,
     /// Whether the printer takes two-sided jobs; `None` when unknown.
     pub two_sided: Option<bool>,
+}
+
+impl PrinterRef {
+    /// The printer `id`, shown as `name`; not the default, two-sided unknown.
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self { id: id.into(), name: name.into(), default: false, two_sided: None }
+    }
 }
 
 /// The job settings of [`Job`] and [`JobOptions`] a printer may honour. Everything else is a hint
@@ -613,15 +623,24 @@ pub enum PrinterState {
 
 /// A printer's reported state. Absent from [`PrinterDetails`] when the backend cannot say.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PrinterStatus {
     pub state: PrinterState,
     /// Human-readable reasons the device gives (`"paper empty"`), as reported.
     pub reasons: Vec<String>,
 }
 
+impl PrinterStatus {
+    /// `state`, with the device's `reasons`.
+    pub fn new(state: PrinterState, reasons: Vec<String>) -> Self {
+        Self { state, reasons }
+    }
+}
+
 /// What a printer can do. Every list may be empty or `None`, which means "not published", not
 /// "none supported".
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct PrinterDetails {
     pub id: String,
     pub name: String,
@@ -653,6 +672,7 @@ pub struct PrinterDetails {
 
 /// One ICC profile a printer publishes: its name and where to fetch it.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct IccProfile {
     /// The printer's name for it, such as `Glossy Paper, High Quality`.
     pub name: String,
@@ -660,9 +680,17 @@ pub struct IccProfile {
     pub uri: String,
 }
 
+impl IccProfile {
+    /// The profile the printer calls `name`, at `uri`.
+    pub fn new(name: impl Into<String>, uri: impl Into<String>) -> Self {
+        Self { name: name.into(), uri: uri.into() }
+    }
+}
+
 /// A message about an accepted job and the backend's own job id, if any. The older view of a
 /// [`Submitted`] ([`Submitted::receipt`]); receipts are messages, not portable job ids.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Receipt {
     /// The backend's registry name.
     pub backend: &'static str,
@@ -678,6 +706,7 @@ pub type ProgressCallback<'a> = &'a mut dyn FnMut(Progress);
 /// [`Registry`](crate::print::Registry), the native id when a backend receives it; `None` is the default.
 /// [`SubmitRequest::options`] carries the per-job hints beside the spooler's own [`Job`] settings;
 /// see [`JobOptions`].
+#[non_exhaustive]
 pub struct SubmitRequest<'a> {
     pub document: Document<'a>,
     pub job: Job,

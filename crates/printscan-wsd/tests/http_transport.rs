@@ -17,13 +17,7 @@ fn url(server: &Server) -> DeviceUrl {
 
 /// A small SOAP request with a five-second timeout and a 64 KiB reply cap.
 fn request() -> Request {
-    Request {
-        content_type: "application/soap+xml".into(),
-        soap_action: "urn:example/Action".into(),
-        body: b"<x/>".to_vec(),
-        timeout: Duration::from_secs(5),
-        max_response: 64 << 10,
-    }
+    Request::new("application/soap+xml", "urn:example/Action", b"<x/>".to_vec(), Duration::from_secs(5), 64 << 10)
 }
 
 #[test]
@@ -80,7 +74,13 @@ fn a_silent_device_times_out() {
         Vec::new()
     });
     let started = std::time::Instant::now();
-    let e = HttpTransport::new().post(&url(&silent), Request { timeout: Duration::from_millis(300), ..request() }).unwrap_err();
+    let e = HttpTransport::new()
+        .post(&url(&silent), {
+            let mut built = request();
+            built.timeout = Duration::from_millis(300);
+            built
+        })
+        .unwrap_err();
     assert_eq!(e.transport_kind(), Some(TransportKind::Timeout), "{e:?}");
     assert!(e.is_retryable() && e.retry_safety(false) == RetrySafety::OutcomeUnknown, "a silent device may have the job: {e:?}");
     assert!(started.elapsed() < Duration::from_millis(1400), "{:?}", started.elapsed());

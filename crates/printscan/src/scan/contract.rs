@@ -20,6 +20,7 @@ use crate::scan::{
 
 /// A wire string that names no value of the enum.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ParseWireError {
     /// The enum that was being read (`"source"`, `"color"`, ...).
     pub what: &'static str,
@@ -203,6 +204,7 @@ wire_text!(InterruptKind, "interrupt kind", unknown_reads_as InterruptKind::Othe
 /// An image format a caller may ask the driver for (`ScanSettings::format`). Pages themselves are
 /// labelled by [`crate::scan::image_format`], which can also answer `bin` for bytes it does not know.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ImageFormat {
     Bmp,
     Jpeg,
@@ -241,6 +243,7 @@ wire_text!(ImageFormat, "image format");
 
 /// A compression the driver may offer (`ScanSettings::compression`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Compression {
     None,
     Rle4,
@@ -301,6 +304,7 @@ wire_text!(Compression, "compression");
 
 /// The `details` field of a scanner listing row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ListDetails {
     /// The device was listed and not opened.
     Skipped,
@@ -331,6 +335,7 @@ wire_text!(ListDetails, "list details");
 
 /// Where in a scan a failure happened.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Phase {
     /// No page had arrived, and none was in flight.
     BeforeFirstPage,
@@ -379,6 +384,7 @@ wire_text!(Phase, "phase");
 
 /// What a caller can do about a stopped scan.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct Recovery {
     /// Nothing was kept and every wanted page is still wanted: start again with the same settings.
     pub retryable: bool,
@@ -435,6 +441,7 @@ impl HandlingStatus {
 
 /// What is known about a failure besides the error itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct ErrorContext {
     /// Pages that had arrived (an `Incomplete` error's own pages count too; the larger wins).
     pub pages_received: usize,
@@ -463,6 +470,7 @@ impl ErrorContext {
 /// and message are neutral; `native` carries the backend's own code for logs and diagnostics.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub struct ScanErrorInfo {
     /// The backend's own error code, when the error carried one. A sentence an app decided on from
     /// a status read (a jam, an empty tray) keeps the code that triggered it.

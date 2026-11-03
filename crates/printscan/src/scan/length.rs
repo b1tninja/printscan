@@ -52,6 +52,7 @@ use crate::scan::{Page, PageSize, Presence};
 
 /// What the caller asks for as the page length. See the [module documentation](self).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
+#[non_exhaustive]
 pub enum PageLength {
     /// Leave the extent to the driver, exactly as before this setting existed. The default.
     #[default]
@@ -107,6 +108,7 @@ impl PageLength {
 
 /// How the length of a delivered page was obtained.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
+#[non_exhaustive]
 pub enum LengthSource {
     /// Whatever the driver delivered; nothing was asked or decided.
     #[default]
@@ -142,6 +144,7 @@ impl LengthSource {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(default))]
+#[non_exhaustive]
 pub struct LengthRecord {
     pub source: LengthSource,
     /// The delivered length in thousandths of an inch (height over vertical resolution). `None` when it
@@ -190,6 +193,7 @@ pub fn rows_for_mils(mils: u32, dpi: u32) -> u32 {
 /// What a device publishes about the length of a page, per item (glass or feeder). Every default means
 /// "unknown".
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct PageLengthSupport {
     /// The device can detect the sheet length itself. [`Presence::Present`] only when the property or
     /// value is published; [`Presence::Absent`] when the item's properties were read without one.
@@ -197,6 +201,13 @@ pub struct PageLengthSupport {
     /// The longest page the item can scan, in thousandths of an inch, when its vertical extent is
     /// published as a range.
     pub max_length_mils: Option<u32>,
+}
+
+impl PageLengthSupport {
+    /// Whether the device detects the length, and the longest page it scans (thousandths of an inch).
+    pub const fn new(device_detect: Presence, max_length_mils: Option<u32>) -> Self {
+        Self { device_detect, max_length_mils }
+    }
 }
 
 impl PageSize {
@@ -218,6 +229,7 @@ impl PageSize {
 /// Tunables of [`infer_sheet_end`]. The defaults suit lossless pages from a scanner that fills beyond
 /// the sheet with pure white.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct InferOptions {
     /// A pixel is *fill* when its luminance is at least `255 - tolerance`. `0` (exact `255`) for BMP, PNG
     /// and TIFF; [`Self::JPEG_TOLERANCE`] for JPEG, whose flat white can decode to 253 to 255.
@@ -258,6 +270,7 @@ impl Default for InferOptions {
 
 /// A sheet end found by [`infer_sheet_end`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Inferred {
     /// Rows to keep (the sheet end plus the margin, never more than the image has).
     pub rows: u32,
@@ -271,6 +284,7 @@ pub struct Inferred {
 
 /// Why no sheet end was inferred.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Refusal {
     /// The bytes are not an image this crate decodes, or are 1-bit.
     Unreadable,
@@ -500,6 +514,7 @@ where
 
 /// What [`infer_and_crop`] did.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Inference {
     /// The page was cut; the page carries [`LengthSource::Inferred`].
     Cropped(Inferred),

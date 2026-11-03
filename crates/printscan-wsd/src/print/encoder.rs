@@ -19,6 +19,7 @@ use super::ticket::Sides;
 /// Colour or monochrome output. The print schema has no colour setting: this is applied when the
 /// picture is made.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum ColorMode {
     /// Colour when the printer says it can, else grey.
     #[default]
@@ -28,7 +29,8 @@ pub enum ColorMode {
 }
 
 /// What an encoder needs to know besides the document.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EncodeContext {
     /// Render in colour (already resolved against the printer's `ColorSupported`).
     pub color: bool,
@@ -117,6 +119,7 @@ pub trait PageSource {
 }
 
 /// Packs the pages of a [`PageSource`] as PWG raster.
+#[non_exhaustive]
 pub struct RasterEncoder<S: PageSource> {
     pub source: S,
 }
@@ -158,7 +161,7 @@ impl<S: PageSource> DocumentEncoder for RasterEncoder<S> {
             Some(Sides::TwoSidedShortEdge) => Duplex::ShortEdge,
             _ => Duplex::Off,
         };
-        pwg::encode(&pages, &PwgOptions { dpi: ctx.dpi, duplex }).map(Cow::Owned)
+        pwg::encode(&pages, &PwgOptions::new(ctx.dpi, duplex)).map(Cow::Owned)
     }
 }
 
@@ -200,7 +203,7 @@ mod tests {
         /// A blank (white) page a tenth of an inch square at `dpi`.
         fn render(&self, _i: usize, dpi: (u32, u32), gray: bool) -> Result<RasterPage> {
             let (w, h) = (dpi.0 / 10, dpi.1 / 10);
-            Ok(RasterPage { width: w, height: h, gray, pixels: vec![255; (w * h) as usize * if gray { 1 } else { 3 }] })
+            Ok(RasterPage::new(w, h, gray, vec![255; (w * h) as usize * if gray { 1 } else { 3 }]))
         }
     }
 

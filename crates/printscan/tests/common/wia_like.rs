@@ -190,17 +190,16 @@ pub fn error_from_hresult(code: u32, driver_message: &str) -> ScanError {
 /// Bits from `WIA_DPS_DOCUMENT_HANDLING_STATUS`.
 pub fn status_from_bits(bits: i32) -> HandlingStatus {
     let bits = u32::try_from(bits).unwrap_or(0);
-    HandlingStatus {
-        feeder_ready: Some(bits & 0x1 != 0),
-        flat_ready: bits & 0x2 != 0,
-        duplex_ready: bits & 0x4 != 0,
-        cover_open: bits & 0x8 != 0,
-        path_cover_open: bits & 0x10 != 0,
-        jam: bits & 0x20 != 0,
-        multiple_feed: bits & 0x200 != 0,
-        attention: bits & 0x400 != 0,
-        lamp_error: bits & 0x800 != 0,
-    }
+    HandlingStatus::default()
+        .with_feeder_ready(Some(bits & 0x1 != 0))
+        .with_flat_ready(bits & 0x2 != 0)
+        .with_duplex_ready(bits & 0x4 != 0)
+        .with_cover_open(bits & 0x8 != 0)
+        .with_path_cover_open(bits & 0x10 != 0)
+        .with_jam(bits & 0x20 != 0)
+        .with_multiple_feed(bits & 0x200 != 0)
+        .with_attention(bits & 0x400 != 0)
+        .with_lamp_error(bits & 0x800 != 0)
 }
 
 /// WIA document-handling capability bits: feeder, flatbed, duplex.
@@ -393,42 +392,20 @@ impl Backend for WiaLike {
     fn acquire(&self, settings: &ScanSettings) -> Result<Acquired, ScanError> {
         if settings.source == Source::Feeder && settings.pages > 1 {
             // One sheet in the tray: the first page arrives, then the driver answers busy.
-            let page = Page {
-                bytes: bmp_24(2, 2),
-                format: "bmp",
-                width: 2,
-                height: 2,
-                dpi: settings.dpi,
-                dpi_y: settings.dpi,
-                requested_dpi: settings.dpi,
-                thresholded: false,
-                length: Default::default(),
-            };
+            let page = Page::new(bmp_24(2, 2), "bmp", 2, 2, settings.dpi);
             let busy = explain_transfer_failure(error_from_hresult(0x8021_0006, ""), status_from_bits(0x1), true, 1, settings.pages as usize);
             let stop = printscan::scan::after_transfer_checked(settings.pages as usize, true, 1, false, Some(busy)).err();
             return Err(match stop {
-                Some(error) => ScanError::Incomplete {
-                    message: error.to_string(),
-                    acquired: Acquired { source: Source::Feeder, pages: vec![page] },
-                    cause: error.cause(),
-                },
+                Some(error) => {
+                    ScanError::Incomplete { message: error.to_string(), acquired: Acquired::new(Source::Feeder, vec![page]), cause: error.cause() }
+                }
                 None => ScanError::Failed("unexpected".into()),
             });
         }
-        let page = Page {
-            bytes: bmp_24(2, 2),
-            format: "bmp",
-            width: 2,
-            height: 2,
-            dpi: settings.dpi,
-            dpi_y: settings.dpi,
-            requested_dpi: settings.dpi,
-            thresholded: false,
-            length: Default::default(),
-        };
+        let page = Page::new(bmp_24(2, 2), "bmp", 2, 2, settings.dpi);
         // A feeder request is answered from the feeder; glass and Auto (which the driver resolves itself) from the glass.
         let source = if settings.source == Source::Feeder { Source::Feeder } else { Source::Glass };
-        Ok(Acquired { source, pages: vec![page] })
+        Ok(Acquired::new(source, vec![page]))
     }
 }
 

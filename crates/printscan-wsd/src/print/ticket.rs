@@ -15,6 +15,7 @@ const MAX_NAME: usize = 255;
 
 /// Duplex setting (`Sides`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Sides {
     OneSided,
     TwoSidedLongEdge,
@@ -43,6 +44,7 @@ impl Sides {
 
 /// Page orientation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Orientation {
     Portrait,
     Landscape,
@@ -74,6 +76,7 @@ impl Orientation {
 
 /// Print quality.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Quality {
     Draft,
     Normal,
@@ -106,6 +109,7 @@ impl Quality {
 /// Document compression. Only `None` is produced by this client; the others exist so a printer's
 /// list can be read and matched.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Compression {
     None,
     Gzip,
@@ -141,6 +145,7 @@ pub fn valid_format(s: &str) -> bool {
 /// chokes on a full ticket: it is never the default, and settings the ticket would have carried
 /// are dropped (the job flow reports them as warnings).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum TicketShape {
     /// `JobDescription` (name and originating user), `JobProcessing` (copies) and `DocumentProcessing`
     /// for whatever is set. The normal shape.
@@ -192,6 +197,7 @@ impl TicketShape {
 
 /// Job-level and document-level settings of one print job.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct PrintTicket {
     pub job_name: String,
     pub user_name: String,
@@ -298,6 +304,7 @@ impl PrintTicket {
 
 /// `DocumentDescription`: which document this is and what it is made of.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DocumentDescription {
     /// 1-based, increasing within the job.
     pub id: u32,
@@ -309,6 +316,11 @@ pub struct DocumentDescription {
 }
 
 impl DocumentDescription {
+    /// Document `id` (1-based) in `format`, uncompressed, without a name, the format not insisted on.
+    pub fn new(id: u32, format: impl Into<String>) -> Self {
+        Self { id, compression: Compression::None, format: format.into(), name: None, must_honor_format: false }
+    }
+
     pub fn to_xml(&self) -> Result<String> {
         if self.id == 0 || self.id > i32::MAX as u32 {
             return Err(WsdError::Invalid(format!("document id {}", self.id)));

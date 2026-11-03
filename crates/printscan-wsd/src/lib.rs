@@ -17,6 +17,51 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+/// `with_*` setters for a `non_exhaustive` struct: each sets one field and returns the value, so a
+/// caller outside the crate can build one from its `Default`. A `some` setter takes the bare value
+/// of an `Option` field.
+// Unused when the features that need it are off.
+#[allow(unused_macros)]
+macro_rules! setters {
+    ($ty:ty { $($kind:ident $method:ident => $field:ident: $t:ty),* $(,)? }) => {
+        impl $ty {
+            $(setters!(@one $kind $method $field $t);)*
+        }
+    };
+    (@one set $method:ident $field:ident $t:ty) => {
+        #[doc = concat!("Sets [`Self::", stringify!($field), "`].")]
+        #[must_use]
+        pub fn $method(mut self, value: $t) -> Self {
+            self.$field = value;
+            self
+        }
+    };
+    (@one some $method:ident $field:ident $t:ty) => {
+        #[doc = concat!("Sets [`Self::", stringify!($field), "`] to `Some(value)`.")]
+        #[must_use]
+        pub fn $method(mut self, value: $t) -> Self {
+            self.$field = Some(value);
+            self
+        }
+    };
+    (@one into $method:ident $field:ident $t:ty) => {
+        #[doc = concat!("Sets [`Self::", stringify!($field), "`].")]
+        #[must_use]
+        pub fn $method(mut self, value: impl Into<$t>) -> Self {
+            self.$field = value.into();
+            self
+        }
+    };
+    (@one some_into $method:ident $field:ident $t:ty) => {
+        #[doc = concat!("Sets [`Self::", stringify!($field), "`] to `Some(value)`.")]
+        #[must_use]
+        pub fn $method(mut self, value: impl Into<$t>) -> Self {
+            self.$field = Some(value.into());
+            self
+        }
+    };
+}
+
 pub mod addressing;
 pub mod cancel;
 pub mod clock;

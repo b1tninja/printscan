@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     registry.register(Box::new(backend))?;
     let id = namespaced_id("wsd", &native);
 
-    let job = Job { printer: Some(id), title: "printscan wsd_print".into(), ..Job::default() };
+    let job = Job::default().with_printer(id).with_title("printscan wsd_print");
     let request = SubmitRequest::new(Document::new(format, &document), job).with_consent(UserConfirmed::attest(Some(true))?);
     let submitted = registry.submit_job(request)?;
     println!("submitted  {}", submitted.message);

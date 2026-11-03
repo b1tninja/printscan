@@ -15,6 +15,7 @@ const MAX_LIST: usize = 512;
 /// A media size the printer lists (`media-size-supported`), in hundredths of a millimetre; a range
 /// is `(low, high)` and a fixed size has both equal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct MediaSize {
     pub width: (i32, i32),
     pub height: (i32, i32),
@@ -45,6 +46,7 @@ pub fn media_name_size(name: &str) -> Option<(i32, i32)> {
 
 /// The attributes of a printer this backend reads.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct PrinterAttrs {
     pub name: Option<String>,
     pub info: Option<String>,
@@ -275,6 +277,7 @@ impl PrinterAttrs {
 
 /// The attributes of a job this backend reads.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct JobAttrs {
     pub id: Option<i32>,
     pub uri: Option<String>,

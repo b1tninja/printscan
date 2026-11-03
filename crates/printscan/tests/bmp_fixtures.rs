@@ -105,6 +105,7 @@ fn thresholding_matches_the_oracle_and_keeps_the_picture_upright() {
                     }
                 }
                 bw::Thresholded::Unreadable => panic!("{name}: unreadable"),
+                other => panic!("{name}: an outcome this test does not know: {other:?}"),
             }
         }
     }

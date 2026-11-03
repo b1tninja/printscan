@@ -44,6 +44,7 @@ const MAX_FIELD: usize = 256;
 
 /// `wsdp:ThisModel`: the product.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ThisModel {
     pub manufacturer: String,
     pub manufacturer_url: Option<String>,
@@ -57,6 +58,7 @@ pub struct ThisModel {
 
 /// `wsdp:ThisDevice`: this unit.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ThisDevice {
     pub friendly_name: String,
     pub firmware_version: Option<String>,
@@ -65,6 +67,7 @@ pub struct ThisDevice {
 
 /// A `Host` or `Hosted` entry: endpoint references, types and a service id.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ServiceEntry {
     pub endpoints: Vec<EndpointRef>,
     pub types: Vec<QName>,
@@ -98,6 +101,7 @@ impl ServiceEntry {
 
 /// The typed form of a `wsx:Metadata` document.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DeviceMetadata {
     pub model: Option<ThisModel>,
     pub device: Option<ThisDevice>,
@@ -111,7 +115,7 @@ pub struct DeviceMetadata {
 
 impl DeviceMetadata {
     /// Read a `wsx:Metadata` element.
-    pub fn from_element(metadata: Node<'_, '_>) -> Result<Self> {
+    pub(crate) fn from_element(metadata: Node<'_, '_>) -> Result<Self> {
         if !xml::is(metadata, ns::WSX, "Metadata") {
             return Err(Error::Protocol(format!("expected wsx:Metadata, found {}", metadata.tag_name().name())));
         }
@@ -281,12 +285,12 @@ pub fn get_metadata_call(dialect: Option<&str>) -> Call<'static> {
 
 /// WS-Transfer `Get` on the client's endpoint (a device or hosted-service address).
 pub fn transfer_get<T: Transport>(client: &SoapClient<T>) -> Result<DeviceMetadata> {
-    client.call(&transfer_get_call(), DeviceMetadata::from_element)
+    client.call_node(&transfer_get_call(), DeviceMetadata::from_element)
 }
 
 /// WS-MetadataExchange `GetMetadata` on the client's endpoint.
 pub fn get_metadata<T: Transport>(client: &SoapClient<T>, dialect: Option<&str>) -> Result<DeviceMetadata> {
-    client.call(&get_metadata_call(dialect), DeviceMetadata::from_element)
+    client.call_node(&get_metadata_call(dialect), DeviceMetadata::from_element)
 }
 
 #[cfg(test)]

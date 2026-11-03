@@ -12,6 +12,7 @@ use crate::{CancelToken, DeviceUrl, Error, NetworkLimits, Result, SoapClient, Tr
 
 /// A section of `GetScannerElements`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Section {
     Description,
     Configuration,
@@ -84,14 +85,14 @@ impl<T: Transport> Client<T> {
         let body =
             format!("<wscn:GetScannerElementsRequest><wscn:RequestedElements>{names}</wscn:RequestedElements></wscn:GetScannerElementsRequest>");
         let call = ServiceKind::Scan.descriptor().call("GetScannerElements", body);
-        self.soap.call(&call, |n| Ok(model::parse_scanner_elements(n)))
+        self.soap.call_node(&call, |n| Ok(model::parse_scanner_elements(n)))
     }
 
     /// CreateScanJob with `ticket`.
     pub fn create_scan_job(&self, ticket: &Ticket) -> Result<CreatedJob> {
         let body = format!("<wscn:CreateScanJobRequest>{}</wscn:CreateScanJobRequest>", ticket.xml());
         let call = ServiceKind::Scan.descriptor().call("CreateScanJob", body);
-        self.soap.call(&call, model::parse_created_job)
+        self.soap.call_node(&call, model::parse_created_job)
     }
 
     /// RetrieveImage: the next image of `job`, as the scanner sent it (an MTOM part or inline
@@ -106,7 +107,7 @@ impl<T: Transport> Client<T> {
         );
         let call = ServiceKind::Scan.descriptor().call("RetrieveImage", body);
         let soap = self.soap.at(self.soap.endpoint().clone()).with_limits(self.image_limits);
-        soap.call_with_parts(&call, |response, parts| {
+        soap.call_with_parts_node(&call, |response, parts| {
             let data = xml::child(response, WSCN, "ScanData").ok_or_else(|| Error::Protocol("RetrieveImageResponse without ScanData".into()))?;
             if let Some(include) = data.children().find(|c| c.is_element() && c.tag_name().name() == "Include") {
                 let href = include.attribute("href").unwrap_or_default();
@@ -128,7 +129,7 @@ impl<T: Transport> Client<T> {
             job.id
         );
         let call = ServiceKind::Scan.descriptor().call("GetJobElements", body);
-        self.soap.call(&call, |n| Ok(model::parse_job_status(n)))
+        self.soap.call_node(&call, |n| Ok(model::parse_job_status(n)))
     }
 
     /// CancelJob.

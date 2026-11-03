@@ -26,22 +26,12 @@ fn t(secs: u64) -> Timestamp {
 
 /// A feeder request for `pages` pages.
 fn feeder_request(pages: u32) -> ScanSettings {
-    ScanSettings { source: Source::Feeder, pages, ..ScanSettings::default() }
+    ScanSettings::default().with_source(Source::Feeder).with_pages(pages)
 }
 
 /// A 16 by 8 JPEG page whose data is `bytes` zero bytes.
 fn page(bytes: usize) -> Page {
-    Page {
-        bytes: vec![0; bytes],
-        format: "jpeg",
-        width: 16,
-        height: 8,
-        dpi: 200,
-        dpi_y: 200,
-        requested_dpi: 200,
-        thresholded: false,
-        length: Default::default(),
-    }
+    Page::new(vec![0; bytes], "jpeg", 16, 8, 200)
 }
 
 /// What a backend does for a script: push `push` pages through the token, then end with `end`.
@@ -56,9 +46,9 @@ fn scripted(plan: &AttemptPlan, push: usize, source: Source, end: Option<ScanErr
         pages.push(p);
     }
     match end {
-        None => Ok(Acquired { source, pages }),
+        None => Ok(Acquired::new(source, pages)),
         Some(error) if pages.is_empty() => Err(error),
-        Some(error) => Err(ScanError::Incomplete { message: error.to_string(), acquired: Acquired { source, pages }, cause: error.cause() }),
+        Some(error) => Err(ScanError::Incomplete { message: error.to_string(), acquired: Acquired::new(source, pages), cause: error.cause() }),
     }
 }
 
@@ -357,7 +347,7 @@ fn a_short_stack_under_a_counted_request_is_an_interruption_the_person_resolves(
 #[test]
 fn a_restart_after_an_auto_fallback_asks_for_the_original_request_again() {
     // Auto, 5 pages wanted, the feeder is empty: the job falls back to the glass for one page by itself.
-    let request = ScanSettings { source: Source::Auto, pages: 5, ..ScanSettings::default() };
+    let request = ScanSettings::default().with_source(Source::Auto).with_pages(5);
     let mut job = ScanJob::new(request, ScanJobConfig::default().with_capabilities(true, true, None));
     let plan = job.begin_attempt(t(1)).expect("attempt");
     job.finish_attempt(SaneLike::new(0).acquire(&plan.settings), t(2)).expect("finish");
@@ -381,7 +371,7 @@ fn a_restart_after_an_auto_fallback_asks_for_the_original_request_again() {
 #[test]
 fn an_empty_feeder_with_no_pages_under_auto_falls_back_to_the_glass_and_records_it() {
     let sane_empty = SaneLike::new(0);
-    let request = ScanSettings { source: Source::Auto, pages: 5, ..ScanSettings::default() };
+    let request = ScanSettings::default().with_source(Source::Auto).with_pages(5);
     let mut job = ScanJob::new(request, ScanJobConfig::default().with_capabilities(true, true, None));
 
     let plan = job.begin_attempt(t(1)).expect("attempt");
@@ -410,7 +400,7 @@ fn an_auto_that_the_backend_answered_from_the_glass_is_recorded_as_a_fallback() 
     use printscan::scan::job::AUTO_FELL_BACK_REASON;
     // The WIA-shaped fake answers Auto from the glass (the driver switched inside the call).
     let wia = WiaLike { bits: 0x3, fail_listing: false };
-    let request = ScanSettings { source: Source::Auto, pages: 5, ..ScanSettings::default() };
+    let request = ScanSettings::default().with_source(Source::Auto).with_pages(5);
     let mut job = ScanJob::new(request, ScanJobConfig::default().with_capabilities(true, true, None));
     let plan = job.begin_attempt(t(1)).expect("attempt");
     assert_eq!(plan.source_guess, Some(Source::Feeder));
@@ -427,7 +417,7 @@ fn an_auto_that_the_backend_answered_from_the_glass_is_recorded_as_a_fallback() 
     let plan = job.begin_attempt(t(1)).expect("attempt");
     job.finish_attempt(SaneLike::new(1).acquire(&plan.settings), t(2)).expect("finish");
     assert!(!job.snapshot().attempts[0].fell_back);
-    let glass = ScanSettings { source: Source::Glass, ..ScanSettings::default() };
+    let glass = ScanSettings::default().with_source(Source::Glass);
     let mut job = ScanJob::new(glass, ScanJobConfig::default());
     let plan = job.begin_attempt(t(1)).expect("attempt");
     job.finish_attempt(wia.acquire(&plan.settings), t(2)).expect("finish");
@@ -450,7 +440,7 @@ fn an_auto_that_the_backend_answered_from_the_glass_completes_with_the_one_page_
     // Five pages wanted, the backend resolves Auto to the glass itself and returns one page: that is the whole scan,
     // exactly as when the job's own fallback sends the retry to the glass.
     let wia = WiaLike { bits: 0x3, fail_listing: false };
-    let request = ScanSettings { source: Source::Auto, pages: 5, ..ScanSettings::default() };
+    let request = ScanSettings::default().with_source(Source::Auto).with_pages(5);
     let mut job = ScanJob::new(request, ScanJobConfig::default().with_capabilities(true, true, None));
     let plan = job.begin_attempt(t(1)).expect("attempt");
     job.finish_attempt(wia.acquire(&plan.settings), t(2)).expect("finish");
@@ -462,7 +452,7 @@ fn an_auto_that_the_backend_answered_from_the_glass_completes_with_the_one_page_
     assert_ne!(snap.state.exit_class(), ExitClass::NeedsAttention);
 
     // An explicit glass request for several pages keeps its expectation: one page is a shortfall there.
-    let glass = ScanSettings { source: Source::Glass, pages: 5, ..ScanSettings::default() };
+    let glass = ScanSettings::default().with_source(Source::Glass).with_pages(5);
     let mut job = ScanJob::new(glass, ScanJobConfig::default());
     let plan = job.begin_attempt(t(1)).expect("attempt");
     job.finish_attempt(wia.acquire(&plan.settings), t(2)).expect("finish");
@@ -475,7 +465,7 @@ fn an_auto_that_the_backend_answered_from_the_glass_completes_with_the_one_page_
 fn an_append_answered_from_the_glass_after_a_feeder_stop_is_not_a_complete_scan() {
     // Auto wants 20 pages, the feeder stops after 12. The person chooses Append without reloading it, the backend
     // answers Auto from the glass and gives one page: 13 of 20 is a shortfall, never a quiet Completed.
-    let request = ScanSettings { source: Source::Auto, pages: 20, ..ScanSettings::default() };
+    let request = ScanSettings::default().with_source(Source::Auto).with_pages(20);
     let mut job = ScanJob::new(request, ScanJobConfig::default().with_capabilities(true, true, None));
     let plan = job.begin_attempt(t(1)).expect("first attempt");
     job.finish_attempt(SaneLike::new(12).acquire(&plan.settings), t(40)).expect("finish");
@@ -529,7 +519,7 @@ fn a_journal_from_a_newer_format_seeds_an_unknown_outcome() {
 fn a_glass_guess_alone_does_not_shrink_the_expected_count() {
     // The feeder is known empty, so Auto is guessed to use the glass; the attempt then fails before the backend says
     // which source it used. The guess is not an answer: the request for 20 pages stands for the retry.
-    let request = ScanSettings { source: Source::Auto, pages: 20, ..ScanSettings::default() };
+    let request = ScanSettings::default().with_source(Source::Auto).with_pages(20);
     let mut job = ScanJob::new(request, ScanJobConfig::default().with_capabilities(true, true, None));
     job.observe_status(EsclLike::new(AdfState::Empty, 0).status(ESCL_ID));
     let plan = job.begin_attempt(t(1)).expect("attempt");
@@ -543,11 +533,10 @@ fn a_glass_answer_that_kept_no_page_does_not_shrink_the_expected_count() {
     use printscan::scan::Acquired;
     // The backend names the glass but the attempt ends with nothing kept: there is no one-page scan to complete, so
     // the request for 20 pages stands for the retry.
-    let request = ScanSettings { source: Source::Auto, pages: 20, ..ScanSettings::default() };
+    let request = ScanSettings::default().with_source(Source::Auto).with_pages(20);
     let mut job = ScanJob::new(request, ScanJobConfig::default().with_capabilities(true, true, None));
     let plan = job.begin_attempt(t(1)).expect("attempt");
-    let error =
-        ScanError::Incomplete { message: "the glass stopped".into(), acquired: Acquired { source: Source::Glass, pages: Vec::new() }, cause: None };
+    let error = ScanError::Incomplete { message: "the glass stopped".into(), acquired: Acquired::new(Source::Glass, Vec::new()), cause: None };
     job.finish_attempt(Err(error), t(2)).expect("finish");
     let _ = plan;
     assert_eq!(job.snapshot().expected_pages, Some(20), "no page was kept from the glass");
@@ -557,7 +546,7 @@ fn a_glass_answer_that_kept_no_page_does_not_shrink_the_expected_count() {
 fn a_journal_with_no_pages_keeps_its_attempt_count_error_and_warnings() {
     use printscan::scan::job::ScanJobJournal;
     // The first attempt found an empty feeder and no glass: nothing kept, interrupted, one attempt made.
-    let request = ScanSettings { source: Source::Auto, pages: 5, ..ScanSettings::default() };
+    let request = ScanSettings::default().with_source(Source::Auto).with_pages(5);
     let mut job = ScanJob::new(request.clone(), ScanJobConfig::default().with_capabilities(true, false, None));
     let plan = job.begin_attempt(t(1)).expect("attempt");
     job.finish_attempt(SaneLike::new(0).acquire(&plan.settings), t(2)).expect("finish");
@@ -580,7 +569,7 @@ fn a_journal_with_no_pages_keeps_its_attempt_count_error_and_warnings() {
 #[test]
 fn a_journal_that_never_attempted_anything_resumes_as_a_fresh_job() {
     use printscan::scan::job::ScanJobJournal;
-    let request = ScanSettings { pages: 5, ..ScanSettings::default() };
+    let request = ScanSettings::default().with_pages(5);
     let journal: ScanJobJournal = ScanJob::new(request.clone(), ScanJobConfig::default()).snapshot().into_journal();
     assert_eq!((journal.state, journal.attempts_total), (ScanJobState::Preparing, 0));
     let resumed = ScanJob::continuing_from(request, ScanJobConfig::default(), journal);
@@ -590,7 +579,7 @@ fn a_journal_that_never_attempted_anything_resumes_as_a_fresh_job() {
 
 #[test]
 fn auto_does_not_fall_back_without_a_glass_or_after_pages_or_for_a_jam() {
-    let auto = || ScanSettings { source: Source::Auto, pages: 5, ..ScanSettings::default() };
+    let auto = || ScanSettings::default().with_source(Source::Auto).with_pages(5);
 
     let mut job = ScanJob::new(auto(), ScanJobConfig::default().with_capabilities(true, false, None));
     let plan = job.begin_attempt(t(1)).expect("attempt");
@@ -611,7 +600,7 @@ fn auto_does_not_fall_back_without_a_glass_or_after_pages_or_for_a_jam() {
 
 #[test]
 fn a_known_empty_feeder_makes_auto_start_on_the_glass_guess() {
-    let request = ScanSettings { source: Source::Auto, ..ScanSettings::default() };
+    let request = ScanSettings::default().with_source(Source::Auto);
     let mut job = ScanJob::new(request, ScanJobConfig::default());
     job.observe_status(EsclLike::new(AdfState::Empty, 0).status(ESCL_ID));
     let plan = job.begin_attempt(t(1)).expect("attempt");
@@ -627,7 +616,12 @@ fn a_known_empty_feeder_makes_auto_start_on_the_glass_guess() {
 #[test]
 fn an_error_after_pages_with_no_job_end_needs_attention_and_is_never_retried_by_itself() {
     // A policy that would retry anything transient, many times.
-    let eager = RetryPolicy { max_attempts: 50, base: Duration::ZERO, ..RetryPolicy::default() };
+    let eager = {
+        let mut built = RetryPolicy::default();
+        built.max_attempts = 50;
+        built.base = Duration::ZERO;
+        built
+    };
     let mut job = ScanJob::new(feeder_request(10), ScanJobConfig::default().with_retry(eager));
     let plan = job.begin_attempt(t(1)).expect("attempt");
     // The link dropped after three pages were delivered and before the job ended.
@@ -669,7 +663,13 @@ fn a_failure_in_the_middle_of_a_page_is_unknown_even_with_nothing_kept() {
 
 #[test]
 fn a_start_over_by_a_person_gets_a_fresh_retry_budget_even_with_nothing_kept() {
-    let policy = RetryPolicy { max_attempts: 3, base: Duration::from_millis(100), jitter_percent: 0, ..RetryPolicy::default() };
+    let policy = {
+        let mut built = RetryPolicy::default();
+        built.max_attempts = 3;
+        built.base = Duration::from_millis(100);
+        built.jitter_percent = 0;
+        built
+    };
     let first_retry = RetryAdvice::RetryAfter(Duration::from_millis(100));
     // The budget is used up and the job is Failed; the person starts it again by hand.
     let mut job = ScanJob::new(feeder_request(1), ScanJobConfig::default().with_retry(policy));
@@ -698,7 +698,13 @@ fn a_start_over_by_a_person_gets_a_fresh_retry_budget_even_with_nothing_kept() {
 
 #[test]
 fn an_unreachable_scanner_before_any_page_is_safe_to_retry_within_the_budget() {
-    let policy = RetryPolicy { max_attempts: 3, base: Duration::from_millis(100), jitter_percent: 0, ..RetryPolicy::default() };
+    let policy = {
+        let mut built = RetryPolicy::default();
+        built.max_attempts = 3;
+        built.base = Duration::from_millis(100);
+        built.jitter_percent = 0;
+        built
+    };
     let mut job = ScanJob::new(feeder_request(1), ScanJobConfig::default().with_retry(policy));
     for (n, expected) in [(1, RetryAdvice::RetryAfter(Duration::from_millis(100))), (2, RetryAdvice::RetryAfter(Duration::from_millis(200)))] {
         let plan = job.begin_attempt(t(n)).expect("attempt");
@@ -831,22 +837,12 @@ fn taking_pages_waits_for_the_attempt_and_append_still_counts_them() {
 
 #[test]
 fn snapshot_and_view_carry_no_page_bytes_and_the_fields_are_right() {
-    let request = ScanSettings { device: format!("wia:{WIA_ID}"), source: Source::Feeder, pages: 5, ..ScanSettings::default() };
+    let request = ScanSettings::default().with_device(format!("wia:{WIA_ID}")).with_source(Source::Feeder).with_pages(5);
     let config = ScanJobConfig::default().with_title("Invoices").with_created(t(100)).with_tag_support(TagSupport::None);
     let mut job = ScanJob::new(request, config);
     let plan = job.begin_attempt(t(101)).expect("attempt");
     // Three pages of a megabyte each.
-    let big = || Page {
-        bytes: vec![7; 1 << 20],
-        format: "png",
-        width: 2000,
-        height: 3000,
-        dpi: 300,
-        dpi_y: 300,
-        requested_dpi: 300,
-        thresholded: false,
-        length: Default::default(),
-    };
+    let big = || Page::new(vec![7; 1 << 20], "png", 2000, 3000, 300);
     for _ in 0..3 {
         plan.progress.push_page(big());
     }
@@ -897,7 +893,11 @@ fn views_of_an_unbound_job_use_the_scan_prefix_and_an_unbounded_total() {
 fn the_timeline_is_bounded_but_the_count_is_not() {
     let mut job = ScanJob::new(
         feeder_request(1),
-        ScanJobConfig::default().with_timeline_len(3).with_retry(RetryPolicy { max_attempts: 100, ..RetryPolicy::default() }),
+        ScanJobConfig::default().with_timeline_len(3).with_retry({
+            let mut built = RetryPolicy::default();
+            built.max_attempts = 100;
+            built
+        }),
     );
     for n in 1..=7u64 {
         job.begin_attempt(t(n)).expect("attempt");
@@ -926,7 +926,7 @@ fn a_shortfall_message_still_reads_as_a_feeder_end() {
     let plan = job.begin_attempt(t(1)).expect("attempt");
     let error = ScanError::Incomplete {
         message: feeder_shortfall_message(4, 2),
-        acquired: Acquired { source: Source::Feeder, pages: vec![page(4), page(4)] },
+        acquired: Acquired::new(Source::Feeder, vec![page(4), page(4)]),
         cause: None::<Cause>,
     };
     drop(plan);
@@ -947,7 +947,7 @@ fn a_job_runs_through_a_registry_and_reports_no_tag_support() {
     assert_eq!(registry.tag_support("nope:1").err().and_then(|e| e.native()), Some(printscan::scan::UNKNOWN_BACKEND));
     let scanner = registry.scanner_details(&device).expect("details");
     let config = ScanJobConfig::default().with_scanner(&scanner);
-    let request = ScanSettings { device, source: Source::Glass, ..ScanSettings::default() };
+    let request = ScanSettings::default().with_device(device).with_source(Source::Glass);
     let mut job = ScanJob::new(request, config);
     let plan = job.begin_attempt(t(1)).expect("attempt");
     job.finish_attempt(registry.acquire(&plan.settings), t(2)).expect("finish");
@@ -964,7 +964,7 @@ fn a_scanner_whose_units_were_not_read_may_still_have_a_feeder_or_glass() {
     assert_eq!((unread.feeder_presence(), unread.flatbed_presence()), (Presence::Unknown, Presence::Unknown));
     let config = ScanJobConfig::default().with_scanner(&unread);
     assert!(config.has_feeder && config.has_glass, "unknown is not absent");
-    let mut job = ScanJob::new(ScanSettings { device: "x:1".into(), source: Source::Auto, ..ScanSettings::default() }, config);
+    let mut job = ScanJob::new(ScanSettings::default().with_device("x:1").with_source(Source::Auto), config);
     let plan = job.begin_attempt(t(1)).expect("Auto finds a source to try");
     assert_eq!(plan.source_guess, Some(Source::Feeder), "the feeder is tried first; an empty one is learned from the failure");
 
@@ -974,7 +974,7 @@ fn a_scanner_whose_units_were_not_read_may_still_have_a_feeder_or_glass() {
     assert_eq!((read.feeder_presence(), read.flatbed_presence()), (Presence::Absent, Presence::Present));
     let config = ScanJobConfig::default().with_scanner(&read);
     assert!(!config.has_feeder && config.has_glass);
-    let mut job = ScanJob::new(ScanSettings { device: "x:2".into(), source: Source::Auto, ..ScanSettings::default() }, config);
+    let mut job = ScanJob::new(ScanSettings::default().with_device("x:2").with_source(Source::Auto), config);
     assert_eq!(job.begin_attempt(t(1)).expect("attempt").source_guess, Some(Source::Glass));
 
     // The bits were read and the scanner has neither: nothing to scan from, reported at the start.
@@ -983,7 +983,7 @@ fn a_scanner_whose_units_were_not_read_may_still_have_a_feeder_or_glass() {
     neither.reported.units = true;
     let config = ScanJobConfig::default().with_scanner(&neither);
     assert!(!config.has_feeder && !config.has_glass);
-    let mut job = ScanJob::new(ScanSettings { device: "x:3".into(), source: Source::Auto, ..ScanSettings::default() }, config);
+    let mut job = ScanJob::new(ScanSettings::default().with_device("x:3").with_source(Source::Auto), config);
     assert!(job.begin_attempt(t(1)).is_err() || job.state().is_terminal());
 }
 
@@ -1086,7 +1086,7 @@ fn capabilities_are_absent_only_when_the_handling_bits_were_read() {
     assert_eq!(view.paper.expect("paper").glass_available, Tri::Off);
     // A status that says the flatbed is ready is believed over a details record that listed none: the indicator and the
     // paper path agree.
-    let status = HandlingStatus { flat_ready: true, ..HandlingStatus::default() };
+    let status = HandlingStatus::default().with_flat_ready(true);
     let view = device_view(&scanner, Some(status), None);
     assert_eq!(state_of(&view, K::FlatbedReady), Some(Tri::On));
     assert_eq!(view.paper.expect("paper").glass_available, Tri::On);
@@ -1104,7 +1104,7 @@ fn ready_bits_are_read_by_connection_a_clear_one_is_off_only_on_usb() {
         scanner
     };
     // Something is reported (a cover is open), every ready bit is clear.
-    let status = HandlingStatus { cover_open: true, ..HandlingStatus::default() };
+    let status = HandlingStatus::default().with_cover_open(true);
     for connection in [printscan::scan::Connection::Wsd, printscan::scan::Connection::Other, printscan::scan::Connection::Unknown] {
         let view = device_view(&build(connection), Some(status), None);
         assert_eq!(state_of(&view, K::FlatbedReady), Some(Tri::NotReported), "{connection:?}");
@@ -1116,12 +1116,12 @@ fn ready_bits_are_read_by_connection_a_clear_one_is_off_only_on_usb() {
     }
     // A set ready bit is a positive reading, and an explicit feeder reading is kept.
     let wsd = build(printscan::scan::Connection::Wsd);
-    let loaded = HandlingStatus { feeder_ready: Some(true), flat_ready: true, ..HandlingStatus::default() };
+    let loaded = HandlingStatus::default().with_feeder_ready(Some(true)).with_flat_ready(true);
     let view = device_view(&wsd, Some(loaded), None);
     assert_eq!(state_of(&view, K::FeederPaper), Some(Tri::On));
     assert_eq!(state_of(&view, K::FlatbedReady), Some(Tri::On));
     assert_eq!(state_of(&view, K::DuplexReady), Some(Tri::NotReported));
-    let empty = HandlingStatus { feeder_ready: Some(false), flat_ready: true, ..HandlingStatus::default() };
+    let empty = HandlingStatus::default().with_feeder_ready(Some(false)).with_flat_ready(true);
     assert_eq!(state_of(&device_view(&wsd, Some(empty), None), K::FeederPaper), Some(Tri::Off));
     // USB: a clear ready bit is off.
     let view = device_view(&build(printscan::scan::Connection::Usb), Some(status), None);
@@ -1137,7 +1137,7 @@ fn feeder_ready_is_taken_as_the_option_the_backend_gave() {
     let scanner = sane.scanner_details(common::sane_like::SANE_ID).expect("details");
     assert_eq!(scanner.feeder_ready, None);
     // Something is reported (a cover is open) but the tray is not.
-    let status = HandlingStatus { cover_open: true, ..HandlingStatus::default() };
+    let status = HandlingStatus::default().with_cover_open(true);
     let view = device_view(&scanner, Some(status), None);
     assert_eq!(state_of(&view, K::FeederPaper), Some(Tri::NotReported));
     assert_eq!(state_of(&view, K::CoverOpen), Some(Tri::On));
@@ -1189,7 +1189,12 @@ fn a_device_side_cancel_reported_by_the_backend_ends_cancelled_by_device() {
 
 #[test]
 fn offline_before_any_page_is_an_unknown_outcome_and_never_retried() {
-    let eager = RetryPolicy { max_attempts: 50, base: Duration::ZERO, ..RetryPolicy::default() };
+    let eager = {
+        let mut built = RetryPolicy::default();
+        built.max_attempts = 50;
+        built.base = Duration::ZERO;
+        built
+    };
     let mut job = ScanJob::new(feeder_request(3), ScanJobConfig::default().with_retry(eager));
     job.begin_attempt(t(1)).expect("attempt");
     job.finish_attempt(Err(native(InterruptKind::Offline)), t(2)).expect("finish");
@@ -1203,19 +1208,21 @@ fn offline_before_any_page_is_an_unknown_outcome_and_never_retried() {
 #[test]
 fn continuing_after_12_of_40_feeder_pages_asks_for_the_28_left() {
     let kept: Vec<PageInfo> = (1..=12)
-        .map(|n| PageInfo {
-            number: 99 + n,
-            attempt: 1,
-            source: Some(Source::Feeder),
-            format: "jpeg",
-            width: 16,
-            height: 8,
-            dpi: 200,
-            bytes: 1000,
-            length: Default::default(),
+        .map(|n| {
+            let mut built = PageInfo::default();
+            built.number = 99 + n;
+            built.attempt = 1;
+            built.source = Some(Source::Feeder);
+            built.format = "jpeg";
+            built.width = 16;
+            built.height = 8;
+            built.dpi = 200;
+            built.bytes = 1000;
+            built.length = Default::default();
+            built
         })
         .collect();
-    let request = ScanSettings { device: "sane:x".into(), source: Source::Feeder, pages: 40, ..ScanSettings::default() };
+    let request = ScanSettings::default().with_device("sane:x").with_source(Source::Feeder).with_pages(40);
     let mut job = ScanJob::continuing(request, ScanJobConfig::default().with_title("Archive"), kept);
     assert_eq!(job.state(), ScanJobState::Interrupted);
     let view = job.view();
@@ -1240,7 +1247,19 @@ fn continuing_after_12_of_40_feeder_pages_asks_for_the_28_left() {
     assert_eq!(fresh.state(), ScanJobState::Preparing);
     // Everything already kept: nothing to append, finish instead.
     let all: Vec<PageInfo> = (1..=3)
-        .map(|n| PageInfo { number: n, attempt: 1, source: None, format: "png", width: 1, height: 1, dpi: 100, bytes: 1, length: Default::default() })
+        .map(|n| {
+            let mut built = PageInfo::default();
+            built.number = n;
+            built.attempt = 1;
+            built.source = None;
+            built.format = "png";
+            built.width = 1;
+            built.height = 1;
+            built.dpi = 100;
+            built.bytes = 1;
+            built.length = Default::default();
+            built
+        })
         .collect();
     let mut full = ScanJob::continuing(feeder_request(3), ScanJobConfig::default(), all);
     assert_eq!(full.begin_attempt_with(t(1), Continuation::Append).map(|_| ()), Err(ScanJobError::NothingLeft { kept: 3 }));

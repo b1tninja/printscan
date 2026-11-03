@@ -17,7 +17,7 @@ pub const MAX_DEPTH: usize = 40;
 /// The longest text kept from one element.
 pub const MAX_TEXT: usize = 4096;
 
-/// Decode and check size and depth; the result is what [`parse`] takes.
+/// Decode and check size and depth: the text the crate parses, and safe to hand to any XML parser.
 pub fn checked_text(bytes: &[u8]) -> Result<&str> {
     if bytes.len() > MAX_XML_BYTES {
         return Err(Error::TooLarge("the XML message", MAX_XML_BYTES));
@@ -29,7 +29,7 @@ pub fn checked_text(bytes: &[u8]) -> Result<&str> {
 }
 
 /// Parse with a node cap and no DTD.
-pub fn parse(text: &str) -> Result<Document<'_>> {
+pub(crate) fn parse(text: &str) -> Result<Document<'_>> {
     let options = ParsingOptions { allow_dtd: false, nodes_limit: MAX_NODES, ..ParsingOptions::default() };
     Document::parse_with_options(text, options).map_err(|e| Error::Xml(e.to_string()))
 }
@@ -103,17 +103,17 @@ fn tag_end(bytes: &[u8], from: usize) -> usize {
 }
 
 /// Is `node` the element `{ns}local`?
-pub fn is(node: Node<'_, '_>, ns: &str, local: &str) -> bool {
+pub(crate) fn is(node: Node<'_, '_>, ns: &str, local: &str) -> bool {
     node.is_element() && node.tag_name().name() == local && node.tag_name().namespace() == Some(ns)
 }
 
 /// The first child element `{ns}local`.
-pub fn child<'a, 'i>(node: Node<'a, 'i>, ns: &str, local: &str) -> Option<Node<'a, 'i>> {
+pub(crate) fn child<'a, 'i>(node: Node<'a, 'i>, ns: &str, local: &str) -> Option<Node<'a, 'i>> {
     node.children().find(|c| is(*c, ns, local))
 }
 
 /// Every child element `{ns}local`.
-pub fn children<'a, 'i, 'n>(node: Node<'a, 'i>, ns: &'n str, local: &'n str) -> impl Iterator<Item = Node<'a, 'i>> + 'n
+pub(crate) fn children<'a, 'i, 'n>(node: Node<'a, 'i>, ns: &'n str, local: &'n str) -> impl Iterator<Item = Node<'a, 'i>> + 'n
 where
     'a: 'n,
     'i: 'n,
@@ -122,12 +122,12 @@ where
 }
 
 /// The first element below `node` (any depth) named `{ns}local`.
-pub fn find<'a, 'i>(node: Node<'a, 'i>, ns: &str, local: &str) -> Option<Node<'a, 'i>> {
+pub(crate) fn find<'a, 'i>(node: Node<'a, 'i>, ns: &str, local: &str) -> Option<Node<'a, 'i>> {
     node.descendants().find(|c| is(*c, ns, local))
 }
 
 /// The direct text of an element, trimmed and cut at [`MAX_TEXT`] characters.
-pub fn text(node: Node<'_, '_>) -> String {
+pub(crate) fn text(node: Node<'_, '_>) -> String {
     let mut out = String::new();
     for c in node.children().filter(|c| c.is_text()) {
         out.push_str(c.text().unwrap_or(""));
@@ -139,7 +139,7 @@ pub fn text(node: Node<'_, '_>) -> String {
 }
 
 /// Resolve a QName value (`prefix:local`, or `local` in the default namespace) in the scope of `node`.
-pub fn resolve_qname(node: Node<'_, '_>, qname: &str) -> Option<(Option<String>, String)> {
+pub(crate) fn resolve_qname(node: Node<'_, '_>, qname: &str) -> Option<(Option<String>, String)> {
     let qname = qname.trim();
     if qname.is_empty() || qname.len() > 512 {
         return None;
@@ -154,8 +154,80 @@ pub fn resolve_qname(node: Node<'_, '_>, qname: &str) -> Option<(Option<String>,
     }
 }
 
+/// An element of a device's reply, as a service-specific reader sees it ([`crate::SoapClient::call`],
+/// [`crate::eventing::Notification::with_body`]). It wraps the parser's node, so the XML parser this
+/// crate uses is not part of its API. Text is trimmed and capped as everywhere in the crate.
+#[derive(Clone, Copy, Debug)]
+pub struct Element<'a, 'input>(Node<'a, 'input>);
+
+impl<'a, 'input> Element<'a, 'input> {
+    pub(crate) fn new(node: Node<'a, 'input>) -> Self {
+        Self(node)
+    }
+
+    /// The local name.
+    pub fn name(self) -> &'a str {
+        self.0.tag_name().name()
+    }
+
+    /// The namespace URI, if the element is in one.
+    pub fn namespace(self) -> Option<&'a str> {
+        self.0.tag_name().namespace()
+    }
+
+    /// Whether this is the element `{ns}local`.
+    pub fn is(self, ns: &str, local: &str) -> bool {
+        is(self.0, ns, local)
+    }
+
+    /// The element's direct text, trimmed and capped.
+    pub fn text(self) -> String {
+        text(self.0)
+    }
+
+    /// The value of the attribute `name` (in no namespace).
+    pub fn attribute(self, name: &str) -> Option<&'a str> {
+        self.0.attribute(name)
+    }
+
+    /// The first child element `{ns}local`.
+    pub fn child(self, ns: &str, local: &str) -> Option<Self> {
+        child(self.0, ns, local).map(Self)
+    }
+
+    /// The trimmed text of the first child element `{ns}local`, if it has any.
+    pub fn child_text(self, ns: &str, local: &str) -> Option<String> {
+        child_text(self.0, ns, local)
+    }
+
+    /// Every child element `{ns}local`.
+    pub fn children<'n>(self, ns: &'n str, local: &'n str) -> impl Iterator<Item = Self> + 'n
+    where
+        'a: 'n,
+        'input: 'n,
+    {
+        children(self.0, ns, local).map(Self)
+    }
+
+    /// Every child element, whatever its name.
+    pub fn elements(self) -> impl Iterator<Item = Self> {
+        self.0.children().filter(Node::is_element).map(Self)
+    }
+
+    /// The first element below this one (any depth) named `{ns}local`.
+    pub fn find(self, ns: &str, local: &str) -> Option<Self> {
+        find(self.0, ns, local).map(Self)
+    }
+
+    /// The whitespace-separated QNames in the element's text, resolved in its scope (at most `max`).
+    pub fn qname_list(self, max: usize) -> Vec<QName> {
+        qname_list(self.0, max)
+    }
+}
+
 /// A qualified name: namespace URI plus local name. Prefixes never matter.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
 pub struct QName {
     pub ns: String,
     pub local: String,
@@ -191,7 +263,7 @@ pub fn is_ncname(s: &str) -> bool {
 
 /// The whitespace-separated QName list in `node`'s text (`Types`), resolved in its scope. Tokens
 /// whose prefix is not declared, or that name no namespace, are skipped; at most `max` tokens are read.
-pub fn qname_list(node: Node<'_, '_>, max: usize) -> Vec<QName> {
+pub(crate) fn qname_list(node: Node<'_, '_>, max: usize) -> Vec<QName> {
     text(node)
         .split_whitespace()
         .take(max)
@@ -203,7 +275,7 @@ pub fn qname_list(node: Node<'_, '_>, max: usize) -> Vec<QName> {
 }
 
 /// The trimmed, capped text of the first child element `{ns}local`, if it has any.
-pub fn child_text(node: Node<'_, '_>, ns: &str, local: &str) -> Option<String> {
+pub(crate) fn child_text(node: Node<'_, '_>, ns: &str, local: &str) -> Option<String> {
     child(node, ns, local).map(text).filter(|t| !t.is_empty())
 }
 

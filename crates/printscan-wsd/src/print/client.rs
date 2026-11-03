@@ -48,7 +48,7 @@ impl<T: Transport> Client<T> {
     }
 
     fn call<R>(&self, action: Action, body: &str, read: impl FnOnce(roxmltree::Node<'_, '_>) -> Result<R>) -> Result<R> {
-        self.soap.call(&call_for(action, body), read)
+        self.soap.call_node(&call_for(action, body), read)
     }
 
     /// GetPrinterElements for the given sections.

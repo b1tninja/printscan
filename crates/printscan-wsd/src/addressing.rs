@@ -19,6 +19,7 @@ const MAX_PARAM_TEXT: usize = 512;
 
 /// One reference parameter: a namespaced element with text content.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ReferenceParameter {
     pub ns: String,
     pub local: String,
@@ -39,6 +40,7 @@ impl ReferenceParameter {
 
 /// An endpoint reference: an address and its reference parameters.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EndpointRef {
     pub address: String,
     pub reference_parameters: Vec<ReferenceParameter>,
@@ -58,7 +60,7 @@ impl EndpointRef {
 
     /// Read an EPR element (`wsa:EndpointReference`, `wse:NotifyTo`, ... any element with a
     /// `wsa:Address` child). Exactly one non-empty address is required; two are ambiguous and refused.
-    pub fn parse(node: Node<'_, '_>) -> Result<Self> {
+    pub(crate) fn parse(node: Node<'_, '_>) -> Result<Self> {
         let mut addresses = node.children().filter(|c| xml::is(*c, ns::WSA, "Address") || xml::is(*c, ns::WSA_FINAL, "Address"));
         let first = addresses.next().ok_or_else(|| Error::Protocol("an endpoint reference has no Address".into()))?;
         if addresses.next().is_some() {

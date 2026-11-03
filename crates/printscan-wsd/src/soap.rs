@@ -25,7 +25,7 @@ use roxmltree::Node;
 
 use crate::cancel::CancelToken;
 use crate::clock::Instant;
-use crate::envelope::{self, Expect, build_envelope_with_headers, new_uuid, read_ack_hinted, read_reply_hinted};
+use crate::envelope::{self, Expect, build_envelope_with_headers, new_uuid, read_ack_hinted, read_reply_node};
 use crate::error::{Error, Result};
 use crate::mtom;
 use crate::ns;
@@ -42,7 +42,7 @@ const UPLOAD_FLOOR_BYTES_PER_SEC: u64 = 64 * 1024;
 fn with_upload_allowance(timeout: Duration, body_len: usize) -> Duration {
     timeout.saturating_add(Duration::from_secs(body_len as u64 / UPLOAD_FLOOR_BYTES_PER_SEC))
 }
-use crate::xml;
+use crate::xml::{self, Element};
 
 /// Produces message ids (without the `urn:uuid:` prefix).
 pub type IdSource = Arc<dyn Fn() -> String + Send + Sync>;
@@ -50,6 +50,7 @@ pub type IdSource = Arc<dyn Fn() -> String + Send + Sync>;
 /// A binary payload sent as an MTOM part; the call's body must hold the `xop:Include` for `cid`
 /// ([`mtom::xop_include_ref`]).
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct Attachment<'a> {
     pub cid: &'a str,
     pub data: &'a [u8],
@@ -246,12 +247,17 @@ impl<T: Transport> SoapClient<T> {
 
     /// Send `call` and hand the reply's first Body element to `read`. `E` is the caller's error
     /// type; protocol errors convert into it.
-    pub fn call<R, E: From<Error>>(&self, call: &Call<'_>, read: impl FnOnce(Node<'_, '_>) -> Result<R, E>) -> Result<R, E> {
+    pub fn call<R, E: From<Error>>(&self, call: &Call<'_>, read: impl FnOnce(Element<'_, '_>) -> Result<R, E>) -> Result<R, E> {
+        self.call_node(call, |n| read(Element::new(n)))
+    }
+
+    /// [`Self::call`] with the parser's node, for this crate's own readers.
+    pub(crate) fn call_node<R, E: From<Error>>(&self, call: &Call<'_>, read: impl FnOnce(Node<'_, '_>) -> Result<R, E>) -> Result<R, E> {
         let ReplyShape::Element(body_ns, body_local) = &call.reply else {
             return Err(Error::Invalid("call: this call expects no reply payload; use call_ack".into()).into());
         };
         let (id, bytes, retry_after) = self.exchange(call)?;
-        read_reply_hinted(&bytes, Expect { action: &call.response_action, message_id: &id, body_ns, body_local }, retry_after, read)
+        read_reply_node(&bytes, Expect { action: &call.response_action, message_id: &id, body_ns, body_local }, retry_after, read)
     }
 
     /// Send `call` and check only that the answer is not a fault and belongs to the request.
@@ -266,6 +272,15 @@ impl<T: Transport> SoapClient<T> {
     pub fn call_with_parts<R, E: From<Error>>(
         &self,
         call: &Call<'_>,
+        read: impl FnOnce(Element<'_, '_>, &[mtom::Part<'_>]) -> Result<R, E>,
+    ) -> Result<R, E> {
+        self.call_with_parts_node(call, |n, parts| read(Element::new(n), parts))
+    }
+
+    /// [`Self::call_with_parts`] with the parser's node, for this crate's own readers.
+    pub(crate) fn call_with_parts_node<R, E: From<Error>>(
+        &self,
+        call: &Call<'_>,
         read: impl FnOnce(Node<'_, '_>, &[mtom::Part<'_>]) -> Result<R, E>,
     ) -> Result<R, E> {
         let ReplyShape::Element(body_ns, body_local) = &call.reply else {
@@ -278,11 +293,11 @@ impl<T: Transport> SoapClient<T> {
             let parts = mtom::parts(&ct, &response.body)?;
             let root = mtom::root_of(&ct, &parts)?;
             let expect = Expect { action: &call.response_action, message_id: &id, body_ns, body_local };
-            return read_reply_hinted(root.data, expect, response.retry_after, |n| read(n, &parts));
+            return read_reply_node(root.data, expect, response.retry_after, |n| read(n, &parts));
         }
         let retry_after = response.retry_after;
         let xml = self.reply_xml(response)?;
-        read_reply_hinted(&xml, Expect { action: &call.response_action, message_id: &id, body_ns, body_local }, retry_after, |n| read(n, &[]))
+        read_reply_node(&xml, Expect { action: &call.response_action, message_id: &id, body_ns, body_local }, retry_after, |n| read(n, &[]))
     }
 
     /// Post the call and return its message id with the reply's XML bytes and `Retry-After`.
@@ -427,8 +442,8 @@ mod tests {
     }
 
     /// The text of the reply's `Value` child; empty when there is none.
-    fn value(n: Node<'_, '_>) -> Result<String> {
-        Ok(xml::child_text(n, SVC, "Value").unwrap_or_default())
+    fn value(n: Element<'_, '_>) -> Result<String> {
+        Ok(n.child_text(SVC, "Value").unwrap_or_default())
     }
 
     #[test]
@@ -673,8 +688,8 @@ mod tests {
             let pkg = mtom::package(&inner, "img@x", b"PIXELS");
             Ok(Response { retry_after: None, status: 200, content_type: Some(pkg.content_type), body: pkg.body })
         });
-        let read = |n: Node<'_, '_>, parts: &[mtom::Part<'_>]| -> Result<Vec<u8>> {
-            let inc = xml::find(n, ns::XOP, "Include").ok_or_else(|| Error::Protocol("no include".into()))?;
+        let read = |n: Element<'_, '_>, parts: &[mtom::Part<'_>]| -> Result<Vec<u8>> {
+            let inc = n.find(ns::XOP, "Include").ok_or_else(|| Error::Protocol("no include".into()))?;
             mtom::resolve_href(parts, inc.attribute("href").unwrap_or(""))
                 .map(<[u8]>::to_vec)
                 .ok_or_else(|| Error::Protocol("dangling include".into()))

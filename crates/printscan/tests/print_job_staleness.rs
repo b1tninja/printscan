@@ -62,13 +62,10 @@ fn ipp(script: Vec<Result<JobStatus, PrintError>>) -> FakeBackend {
 }
 
 fn print_job(rig: &Rig) -> PrintJob {
-    PrintJob::new(
-        Job { printer: Some("net:p1".into()), title: "Quarterly report".into(), ..Job::default() },
-        BytesSource::new(DocumentFormat::Pdf, PDF.to_vec()),
-    )
-    .with_clock(Arc::new(rig.clock.clone()))
-    .with_wall_clock(|| at(1_000))
-    .with_consent(UserConfirmed::interactive())
+    PrintJob::new(Job::default().with_printer("net:p1").with_title("Quarterly report"), BytesSource::new(DocumentFormat::Pdf, PDF.to_vec()))
+        .with_clock(Arc::new(rig.clock.clone()))
+        .with_wall_clock(|| at(1_000))
+        .with_consent(UserConfirmed::interactive())
 }
 
 /// Advance the job, moving the clock by what it asks for, until `span` has passed.
@@ -243,11 +240,9 @@ fn a_person_can_dismiss_a_row_and_optionally_cancel_at_the_device() {
 fn a_backend_without_status_is_not_polled_and_never_times_out() {
     let fake = FakeBackend::cups_like("lp").with_printer("q", true);
     let rig = rig(&fake);
-    let mut job = PrintJob::new(
-        Job { printer: Some("lp:q".into()), title: "Fire and forget".into(), ..Job::default() },
-        BytesSource::new(DocumentFormat::Pdf, PDF.to_vec()),
-    )
-    .with_clock(Arc::new(rig.clock.clone()));
+    let mut job =
+        PrintJob::new(Job::default().with_printer("lp:q").with_title("Fire and forget"), BytesSource::new(DocumentFormat::Pdf, PDF.to_vec()))
+            .with_clock(Arc::new(rig.clock.clone()));
     accepted(&mut job, &rig);
     assert_eq!(job.state(), LifecycleState::Accepted);
     assert!(job.is_settled());
@@ -265,10 +260,11 @@ fn a_backend_without_status_is_not_polled_and_never_times_out() {
 fn with_staleness_disabled_a_failed_watch_leaves_the_print_accepted_as_before() {
     let fake = ipp(vec![Err(unreachable_printer())]);
     let rig = rig(&fake);
-    let mut job = print_job(&rig).with_config(PrintJobConfig {
-        staleness: Staleness::disabled(),
-        watch: WaitPolicy::every(secs(1)).with_max_wait(secs(60)),
-        ..PrintJobConfig::default()
+    let mut job = print_job(&rig).with_config({
+        let mut built = PrintJobConfig::default();
+        built.staleness = Staleness::disabled();
+        built.watch = WaitPolicy::every(secs(1)).with_max_wait(secs(60));
+        built
     });
     run_for(&mut job, &rig, mins(30));
     assert_eq!(job.state(), LifecycleState::Accepted);

@@ -14,6 +14,7 @@ use crate::xml;
 
 /// A resolved sub-code QName: the namespace (if the prefix was declared) and the local name.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct SubCode {
     pub ns: Option<String>,
     pub local: String,
@@ -41,6 +42,7 @@ impl SubCode {
 
 /// Who the fault blames.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Role {
     /// `soap:Sender`: the request was wrong.
     Sender,
@@ -118,7 +120,7 @@ impl fmt::Display for Fault {
 }
 
 /// Read a `soap:Fault` element. Missing parts degrade to empty values; this never fails.
-pub fn parse_fault(fault: Node<'_, '_>) -> Fault {
+pub(crate) fn parse_fault(fault: Node<'_, '_>) -> Fault {
     let code_el = xml::child(fault, ns::SOAP, "Code");
     let role = code_el.and_then(|c| xml::child(c, ns::SOAP, "Value")).and_then(|v| xml::resolve_qname(v, &xml::text(v))).map_or(
         Role::Other,

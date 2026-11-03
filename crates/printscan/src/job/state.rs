@@ -87,6 +87,7 @@ impl JobState {
 /// otherwise.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub struct Progress {
     pub done: u32,
     pub total: Option<u32>,
@@ -133,6 +134,7 @@ impl Progress {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(default))]
+#[non_exhaustive]
 pub struct ExpectedTotals {
     /// Pages of the document.
     pub pages: Option<u32>,

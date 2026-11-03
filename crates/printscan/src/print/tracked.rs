@@ -331,6 +331,7 @@ pub struct Attempt {
 
 /// The document as it was sent: never the bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DocumentInfo {
     pub format: DocumentFormat,
     pub len: usize,
@@ -341,6 +342,7 @@ pub struct DocumentInfo {
 
 /// The request as it was sent.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct RequestRecord {
     /// The job settings; `printer` is the resolved namespaced id once known. The title is the one
     /// the app gave, without the tag suffix.
@@ -372,6 +374,7 @@ pub enum TrailEvent {
 
 /// One line of the status trail.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct TrailEntry {
     /// On the job's clock.
     pub at: Duration,
@@ -380,6 +383,7 @@ pub struct TrailEntry {
 
 /// Progress of the current remote job. Totals are optional.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct JobProgress {
     /// The submission's own phases (a network backend's protocol steps), not sheets.
     pub submit: Option<Progress>,
@@ -444,6 +448,7 @@ impl StaleReason {
 /// before this existed: following stops at [`WaitPolicy::max_wait`] and the print stays
 /// `Accepted`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Staleness {
     /// `false`: nothing here applies (see [`Self::disabled`]).
     pub enabled: bool,
@@ -509,6 +514,7 @@ impl Staleness {
 
 /// How a [`PrintJob`] behaves; the default is what an app wants unless it has a reason.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PrintJobConfig {
     /// Automatic retry of safe, transient failures. `None` disables it. The default allows 3
     /// attempts in a row.
@@ -544,6 +550,7 @@ impl Default for PrintJobConfig {
 
 /// What one [`PrintJob::advance`] did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Advance {
     /// The lifecycle state or the printer's reading changed.
     pub changed: bool,
