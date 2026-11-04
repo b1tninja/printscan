@@ -253,8 +253,9 @@ impl Reconciled {
 /// ([`TagSupport::Carried`]), the jobs carrying our tag are the answer (and are marked `ours`), and
 /// none of them is `NotFound`. With a tag the device may rewrite ([`TagSupport::Partial`]), a job
 /// that still carries it is the answer too, and a same-title job does not make it ambiguous; only
-/// when none does, jobs match by title, user and time, and are never `ours`. Without a tag, the
-/// title, user and time are all there is.
+/// when none does, jobs match by title, user and time, and are never `ours`. A job that carries a
+/// tag of its own is then another print's, whatever its title: only jobs whose tag was lost (or
+/// that never had one) can be ours. Without a tag, the title, user and time are all there is.
 pub fn reconcile_jobs(jobs: Vec<RemoteJob>, fingerprint: &Fingerprint, support: TagSupport) -> Reconciled {
     let tag = fingerprint.tag.filter(|_| support.carries());
     let tagged = |jobs: &[RemoteJob]| -> Vec<RemoteJob> {
@@ -272,7 +273,7 @@ pub fn reconcile_jobs(jobs: Vec<RemoteJob>, fingerprint: &Fingerprint, support: 
         let filter = fingerprint.filter(false);
         found = jobs
             .into_iter()
-            .filter(|job| filter.matches(job))
+            .filter(|job| filter.matches(job) && (tag.is_none() || job.tag.is_none()))
             .map(|mut job| {
                 job.ours = false;
                 job
@@ -401,6 +402,17 @@ mod tests {
         let two = reconcile_jobs(vec![job(1, "Report"), job(2, "Report")], &fp, none);
         assert!(matches!(&two, Reconciled::Ambiguous(jobs) if jobs.len() == 2 && jobs.iter().all(|j| !j.ours)));
         assert!(matches!(reconcile_jobs(vec![job(1, "Report")], &fp, none), Reconciled::Found(j) if !j.ours));
+    }
+
+    #[test]
+    fn a_job_carrying_another_tag_is_not_ours_by_its_title() {
+        let fp = fingerprint("Report").with_tag(tag("abc123de"));
+        let partial = TagSupport::Partial(TagPlacement::JobNameSuffix);
+        assert_eq!(reconcile_jobs(vec![job(1, "Report [ref ffffffff]")], &fp, partial), Reconciled::NotFound);
+        let lost = reconcile_jobs(vec![job(1, "Report [ref ffffffff]"), job(2, "Report")], &fp, partial);
+        assert!(matches!(&lost, Reconciled::Found(j) if !j.ours && j.id.native() == "p#2"), "{lost:?}");
+        // Without a tag to look for, a tagged job is matched by its title as before.
+        assert!(matches!(reconcile_jobs(vec![job(1, "Report [ref ffffffff]")], &fingerprint("Report"), partial), Reconciled::Found(_)));
     }
 
     #[test]
