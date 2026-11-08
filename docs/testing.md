@@ -15,6 +15,7 @@ No test talks to anything but loopback. Real devices are for people, by hand (se
 | WS-Print (`printscan-wsd`, feature `print`) | [fakeprint](https://github.com/b1tninja/fakeprint) | `crates/printscan-wsd/tests/wsd_live.rs` | `PRINTSCAN_FAKEPRINT_URL` |
 | WSD metadata and WS-Eventing (`printscan-wsd`) | fakeprint | `crates/printscan-wsd/tests/live_loopback.rs` | `PRINTSCAN_FAKEPRINT_URL` |
 | IPP (`printscan-ipp`) | fakeprint | `crates/printscan-ipp/tests/live_fakeprint.rs` | `PRINTSCAN_FAKEPRINT_URL` |
+| eSCL (`printscan-escl`, experimental) | none yet: a scripted loopback scanner in `cargo test` | `crates/printscan-escl/tests/escl_backend.rs` | |
 | WIA (`printscan-windows`) | none automated | | |
 | Windows spooler (`printscan-windows`) | a temporary print-to-file printer (in `cargo test`, Windows only) | `crates/printscan-windows/tests/spooler.rs` | |
 

@@ -9,6 +9,7 @@ backend registry, and the network and platform backends behind it.
 | [`printscan-ipp`](crates/printscan-ipp) | An IPP (RFC 8010/8011) print backend: plain HTTP to numeric local addresses, no discovery, consent for every job. |
 | [`printscan-windows`](crates/printscan-windows) | WIA 2.0 scanners as a `printscan::scan` backend, and the Windows print spooler as a backend, on [`winprint`](https://github.com/ArcticLampyrid/winprint.rs). Colour on that path: [docs/colour.md](crates/printscan-windows/docs/colour.md). |
 | [`printscan-wsd`](crates/printscan-wsd) | Web Services for Devices, with feature `print` (default) a WS-Print backend for `printscan::print`, and with feature `scan` (default) a WS-Scan backend for `printscan::scan`: bounded XML, SOAP 1.2 and WS-Addressing, MTOM, faults, a local-network-only URL policy, WS-Transfer, WS-Eventing and WS-Discovery messages, and a blocking HTTP transport. |
+| [`printscan-escl`](crates/printscan-escl) | **Experimental, not yet published.** An eSCL (AirScan) backend for `printscan::scan`: HTTP, and HTTPS with feature `tls`, to numeric local addresses, scanners added by address (no mDNS discovery). |
 
 [tools/print-diag](tools/print-diag) prints diagnostic pages (colour, registration, tone ramps, geometry) and measures them from a scan.
 
