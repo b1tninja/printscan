@@ -413,15 +413,13 @@ pub fn place_fronts_for_duplex(dir: &Path, sheets: u32) -> Result<(), String> {
 
 /// Write `record` to `dir/scan-job.json` atomically: staged beside the file, flushed, then renamed over it, so a reader
 /// never sees half a journal and a failed write leaves the previous one.
+///
+/// The write is also durable: the flush reaches stable storage (on Apple targets too), the folder is synced after the
+/// rename on Unix, and on Windows a rename refused for a moment because another process (an indexer, an antivirus
+/// scanner) has the journal open is retried for well under a second before the error is returned.
 pub fn write_record(dir: &Path, record: &JobRecord) -> Result<(), String> {
     let text = serde_json::to_string_pretty(&record.to_json()).map_err(|error| error.to_string())?;
-    let path = dir.join(JOB_FILE);
-    let failed = |error: std::io::Error| format!("{}: {error}", path.display());
-    let mut staged = tempfile::NamedTempFile::new_in(dir).map_err(failed)?;
-    std::io::Write::write_all(&mut staged, text.as_bytes()).map_err(failed)?;
-    staged.as_file().sync_all().map_err(failed)?;
-    staged.persist(&path).map_err(|error| failed(error.error))?;
-    Ok(())
+    super::replace::replace_in(dir, JOB_FILE, text.as_bytes()).map_err(|error| format!("{}: {error}", dir.join(JOB_FILE).display()))
 }
 
 /// Read `dir/scan-job.json`.
@@ -951,6 +949,16 @@ mod tests {
         assert_eq!((again.device.as_str(), again.dpi, again.pages), ("wia:x", 300, 3));
         // A second write replaces the first.
         write_record(&dir, &written).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_journal_on_disk_is_the_pretty_printed_record_and_nothing_else() {
+        let dir = temp("format");
+        let written = record(ScanSettings { device: "wia:x".into(), pages: 2, ..ScanSettings::default() });
+        write_record(&dir, &written).unwrap();
+        let on_disk = std::fs::read(dir.join(JOB_FILE)).unwrap();
+        assert_eq!(on_disk, serde_json::to_string_pretty(&written.to_json()).unwrap().into_bytes());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

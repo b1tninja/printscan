@@ -6,6 +6,15 @@ All notable changes to `printscan` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `devices::scan_jobs::write_record` writes the journal durably as well as atomically. On Windows a rename refused
+  with a sharing violation or access denied, because another process such as an indexer or an antivirus scanner
+  has `scan-job.json` open for a moment, is retried with a short, bounded backoff (about 0.6 s in all) instead of
+  failing the write. On Unix the folder is synced after the rename, so the rename itself survives a crash. On
+  macOS the flush relies on std's `File::sync_all`, which uses `F_FULLFSYNC` there. The file's contents and format
+  are unchanged.
+
 ## [0.1.0]
 
 The first release.
