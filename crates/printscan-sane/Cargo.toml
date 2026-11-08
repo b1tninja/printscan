@@ -1,0 +1,39 @@
+[package]
+name = "printscan-sane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "SANE scanners for printscan: a pure-Rust client of the SANE network protocol (saned), bounded and local-network only, and a printscan::scan backend on it"
+keywords = ["sane", "saned", "scan", "scanner", "printscan"]
+categories = ["hardware-support", "network-programming"]
+# Beta: not released yet. release-plz.toml leaves it out too.
+publish = false
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# The job vocabulary (retry safety) always; the scan contract with feature `scan`.
+printscan = { path = "../printscan", version = "0.1.0", default-features = false }
+thiserror = { workspace = true }
+# Frames arrive as raw samples; the backend hands pages over as PNG.
+png = { version = "0.18", default-features = false, optional = true }
+
+[dev-dependencies]
+printscan = { path = "../printscan", features = ["scan"] }
+png = { version = "0.18", default-features = false }
+
+[features]
+default = ["scan"]
+# A `printscan::scan` backend (`printscan_sane::scan::SaneBackend`). It lists only the daemons and
+# devices the app adds and discovers nothing.
+scan = ["printscan/scan", "dep:png"]
+
+[[example]]
+name = "sane_scan"
+required-features = ["scan"]
