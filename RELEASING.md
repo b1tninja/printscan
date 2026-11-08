@@ -43,6 +43,14 @@ hand, once.
 7. On GitHub, in the repository's Settings, Actions, General: allow GitHub Actions to create and
    approve pull requests, so release-plz can open its pull request.
 
+## Crates not released yet
+
+`printscan-sane` is experimental: its `Cargo.toml` says `publish = false` and `release-plz.toml` has
+`release = false` for it, so no release pull request bumps, tags or publishes it, and
+`cargo publish --workspace` skips it. To release it, remove both, and publish its first version by
+hand as in the one-time setup (trusted publishing cannot create a crate), then add its trusted
+publisher.
+
 ## Yanking
 
 `cargo yank --version <version> <crate>` with a token of the `yank` scope. A yanked version stays
