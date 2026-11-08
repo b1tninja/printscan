@@ -208,6 +208,10 @@ pub fn plan(job_name: String, document_mime: &str, job: &Job, per_job: &JobOptio
             attributes.push(Attribute::keyword("print-rendering-intent", keyword));
         }
     }
+    if per_job.application_managed_colour {
+        // IPP has no attribute saying the colours are already the printer's; strict mode has nothing to refuse.
+        warnings.push("IPP cannot tell the printer the colours are application-managed; it may colour-manage the document".to_owned());
+    }
     if let Some((x, y)) = per_job.resolution.map(|r| (r.x_dpi, r.y_dpi)) {
         let ok = x > 0 && y > 0 && x <= 100_000 && y <= 100_000;
         if !ok {
@@ -289,6 +293,15 @@ mod tests {
 
     fn names(plan: &Plan) -> Vec<&str> {
         plan.request.attributes.iter().map(|a| a.name.as_str()).collect()
+    }
+
+    #[test]
+    fn application_managed_colour_is_named_as_not_sent() {
+        let options = JobOptions::new().with_application_managed_colour(true);
+        let planned = run(&Job::default(), &options, true, &printer()).unwrap();
+        assert!(names(&planned).is_empty());
+        assert!(planned.warnings.iter().any(|w| w.contains("application-managed")), "{:?}", planned.warnings);
+        assert!(run(&Job::default(), &JobOptions::new(), false, &printer()).unwrap().warnings.is_empty());
     }
 
     #[test]

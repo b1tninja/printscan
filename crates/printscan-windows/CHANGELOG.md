@@ -6,6 +6,19 @@ All notable changes to `printscan-windows` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `spooler`: application-managed colour. A job with `JobOptions::application_managed_colour` sets
+  `PageColorManagement` = `None` and `PageDestinationColorProfile` = `Application` where the driver
+  lists them. A driver that lists colour management without `None`, or does not keep it in the
+  validated ticket, refuses the job before anything is sent; one with no colour-management setting
+  prints it with a warning.
+- `spooler`: `JobOptions::rendering_intent` becomes `PageICMRenderingIntent` where the driver lists
+  the intent (relative with black point compensation as relative colorimetric, with a warning); an
+  intent it lacks or replaces is a warning. It was a warning for every intent.
+- `spooler`: `printer_details` lists `JobHint::RenderingIntent` and
+  `JobHint::ApplicationManagedColour` for a driver that offers them.
+
 ## [0.1.0]
 
 The first release.

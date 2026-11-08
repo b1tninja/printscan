@@ -181,6 +181,13 @@ pub struct JobOptions {
     pub colour: ColourMode,
     /// How colours outside the printer's gamut are mapped.
     pub rendering_intent: Option<RenderingIntent>,
+    /// The document's colours are already in the printer's colour space: the application converted
+    /// them with the printer's ICC profile (with [`Self::rendering_intent`], when it names one), and
+    /// the driver and the system are not to colour-manage them again. `false`, the default, leaves
+    /// colour management to the printer. A backend that can tell the printer applies it and lists
+    /// [`JobHint::ApplicationManagedColour`](crate::print::JobHint) in its details; one that cannot
+    /// names it in [`Submitted::warnings`](crate::print::Submitted) or refuses the job.
+    pub application_managed_colour: bool,
     /// How many pages the document has, when the app knows. Not a hint to the printer: it is the
     /// total that progress and status use when the backend reports none (see
     /// [`ExpectedTotals`](crate::print::ExpectedTotals)). A total the backend reports wins.
@@ -222,6 +229,14 @@ impl JobOptions {
         self
     }
 
+    /// Say whether the document's colours are already in the printer's colour space
+    /// ([`Self::application_managed_colour`]).
+    #[must_use]
+    pub fn with_application_managed_colour(mut self, managed: bool) -> Self {
+        self.application_managed_colour = managed;
+        self
+    }
+
     /// Ask for this resolution.
     #[must_use]
     pub fn with_resolution(mut self, resolution: Resolution) -> Self {
@@ -255,6 +270,15 @@ mod tests {
         assert_eq!(options, JobOptions::default());
         assert_eq!((options.media, options.orientation, options.quality, options.resolution, options.expected_pages), (None, None, None, None, None));
         assert_eq!(options.colour, ColourMode::Auto);
+        assert!(!options.application_managed_colour);
+    }
+
+    #[test]
+    fn application_managed_colour_is_asked_for_explicitly() {
+        let options = JobOptions::new().with_application_managed_colour(true).with_rendering_intent(RenderingIntent::Relative);
+        assert!(options.application_managed_colour);
+        assert_eq!(options.rendering_intent, Some(RenderingIntent::Relative));
+        assert!(!options.with_application_managed_colour(false).application_managed_colour);
     }
 
     #[test]

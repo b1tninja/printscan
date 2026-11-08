@@ -36,6 +36,47 @@ manages colour treat them as sRGB and convert them a second time.
 GDI with ICM off was the older way to get the same effect. It is not offered here: the XPS path is at least
 as exact on the driver measured, and GDI is the legacy pipeline.
 
+### Asking for it
+
+A job asks with `JobOptions::application_managed_colour`, and names the intent it converted with in
+`JobOptions::rendering_intent`. `WindowsSpooler` reads the driver's PrintCapabilities and:
+
+| The driver lists | The ticket gets | Reported |
+|---|---|---|
+| `PageColorManagement` with `None` | `PageColorManagement` = `None` | nothing; the job is refused if the validated ticket does not keep it |
+| `PageColorManagement` without `None` | nothing | the job is refused before anything is sent: the driver would convert the colours a second time |
+| no `PageColorManagement` | nothing | a warning: the driver has no setting to tell, and whether it converts is up to it |
+| `PageDestinationColorProfile` with `Application` | `PageDestinationColorProfile` = `Application` | a warning if the validated ticket does not keep it |
+| `PageDestinationColorProfile` without `Application` | nothing | a warning |
+| `PageICMRenderingIntent` with the intent | that intent | a warning if the validated ticket has another |
+| `PageICMRenderingIntent` without it, or not at all | nothing | a warning |
+
+Application-managed colour is checked like the job's other explicit settings (two sides, grey or colour): a
+setting the driver would not keep refuses the job, because the print would differ from what was asked. A driver
+with no colour-management setting at all prints with a warning instead, as grey prints on a printer with no
+colour setting: the in-box class drivers list none and convert nothing (the measurement above), and refusing
+there would refuse the drivers where the values arrive exactly. The destination profile and the intent are
+hints, as the resolution is.
+
+The rendering intents map to the Print Schema's (the DEVMODE's `dmICMIntent`): perceptual to `Photographs`,
+saturation to `BusinessGraphics`, relative to `RelativeColorimetric`, absolute to `AbsoluteColorimetric`.
+`RelativeBpc` becomes `RelativeColorimetric` with a warning: the Print Schema has no black point compensation.
+`Auto` sets nothing. A driver that lists `PageColorManagement` = `None` and an intent shows
+`JobHint::ApplicationManagedColour` and `JobHint::RenderingIntent` in its `PrinterDetails::honoured`.
+
+The pages are drawn into an sRGB Direct2D print context, so the XPS content is tagged sRGB; with
+`PageColorManagement` = `None` a driver is not to convert it. Send the colours as untagged DeviceRGB in the PDF:
+how `Windows.Data.Pdf` renders ICC-based colour spaces was not measured. No destination profile URI is
+written into the ticket.
+
+Measured 2026-11-07 on Windows 11 (`tests/colour_paths.rs`, run by hand): through `WindowsSpooler`, a PDF of
+the ten patches as DeviceRGB fills printed to the PWG raster printer with application-managed colour and the
+relative intent came back exact (largest channel error 0), with the two warnings (no colour-management setting,
+no rendering intent). On a temporary printer on the in-box PostScript driver `MS Publisher Color Printer`, whose
+ticket provider lists `PageColorManagement` and `PageICMRenderingIntent` from the DEVMODE, the validated ticket
+kept `None` and `RelativeColorimetric`. Its output was not decoded, and no driver that colour-manages by
+itself (a vendor photo driver) has been tried: whether one honours `None` is up to the driver and is untested.
+
 ## Device colour (CMYK)
 
 Device colour reaches a printer only by going around the Windows driver: an IPP printer that takes

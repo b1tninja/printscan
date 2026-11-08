@@ -7,8 +7,8 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use printscan::print::backends::{Backend, Document, ErrorKind, SubmitRequest};
-use printscan::print::{CancelToken, Duplex, Job, JobOptions, PrintError, Scaling, Submitted};
+use printscan::print::backends::{Backend, Document, ErrorKind, JobHint, SubmitRequest};
+use printscan::print::{CancelToken, Duplex, Job, JobOptions, PrintError, RenderingIntent, Scaling, Submitted};
 use printscan_windows::spooler::WindowsSpooler;
 use winprint::test_utils::file_device::{FilePrinterDevice, Pdf};
 
@@ -217,4 +217,24 @@ fn an_unknown_printer_is_not_found() {
     let job = Job::default().with_printer("printscan: no such printer");
     let error = WindowsSpooler::default().submit(SubmitRequest::new(Document::pdf(&pdf), job)).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::NotFound, "{error}");
+}
+
+#[test]
+fn application_managed_colour_on_a_driver_without_colour_management_prints_and_says_so() {
+    let device = FilePrinterDevice::<Pdf>::new().expect("add a temporary print-to-file printer");
+    let honoured = WindowsSpooler::default().printer_details(device.device().name()).unwrap().honoured.unwrap();
+    // Microsoft Print To PDF lists no colour management and no rendering intent.
+    assert!(!honoured.contains(&JobHint::ApplicationManagedColour) && !honoured.contains(&JobHint::RenderingIntent), "{honoured:?}");
+    drop(device);
+
+    let options = JobOptions::new().with_application_managed_colour(true).with_rendering_intent(RenderingIntent::RelativeBpc);
+    let (submitted, written) = printed(&one_page_pdf(), |job| job, options);
+    let warnings = submitted.unwrap().warnings;
+    assert!(warnings.iter().any(|w| w.contains("no colour-management setting")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.contains("black point compensation")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.contains("no relative colorimetric rendering intent")), "{warnings:?}");
+    assert_eq!(page_sizes(&written).len(), 1);
+    // The printer's choice of intent asks for nothing and warns about nothing.
+    let (submitted, _) = printed(&one_page_pdf(), |job| job, JobOptions::new().with_rendering_intent(RenderingIntent::Auto));
+    assert!(submitted.unwrap().warnings.is_empty());
 }

@@ -609,6 +609,9 @@ pub enum JobHint {
     Resolution,
     /// [`JobOptions::rendering_intent`].
     RenderingIntent,
+    /// [`JobOptions::application_managed_colour`]: the backend can tell the printer not to
+    /// colour-manage the document.
+    ApplicationManagedColour,
 }
 
 /// The state a printer reports before a job.
