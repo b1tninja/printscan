@@ -41,6 +41,7 @@ jobs:
       - run: cargo clippy -p printscan --lib --no-default-features --features print --locked -- -D warnings
       - run: cargo clippy -p printscan-wsd --lib --no-default-features --locked -- -D warnings
       - run: cargo clippy -p printscan-windows --lib --no-default-features --locked -- -D warnings
+      - run: cargo clippy -p printscan-macos --lib --no-default-features --locked -- -D warnings
       - name: Start the print spooler (the Windows spooler tests add a temporary print-to-file printer)
         if: runner.os == 'Windows'
         shell: pwsh

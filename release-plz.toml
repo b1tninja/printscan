@@ -15,3 +15,9 @@ git_release_enable = true
 git_tag_enable = true
 pr_labels = ["release"]
 publish_timeout = "10m"
+
+# Experimental: `publish = false` in its Cargo.toml, and no version bump, changelog entry, tag or
+# release from release-plz until it has been run against real scanners.
+[[package]]
+name = "printscan-macos"
+release = false
