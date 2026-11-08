@@ -123,6 +123,11 @@ pub(crate) fn dropped(wanted: &Wanted, chosen: &Chosen) -> Vec<String> {
     if wanted.copies > 1 && chosen.copies != Some(wanted.copies) {
         out.push(format!("{} copies", wanted.copies));
     }
+    // One copy asked (also when the job draws its copies itself): a ticket without a count prints one, but one that
+    // came back with more would multiply every copy.
+    if wanted.copies <= 1 && chosen.copies.is_some_and(|copies| copies > 1) {
+        out.push("one copy".to_owned());
+    }
     out
 }
 
@@ -180,6 +185,10 @@ mod tests {
         assert_eq!(dropped(&replaced, &chosen), ["two-sided on the short edge", "colour", "portrait orientation", "2 copies"]);
         // Nothing asked, nothing checked; one copy needs no count.
         assert!(dropped(&Wanted { copies: 1, ..Wanted::default() }, &Chosen::default()).is_empty());
+        // One copy asked, as when the job draws its copies itself: a count of one stands, more is refused.
+        let one = Wanted { copies: 1, ..Wanted::default() };
+        assert!(dropped(&one, &Chosen { copies: Some(1), ..Chosen::default() }).is_empty());
+        assert_eq!(dropped(&one, &Chosen { copies: Some(3), ..Chosen::default() }), ["one copy"]);
         // A feature missing from the ticket was not kept, unless the printer does that anyway.
         let missing = |wanted: Wanted| dropped(&Wanted { copies: 1, ..wanted }, &Chosen::default());
         assert_eq!(missing(Wanted { duplex: Some(PredefinedDuplexType::TwoSidedLongEdge), ..Wanted::default() }), ["two-sided on the long edge"]);
