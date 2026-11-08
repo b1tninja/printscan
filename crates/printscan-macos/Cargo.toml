@@ -1,0 +1,85 @@
+[package]
+name = "printscan-macos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "macOS scanning for printscan: ImageCaptureCore scanners (flatbed and document feeder) as a printscan::scan backend, on the objc2 crates"
+keywords = ["macos", "scan", "scanner", "imagecapture", "printscan"]
+categories = ["hardware-support", "os::macos-apis"]
+# Experimental: not published to crates.io and left out of release-plz (release-plz.toml) until it
+# has been run against real scanners. No other printscan crate depends on it.
+publish = false
+
+# The backend is macOS-only; documenting for Linux would show only the rule tables.
+[package.metadata.docs.rs]
+all-features = true
+default-target = "aarch64-apple-darwin"
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+
+# The workspace forbids unsafe code. ImageCaptureCore is Objective-C, and the objc2 bindings mark
+# almost every method `unsafe fn`: this crate denies unsafe instead, and only `ica::ffi` and
+# `ica::delegate` allow it, every block with a `// SAFETY:` comment (docs/ica-unsafe-audit.md).
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+cognitive_complexity = "deny"
+too_many_arguments = "deny"
+wildcard_imports = "deny"
+dbg_macro = "warn"
+todo = "warn"
+undocumented_unsafe_blocks = "deny"
+
+[features]
+default = ["scan"]
+# ImageCaptureCore scanners as a `printscan::scan` backend (`printscan_macos::ica`). Its rule
+# tables, capability mapping and session state machines (no Objective-C) build on every platform.
+scan = [
+    "dep:printscan",
+    "printscan?/scan",
+    "dep:log",
+    "dep:tempfile",
+    "dep:objc2",
+    "dep:objc2-foundation",
+    "dep:objc2-image-capture-core",
+    "dep:dispatch2",
+]
+
+[dependencies]
+printscan = { path = "../printscan", version = "0.1.0", default-features = false, optional = true }
+log = { version = "0.4", optional = true }
+# The directory ImageCaptureCore writes each scanned page into, removed when the scan ends.
+tempfile = { version = "3", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSArray",
+    "NSDate",
+    "NSError",
+    "NSGeometry",
+    "NSIndexSet",
+    "NSObjCRuntime",
+    "NSRunLoop",
+    "NSString",
+    "NSURL",
+    "NSValue",
+], optional = true }
+objc2-image-capture-core = { version = "0.3", default-features = false, features = [
+    "std",
+    "ICDevice",
+    "ICDeviceBrowser",
+    "ICScannerDevice",
+    "ICScannerFunctionalUnits",
+    "ImageCaptureConstants",
+    "objc2-core-foundation",
+    "objc2-core-graphics",
+], optional = true }
+# Every ImageCaptureCore call is made on the main queue (docs/run-loop.md).
+dispatch2 = { version = "0.3", default-features = false, features = ["std"], optional = true }
+
+[dev-dependencies]
+printscan = { path = "../printscan", features = ["scan"] }
