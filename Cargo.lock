@@ -430,6 +430,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "printscan-cups"
+version = "0.1.0"
+dependencies = [
+ "printscan",
+ "printscan-ipp",
+ "printscan-wsd",
+]
+
+[[package]]
 name = "printscan-ipp"
 version = "0.1.0"
 dependencies = [
