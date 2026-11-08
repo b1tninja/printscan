@@ -84,6 +84,7 @@ jobs:
       - run: cargo check -p printscan --target wasm32-unknown-unknown --no-default-features --features serde,print --locked
       - run: cargo check -p printscan-wsd --target wasm32-unknown-unknown --locked
       - run: cargo check -p printscan-ipp --target wasm32-unknown-unknown --locked
+      - run: cargo check -p printscan-cups --target wasm32-unknown-unknown --locked
 
   # What crates.io would get: every crate packaged and built from its own tarball, against the
   # others' tarballs (not the workspace paths), and the portable crates' docs built for Linux as
@@ -100,7 +101,7 @@ jobs:
           targets: x86_64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
       - run: cargo package --workspace --locked
-      - run: cargo doc -p printscan -p printscan-wsd -p printscan-ipp --all-features --no-deps --locked --target x86_64-unknown-linux-gnu
+      - run: cargo doc -p printscan -p printscan-wsd -p printscan-ipp -p printscan-cups --all-features --no-deps --locked --target x86_64-unknown-linux-gnu
         env:
           RUSTDOCFLAGS: -D warnings
 

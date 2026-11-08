@@ -15,3 +15,10 @@ git_release_enable = true
 git_tag_enable = true
 pr_labels = ["release"]
 publish_timeout = "10m"
+
+# Experimental, not yet published: no version bump, changelog, tag, GitHub release or crates.io
+# publish until this section is removed (its Cargo.toml also says `publish = false`).
+[[package]]
+name = "printscan-cups"
+release = false
+publish = false
