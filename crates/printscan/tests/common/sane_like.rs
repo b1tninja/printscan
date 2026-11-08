@@ -10,7 +10,7 @@ use super::{jpeg_gray, scanner};
 
 pub const SANE_ID: &str = "pixma:libusb:001:004";
 
-pub const NO_DOCS: NativeCode = NativeCode::new("sane", 6, Some("SANE_STATUS_NO_DOCS"));
+pub const NO_DOCS: NativeCode = NativeCode::new("sane", 7, Some("SANE_STATUS_NO_DOCS"));
 pub const DEVICE_BUSY: NativeCode = NativeCode::new("sane", 3, Some("SANE_STATUS_DEVICE_BUSY"));
 
 pub struct SaneLike {
