@@ -1,0 +1,40 @@
+[package]
+name = "printscan-escl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+# Experimental: not published to crates.io yet (release-plz.toml leaves it out of releases too).
+publish = false
+description = "An eSCL (AirScan) scan backend for printscan: HTTP(S) to numeric local addresses, bounded XML, no discovery"
+keywords = ["escl", "airscan", "scan", "scanner", "printscan"]
+categories = ["hardware-support", "network-programming"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true
+
+# Not built for wasm32, where there is no native HTTP client.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+printscan = { path = "../printscan", version = "0.1.0", default-features = false, features = ["scan"] }
+# The address policy, the bounded XML checks and Retry-After parsing; nothing of WSD itself.
+printscan-wsd = { path = "../printscan-wsd", version = "0.1.0", default-features = false }
+roxmltree = { workspace = true }
+thiserror = { workspace = true }
+# The blocking HTTP client. Without feature `tls` it speaks plain http only.
+ureq = { workspace = true }
+
+[dev-dependencies]
+# Pages for the fake scanner in the tests.
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[features]
+default = []
+# https base URLs, on rustls with the ring provider and no built-in root store: a scanner on a
+# numeric local address has no publicly verifiable certificate, so the app supplies the
+# certificates it trusts or opts in to an unverified connection (`TlsMode`). Off by default because
+# ring builds C code.
+tls = ["ureq/rustls-no-provider", "ureq/_ring"]

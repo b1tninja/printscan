@@ -15,3 +15,9 @@ git_release_enable = true
 git_tag_enable = true
 pr_labels = ["release"]
 publish_timeout = "10m"
+
+# printscan-escl is experimental: no version bump, changelog, tag or crates.io release until it is
+# ready (its Cargo.toml also says `publish = false`).
+[[package]]
+name = "printscan-escl"
+release = false

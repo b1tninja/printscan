@@ -41,6 +41,7 @@ jobs:
       - run: cargo clippy -p printscan --lib --no-default-features --features print --locked -- -D warnings
       - run: cargo clippy -p printscan-wsd --lib --no-default-features --locked -- -D warnings
       - run: cargo clippy -p printscan-windows --lib --no-default-features --locked -- -D warnings
+      - run: cargo clippy -p printscan-escl --lib --features tls --locked -- -D warnings
       - name: Start the print spooler (the Windows spooler tests add a temporary print-to-file printer)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -84,6 +85,7 @@ jobs:
       - run: cargo check -p printscan --target wasm32-unknown-unknown --no-default-features --features serde,print --locked
       - run: cargo check -p printscan-wsd --target wasm32-unknown-unknown --locked
       - run: cargo check -p printscan-ipp --target wasm32-unknown-unknown --locked
+      - run: cargo check -p printscan-escl --target wasm32-unknown-unknown --locked
 
   # What crates.io would get: every crate packaged and built from its own tarball, against the
   # others' tarballs (not the workspace paths), and the portable crates' docs built for Linux as
@@ -101,6 +103,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo package --workspace --locked
       - run: cargo doc -p printscan -p printscan-wsd -p printscan-ipp --all-features --no-deps --locked --target x86_64-unknown-linux-gnu
+        env:
+          RUSTDOCFLAGS: -D warnings
+      # printscan-escl is not published (publish = false), but its package still builds from its tarball above. Its
+      # docs are built for Linux without feature `tls`, whose ring dependency needs a Linux C compiler.
+      - run: cargo doc -p printscan-escl --no-deps --locked --target x86_64-unknown-linux-gnu
         env:
           RUSTDOCFLAGS: -D warnings
 
