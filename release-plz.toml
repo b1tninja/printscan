@@ -15,3 +15,8 @@ git_release_enable = true
 git_tag_enable = true
 pr_labels = ["release"]
 publish_timeout = "10m"
+
+# printscan-sane is beta and not released yet: no version bump, changelog, tag or publish.
+[[package]]
+name = "printscan-sane"
+release = false

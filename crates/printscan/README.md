@@ -20,9 +20,10 @@ devices  the scan job journal for large piles and manual duplex                 
 | [`printscan-wsd`](https://crates.io/crates/printscan-wsd) | WS-Print and WS-Scan (Web Services for Devices) |
 | [`printscan-ipp`](https://crates.io/crates/printscan-ipp) | IPP printers |
 | [`printscan-windows`](https://crates.io/crates/printscan-windows) | the Windows print spooler, WIA 2.0 scanners |
+| [`printscan-sane`](https://github.com/b1tninja/printscan/tree/main/crates/printscan-sane) | SANE scanners through `saned` (experimental, not yet published) |
 
 An app registers the backends it wants at start-up; ids are namespaced by backend (`wsd:…`,
-`ipp:…`, `wia:…`), listing aggregates every backend and reports one that fails without hiding the
+`ipp:…`, `wia:…`, `sane:…`), listing aggregates every backend and reports one that fails without hiding the
 others, and every call routes by prefix. A network backend lists only devices the app added and
 needs a `UserConfirmed` for every print job.
 

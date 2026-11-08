@@ -438,6 +438,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "printscan-sane"
+version = "0.1.0"
+dependencies = [
+ "png",
+ "printscan",
+ "thiserror",
+]
+
+[[package]]
 name = "printscan-windows"
 version = "0.1.0"
 dependencies = [

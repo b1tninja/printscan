@@ -41,6 +41,7 @@ jobs:
       - run: cargo clippy -p printscan --lib --no-default-features --features print --locked -- -D warnings
       - run: cargo clippy -p printscan-wsd --lib --no-default-features --locked -- -D warnings
       - run: cargo clippy -p printscan-windows --lib --no-default-features --locked -- -D warnings
+      - run: cargo clippy -p printscan-sane --lib --no-default-features --locked -- -D warnings
       - name: Start the print spooler (the Windows spooler tests add a temporary print-to-file printer)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -100,7 +101,7 @@ jobs:
           targets: x86_64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
       - run: cargo package --workspace --locked
-      - run: cargo doc -p printscan -p printscan-wsd -p printscan-ipp --all-features --no-deps --locked --target x86_64-unknown-linux-gnu
+      - run: cargo doc -p printscan -p printscan-wsd -p printscan-ipp -p printscan-sane --all-features --no-deps --locked --target x86_64-unknown-linux-gnu
         env:
           RUSTDOCFLAGS: -D warnings
 
