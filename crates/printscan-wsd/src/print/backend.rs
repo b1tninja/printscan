@@ -341,6 +341,9 @@ impl WsdBackend {
         if per_job.rendering_intent.is_some() {
             notes.push("the rendering intent is not applied by WS-Print".to_owned());
         }
+        if per_job.application_managed_colour {
+            notes.push("application-managed colour is not applied by WS-Print; the printer may colour-manage the document".to_owned());
+        }
         let color = match per_job.colour {
             ColourMode::Auto if job.grayscale => ColorMode::Mono,
             ColourMode::Auto => ColorMode::Auto,

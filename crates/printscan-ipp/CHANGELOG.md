@@ -6,6 +6,11 @@ All notable changes to `printscan-ipp` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A job with `JobOptions::application_managed_colour` gets a warning: IPP has no attribute saying the
+  colours are already the printer's, so the printer may colour-manage them.
+
 ## [0.1.0]
 
 The first release.

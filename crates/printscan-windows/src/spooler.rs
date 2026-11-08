@@ -19,6 +19,13 @@
 //! drawn by the job itself, a blank back keeping each two-sided copy on its own sheets. Hints the
 //! driver lacks (a resolution, a rendering intent) are named in [`Submitted::warnings`].
 //!
+//! A job with [`JobOptions::application_managed_colour`] sets `PageColorManagement` = `None` and
+//! `PageDestinationColorProfile` = `Application` where the driver offers them, Microsoft's route for
+//! colours already converted to the printer's profile (`docs/colour.md`). A driver that lists colour
+//! management without `None`, or does not keep it, refuses the job; one with no colour-management
+//! setting at all prints it with a warning. [`JobOptions::rendering_intent`] becomes
+//! `PageICMRenderingIntent` where the driver offers that intent.
+//!
 //! The spooler gives no handle for the job, so the backend reports it accepted once the document
 //! is in the queue ([`WatchSupport::None`]). [`open_preferences`] opens the driver's own Printing
 //! Preferences window.
@@ -34,16 +41,18 @@ use std::time::Duration;
 
 use printscan::print::backends::{Backend, BackendClass, DocumentFormat, ErrorKind, JobHint, PrintError, PrinterDetails, PrinterRef, SubmitRequest};
 use printscan::print::{
-    CancelToken, ColourMode, Job, JobOptions, Orientation, Progress, ProgressCallback, Resolution, RetrySafety, Scaling, Submitted, WatchSupport,
+    CancelToken, ColourMode, Job, JobOptions, Orientation, Progress, ProgressCallback, RenderingIntent, Resolution, RetrySafety, Scaling, Submitted,
+    WatchSupport,
 };
 use windows::Win32::Graphics::Direct2D::D2D1_COLOR_SPACE_SRGB;
 use winprint::printer::{DxgiPrintContextError, DxgiRenderContext, PrintOutcome, PrinterDevice};
 use winprint::ticket::document::reader::ParsableXmlDocument as _;
 use winprint::ticket::document::{NS_PSK, PrintCapabilitiesDocument, Property, WithProperties as _};
 use winprint::ticket::{
-    Collation, Copies, FeatureOptionPack as _, FeatureOptionPackWithPredefined as _, JobDuplex, PageMediaSize, PageOrientation, PageOutputColor,
-    PageResolution, PredefinedCollation, PredefinedDuplexType, PredefinedPageOrientation, PredefinedPageOutputColor, PrintCapabilities, PrintTicket,
-    PrintTicketBuilder, StaticFeaturePathOptionPack as _,
+    Collation, Copies, FeatureOptionPack as _, FeatureOptionPackWithPredefined as _, JobDuplex, PageColorManagement, PageDestinationColorProfile,
+    PageIcmRenderingIntent, PageMediaSize, PageOrientation, PageOutputColor, PageResolution, PredefinedCollation, PredefinedDuplexType,
+    PredefinedPageColorManagement, PredefinedPageDestinationColorProfile, PredefinedPageOrientation, PredefinedPageOutputColor, PrintCapabilities,
+    PrintTicket, PrintTicketBuilder, StaticFeaturePathOptionPack as _,
 };
 use winprint::utils::Deadline;
 
@@ -151,15 +160,17 @@ impl Backend for WindowsSpooler {
         details.paper = paper;
         details.max_copies = Some(u32::from(u16::MAX));
         details.resolutions = resolutions;
-        details.honoured = Some(vec![
-            JobHint::Copies,
-            JobHint::Collate,
-            JobHint::Duplex,
-            JobHint::Colour,
-            JobHint::Media,
-            JobHint::Orientation,
-            JobHint::Resolution,
-        ]);
+        let mut honoured =
+            vec![JobHint::Copies, JobHint::Collate, JobHint::Duplex, JobHint::Colour, JobHint::Media, JobHint::Orientation, JobHint::Resolution];
+        // The colour features this driver lists: an intent becomes the ticket's, and `None` turns its colour
+        // management off.
+        if PageIcmRenderingIntent::list(&capabilities).any(|i| i.as_predefined_name().is_some()) {
+            honoured.push(JobHint::RenderingIntent);
+        }
+        if PageColorManagement::list(&capabilities).any(|c| c.as_predefined_name() == Some(PredefinedPageColorManagement::None)) {
+            honoured.push(JobHint::ApplicationManagedColour);
+        }
+        details.honoured = Some(honoured);
         Ok(details)
     }
 
@@ -394,6 +405,7 @@ fn plan(device: &PrinterDevice, capabilities: &PrintCapabilities, job: &Job, opt
         None
     };
     let duplex = job.duplex.map(|duplex| (duplex, checks::duplex_option(duplex)));
+    let colour_plan = colour_plan(name, capabilities, options, &mut warnings)?;
 
     // Declared before the builder, so the builder closes its provider handle before it is released.
     let _provider = print_ticket_provider();
@@ -434,8 +446,14 @@ fn plan(device: &PrinterDevice, capabilities: &PrintCapabilities, job: &Job, opt
             None => warnings.push(format!("the printer has no {}x{} dpi; it prints at its default resolution", wanted.0, wanted.1)),
         }
     }
-    if options.rendering_intent.is_some() {
-        warnings.push("the rendering intent is left to the driver".to_owned());
+    if let Some(option) = colour_plan.unmanaged.clone() {
+        merge(&mut builder, option.into())?;
+    }
+    if let Some(option) = colour_plan.application_profile.clone() {
+        merge(&mut builder, option.into())?;
+    }
+    if let Some(option) = colour_plan.intent.clone() {
+        merge(&mut builder, option.into())?;
     }
     let ticket = builder.build().map_err(|e| failed("building the print ticket", &e))?;
 
@@ -447,12 +465,16 @@ fn plan(device: &PrinterDevice, capabilities: &PrintCapabilities, job: &Job, opt
         colour,
         orientation: explicit,
         copies: ticket_copies,
+        colour_management: colour_plan.unmanaged.as_ref().and_then(|o| o.as_predefined_name()),
+        destination_profile: colour_plan.application_profile.as_ref().and_then(|o| o.as_predefined_name()),
+        intent: colour_plan.intent.as_ref().and_then(|o| o.as_predefined_name()),
     };
     let lost = checks::dropped(&wanted, &chosen);
     if !lost.is_empty() {
         return Err(PrintError::new(ErrorKind::Rejected, format!("{name} would not print {}; nothing was sent", lost.join(", ")))
             .with_safety(RetrySafety::Safe));
     }
+    warnings.extend(checks::replaced_hints(&wanted, &chosen));
 
     // The paper as the driver has it, turned to the orientation it kept.
     let printable = imageable(device, &ticket);
@@ -468,6 +490,58 @@ fn plan(device: &PrinterDevice, capabilities: &PrintCapabilities, job: &Job, opt
     let paper = if paper.landscape() == landscape { paper } else { paper.turned() };
     let fit = if exact { Fit::Exact } else { Fit::Shrink { margin: printable.map_or(0.0, |(_, margin)| margin) } };
     Ok(Plan { ticket, paper, fit, chosen, copies_here, warnings })
+}
+
+/// The colour options of a job's ticket, from the driver's own lists.
+struct ColourPlan {
+    /// `PageColorManagement` = `None`, for application-managed colour.
+    unmanaged: Option<PageColorManagement>,
+    /// `PageDestinationColorProfile` = `Application`, beside it.
+    application_profile: Option<PageDestinationColorProfile>,
+    /// `PageICMRenderingIntent`, for the job's rendering intent.
+    intent: Option<PageIcmRenderingIntent>,
+}
+
+/// The colour options for `options` on the printer `name` (application-managed colour and the rendering intent),
+/// what the driver lacks named in `warnings`. Refuses a job with application-managed colour whose driver manages
+/// colour and has no setting to stop it.
+fn colour_plan(name: &str, capabilities: &PrintCapabilities, options: &JobOptions, warnings: &mut Vec<String>) -> Result<ColourPlan, PrintError> {
+    let mut plan = ColourPlan { unmanaged: None, application_profile: None, intent: None };
+    if options.application_managed_colour {
+        let management: Vec<PageColorManagement> = PageColorManagement::list(capabilities).collect();
+        let profiles: Vec<PageDestinationColorProfile> = PageDestinationColorProfile::list(capabilities).collect();
+        let listed = checks::application_colour(
+            &management.iter().map(|o| o.as_predefined_name()).collect::<Vec<_>>(),
+            &profiles.iter().map(|o| o.as_predefined_name()).collect::<Vec<_>>(),
+            warnings,
+        )
+        .map_err(|why| {
+            PrintError::new(ErrorKind::Rejected, format!("{name} would not print the document's colours as they are: {why}; nothing was sent"))
+                .with_safety(RetrySafety::Safe)
+        })?;
+        if listed.unmanaged {
+            plan.unmanaged = management.into_iter().find(|o| o.as_predefined_name() == Some(PredefinedPageColorManagement::None));
+        }
+        if listed.application_profile {
+            plan.application_profile =
+                profiles.into_iter().find(|o| o.as_predefined_name() == Some(PredefinedPageDestinationColorProfile::Application));
+        }
+    }
+    match options.rendering_intent.map(|intent| (intent, checks::icm_intent(intent))) {
+        Some((_, Some((wanted, note)))) => {
+            warnings.extend(note.map(str::to_owned));
+            plan.intent = PageIcmRenderingIntent::list(capabilities).find(|i| i.as_predefined_name() == Some(wanted));
+            if plan.intent.is_none() {
+                warnings.push(format!("the printer has no {} rendering intent; it is left to the driver", checks::intent_name(wanted)));
+            }
+        }
+        Some((intent, None)) if intent != RenderingIntent::Auto => {
+            warnings.push(format!("the {} rendering intent is left to the driver", intent.keyword()))
+        }
+        // No intent, or `Auto`: the driver's choice.
+        _ => {}
+    }
+    Ok(plan)
 }
 
 /// The paper `ticket` prints on and its widest unprintable margin (DIPs), as the driver reports them for it.

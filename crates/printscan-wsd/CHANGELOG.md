@@ -6,6 +6,11 @@ All notable changes to `printscan-wsd` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A job with `JobOptions::application_managed_colour` gets a warning: WS-Print has no setting for
+  it, so the printer may colour-manage the document.
+
 ## [0.1.0]
 
 The first release.

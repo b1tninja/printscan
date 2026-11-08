@@ -6,6 +6,13 @@ All notable changes to `printscan` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `print`: `JobOptions::application_managed_colour` (and `with_application_managed_colour`): the
+  document's colours are already in the printer's colour space and are not to be colour-managed
+  again, with `JobHint::ApplicationManagedColour` for a backend that can tell the printer. Both are
+  additions to `#[non_exhaustive]` types; the default is `false`, as before.
+
 ## [0.1.0]
 
 The first release.

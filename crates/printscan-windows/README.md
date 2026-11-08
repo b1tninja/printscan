@@ -8,10 +8,10 @@ Rust 1.95.
   `Windows.Data.Pdf` into the XPS print API at the resolution of the job's PrintTicket, in this
   process: no other program is started. Pages of either orientation print as one job on one
   paper, a page the other way round turned onto it; with shrink-to-fit, oversized pages shrink
-  onto the printable area. Copies, collation, two-sided, colour, paper, orientation and
-  resolution become the PrintTicket, which the driver validates: a setting the job asks for that
-  the driver does not keep refuses the job before anything is sent, and copies the driver cannot
-  make are drawn into the job. `spooler::open_preferences` opens the driver's own Printing
+  onto the printable area. Copies, collation, two-sided, colour, paper, orientation,
+  resolution, rendering intent and application-managed colour become the PrintTicket, which the
+  driver validates: a setting the job asks for that the driver does not keep refuses the job
+  before anything is sent, and copies the driver cannot make are drawn into the job. `spooler::open_preferences` opens the driver's own Printing
   Preferences window.
 * **`wia`** (feature `scan`, default): WIA 2.0 scanners as a `printscan::scan` backend, registered
   as `wia` with device ids `wia:<WIA id>`. Listing opens no device; reading details opens it;
@@ -23,7 +23,10 @@ printscan_windows::wia::register();
 ```
 
 An application that manages its own colour can print RGB already converted to the printer's
-profile through the spooler: [docs/colour.md](docs/colour.md).
+profile through the spooler: with `JobOptions::application_managed_colour` the ticket asks the
+driver not to colour-manage (`PageColorManagement` = `None`, `PageDestinationColorProfile` =
+`Application`) where it offers that, and a driver that would convert the colours anyway refuses the
+job. The rendering intent becomes `PageICMRenderingIntent`: [docs/colour.md](docs/colour.md).
 
 ## `unsafe`
 

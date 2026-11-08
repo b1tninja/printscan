@@ -7,6 +7,12 @@
 //! Measured 2026-11-01 on Windows 11: exact (largest channel error 0). A GDI printer with ICM off
 //! measured 2 on the same driver (HALFTONE resampling); see `docs/colour.md`. With
 //! `PRINTSCAN_COLOUR_OUT` set, the rasters are kept there.
+//!
+//! The spooler backend is measured the same way with application-managed colour: the patches as a PDF
+//! of DeviceRGB fills, through `WindowsSpooler` to the PWG raster printer (which lists no colour
+//! management: the job prints with a warning), and to a temporary printer on the in-box PostScript
+//! driver `MS Publisher Color Printer`, whose ticket provider lists `PageColorManagement` and
+//! `PageICMRenderingIntent` from the DEVMODE: the ticket gets them and the driver keeps them.
 //! Run by hand: `cargo test -p printscan-windows --test colour_paths -- --ignored --nocapture`.
 
 #![cfg(all(windows, feature = "print"))]
@@ -14,8 +20,11 @@
 use std::path::Path;
 use std::time::Duration;
 
+use printscan::print::backends::{Backend as _, Document, JobHint, SubmitRequest};
+use printscan::print::{Job, JobOptions, RenderingIntent, Scaling};
+use printscan_windows::spooler::WindowsSpooler;
 use winprint::printer::{FilePrinter as _, ImagePrinter, PrintOutcome};
-use winprint::test_utils::file_device::{FilePrinterDevice, PwgRaster};
+use winprint::test_utils::file_device::{FilePrinterDevice, PublisherColor, PwgRaster};
 use winprint::ticket::{PrintTicket, PrintTicketBuilder};
 
 /// The patches: primaries, secondaries, a saturated mid green, a skin tone, mid grey and a dark blue.
@@ -191,4 +200,77 @@ fn colour_paths() {
 
     // The XPS path hands the pixels over exactly.
     assert_eq!((image_default, image_no_cm), (0, 0));
+}
+
+/// An A4 PDF with the patches as DeviceRGB fills, side by side across the page.
+fn patches_pdf() -> Vec<u8> {
+    let mut content = String::new();
+    for (i, [r, g, b]) in PATCHES.iter().enumerate() {
+        let channel = |v: &u8| f64::from(*v) / 255.0;
+        content.push_str(&format!("{:.6} {:.6} {:.6} rg {} 600 48 48 re f\n", channel(r), channel(g), channel(b), 57 + 48 * i));
+    }
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+        "<< /Type /Pages /Kids [4 0 R] /Count 1 >>".to_owned(),
+        format!("<< /Length {} >>\nstream\n{content}endstream", content.len()),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 3 0 R >>".to_owned(),
+    ];
+    let mut pdf = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, body) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n{body}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = pdf.len();
+    pdf.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes());
+    for offset in offsets {
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1).as_bytes());
+    pdf
+}
+
+/// A job for the printer `name` asking for application-managed colour, converted with the relative intent.
+fn application_managed<'a>(pdf: &'a [u8], name: &str) -> SubmitRequest<'a> {
+    let job = Job::default().with_printer(name.to_owned()).with_title("printscan colour test").with_scaling(Scaling::ShrinkToFit);
+    let options = JobOptions::new().with_application_managed_colour(true).with_rendering_intent(RenderingIntent::Relative);
+    SubmitRequest::new(Document::pdf(pdf), job).with_options(options)
+}
+
+#[test]
+#[ignore]
+fn application_managed_colour_through_the_spooler_keeps_the_values() {
+    let keep = std::env::var_os("PRINTSCAN_COLOUR_OUT").map(std::path::PathBuf::from);
+    let pdf = patches_pdf();
+    let device = FilePrinterDevice::<PwgRaster>::new().unwrap();
+    let details = WindowsSpooler::default().printer_details(device.device().name()).unwrap();
+    let honoured = details.honoured.unwrap();
+    println!("PWG raster honours application-managed colour: {}", honoured.contains(&JobHint::ApplicationManagedColour));
+    let submitted = WindowsSpooler::default().submit(application_managed(&pdf, device.device().name())).unwrap();
+    println!("warnings: {:?}", submitted.warnings);
+    // This driver has no colour-management setting: the job prints and says so.
+    assert!(!honoured.contains(&JobHint::ApplicationManagedColour));
+    assert!(submitted.warnings.iter().any(|w| w.contains("no colour-management setting")), "{:?}", submitted.warnings);
+    assert!(submitted.warnings.iter().any(|w| w.contains("relative colorimetric")), "{:?}", submitted.warnings);
+    assert_eq!(finish(device, keep.as_deref(), "spooler-application-managed"), 0);
+}
+
+#[test]
+#[ignore]
+fn application_managed_colour_reaches_a_driver_that_offers_it() {
+    let pdf = patches_pdf();
+    let device = FilePrinterDevice::<PublisherColor>::new().expect("add a temporary printer on MS Publisher Color Printer");
+    let details = WindowsSpooler::default().printer_details(device.device().name()).unwrap();
+    let honoured = details.honoured.unwrap();
+    assert!(honoured.contains(&JobHint::ApplicationManagedColour), "{honoured:?}");
+    assert!(honoured.contains(&JobHint::RenderingIntent), "{honoured:?}");
+    // The validated ticket kept PageColorManagement None and the intent, or the job would be refused or warned about.
+    let submitted = WindowsSpooler::default().submit(application_managed(&pdf, device.device().name())).unwrap();
+    println!("warnings: {:?}", submitted.warnings);
+    assert!(
+        !submitted.warnings.iter().any(|w| w.contains("colour-management setting") || w.contains("rendering intent")),
+        "{:?}",
+        submitted.warnings
+    );
+    device.wait_for_idle(Duration::from_secs(120)).unwrap();
 }
