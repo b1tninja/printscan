@@ -16,6 +16,7 @@ No test talks to anything but loopback. Real devices are for people, by hand (se
 | WSD metadata and WS-Eventing (`printscan-wsd`) | fakeprint | `crates/printscan-wsd/tests/live_loopback.rs` | `PRINTSCAN_FAKEPRINT_URL` |
 | IPP (`printscan-ipp`) | fakeprint | `crates/printscan-ipp/tests/live_fakeprint.rs` | `PRINTSCAN_FAKEPRINT_URL` |
 | WIA (`printscan-windows`) | none automated | | |
+| ImageCaptureCore (`printscan-macos`, experimental) | none automated; the session state machines run against a scripted device in `cargo test` | `crates/printscan-macos/src/ica/session.rs` | |
 | Windows spooler (`printscan-windows`) | a temporary print-to-file printer (in `cargo test`, Windows only) | `crates/printscan-windows/tests/spooler.rs` | |
 
 Each variable is the fake's base URL, `http://127.0.0.1:PORT`; the tests derive the endpoints

@@ -1,0 +1,7 @@
+printscan
+Copyright (c) 2026 Justin Capella and the printscan contributors.
+Licensed under the Apache License, Version 2.0 or the MIT license, at your option.
+
+printscan-macos uses the objc2 crates (https://github.com/madsmtm/objc2) as dependencies: objc2 and
+objc2-foundation (MIT), and objc2-image-capture-core, dispatch2 and the other framework bindings
+(Zlib OR Apache-2.0 OR MIT).

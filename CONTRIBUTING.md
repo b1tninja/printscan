@@ -17,7 +17,9 @@ how to do the same locally.
 ## Rules the code keeps
 
 * **No `unsafe`** outside `printscan-windows`' `wia::ffi` and `wia::sinks`, each block with a
-  `// SAFETY:` comment (crates/printscan-windows/docs/wia-unsafe-audit.md).
+  `// SAFETY:` comment (crates/printscan-windows/docs/wia-unsafe-audit.md), and the experimental
+  `printscan-macos`' `ica::ffi` and `ica::delegate`, whose sign-off is pending
+  (crates/printscan-macos/docs/ica-unsafe-audit.md).
 * **Nothing on the network until the app asks.** Backends list only the devices the app added,
   discover nothing on their own, and connect only to numeric local-network addresses. A print job
   on a network backend needs a `UserConfirmed`.
